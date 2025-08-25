@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* prose styling parity for inline styles applied by component */
+.prose .main-title { font-size: 1.5rem; font-weight: bold; text-align: center; margin-bottom: 0.5rem; color: #1f2937; }
+.prose .section-title { font-size: 1.25rem; font-weight: bold; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #374151; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.25rem; }
+.prose ul { margin: 0.5rem 0; }
+.prose li { margin-bottom: 0.25rem; }
+.prose p { margin-bottom: 0.5rem; }
+
+
