@@ -1,0 +1,17 @@
+services:
+  app:
+    image: node:20-bookworm
+    container_name: role-ready-dev
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    environment:
+      NODE_ENV: development
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - .:/app:delegated     # your repo
+      - /app/node_modules    # deps live in the container
+    command: >
+      sh -lc "npm ci && npm start"
+    restart: unless-stopped
