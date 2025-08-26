@@ -1,0 +1,23 @@
+# Dockerfile.dev
+FROM node:20-bookworm
+
+# Create an unprivileged user that matches your host UID/GID (override at build/run)
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g $GID nodeuser && useradd -m -u $UID -g $GID -s /bin/bash nodeuser
+
+WORKDIR /app
+
+# Install only once; rely on bind mount for code
+COPY package*.json ./
+RUN npm ci
+
+# Optional: speed up installs across rebuilds
+# (requires BuildKit: DOCKER_BUILDKIT=1)
+# RUN --mount=type=cache,target=/root/.npm npm ci
+
+USER nodeuser
+EXPOSE 3000 9229
+
+# Default dev command (override in compose)
+CMD ["npm", "start"]
