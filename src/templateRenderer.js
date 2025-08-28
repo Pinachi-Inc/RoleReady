@@ -43,7 +43,17 @@ export const renderCvHtml = (cv) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Optimized CV</title>
   <style>
-    @media print { .print-btn { display: none; } body { margin: 0; } }
+    @media print {
+      .print-btn { display: none; }
+      body { margin: 0; }
+      /* Option A: keep header with at least one bullet on the same page */
+      .job { break-inside: avoid; page-break-inside: avoid; }
+      .job .job-title,
+      .job .job-meta { break-after: avoid; page-break-after: avoid; }
+      .job ul { break-inside: auto; }
+      .job ul li { break-inside: avoid; page-break-inside: avoid; }
+      .job ul li:first-child { break-before: avoid; page-break-before: avoid; }
+    }
     :root { --text:#111827; --muted:#374151; --border:#d1d5db; --accent:#9ca3af; --section-bg:#f3f4f6; }
     html, body { font-family: Arial, sans-serif; color: var(--text); }
     body { max-width: 900px; margin: 0 auto; padding: 24px; background: white; }
