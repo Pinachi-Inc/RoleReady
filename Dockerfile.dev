@@ -10,7 +10,7 @@ WORKDIR /app
 
 # Install only once; rely on bind mount for code
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Optional: speed up installs across rebuilds
 # (requires BuildKit: DOCKER_BUILDKIT=1)
