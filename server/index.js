@@ -164,6 +164,49 @@ ${jsonSchema}`;
         return { error: 'parse' };
       }
       console.log('[optimize] parsed keys: %s', Object.keys(parsed || {}).join(', ') || '(none)');
+
+      // Structural validation to explain why JSON may be considered invalid
+      const structureIssues = [];
+      const allowedKeys = new Set(['summary', 'coreSkills', 'experience', 'keywordsUsed']);
+      for (const k of Object.keys(parsed || {})) {
+        if (!allowedKeys.has(k)) structureIssues.push(`Unexpected key: ${k}`);
+      }
+      if (typeof parsed.summary !== 'string' || parsed.summary.trim().length === 0) {
+        structureIssues.push('Missing or empty "summary" (string expected)');
+      }
+      if (!Array.isArray(parsed.coreSkills) || parsed.coreSkills.length === 0) {
+        structureIssues.push('Missing or empty "coreSkills" (array expected)');
+      } else {
+        parsed.coreSkills.forEach((cat, idx) => {
+          if (!cat || typeof cat.category !== 'string' || !Array.isArray(cat.items)) {
+            structureIssues.push(`coreSkills[${idx}] must have {category: string, items: array}`);
+          } else if (cat.items.length === 0) {
+            structureIssues.push(`coreSkills[${idx}].items is empty`);
+          } else {
+            cat.items.forEach((it, jdx) => {
+              if (!it || typeof it.skill !== 'string') {
+                structureIssues.push(`coreSkills[${idx}].items[${jdx}].skill must be string`);
+              }
+              if (it && it.source && !['jd', 'base'].includes(it.source)) {
+                structureIssues.push(`coreSkills[${idx}].items[${jdx}].source must be "jd"|"base"`);
+              }
+            });
+          }
+        });
+      }
+      if (!Array.isArray(parsed.experience)) {
+        structureIssues.push('Missing or invalid "experience" (array expected)');
+      } else if (parsed.experience.length === 0) {
+        structureIssues.push('"experience" is empty');
+      } else {
+        parsed.experience.forEach((job, idx) => {
+          if (!job || !Array.isArray(job.achievements)) {
+            structureIssues.push(`experience[${idx}].achievements must be array`);
+          } else if (job.achievements.length === 0) {
+            structureIssues.push(`experience[${idx}].achievements is empty`);
+          }
+        });
+      }
       const { coreSkills, jdShare } = validateAndFixSkills(parsed.coreSkills);
       const orderedSkills = reorderSkills(coreSkills);
 
@@ -213,10 +256,10 @@ ${jsonSchema}`;
         experience: enrichedExperience,
         education: Array.isArray(parsed.education) ? parsed.education : []
       };
-      return { cv: prepared, jdShare, keywords: Array.isArray(parsed.keywordsUsed) ? parsed.keywordsUsed : [] };
+      return { cv: prepared, jdShare, keywords: Array.isArray(parsed.keywordsUsed) ? parsed.keywordsUsed : [], structureIssues };
     };
 
-    let { cv, jdShare, keywords } = parseAndPrepare(content);
+    let { cv, jdShare, keywords, structureIssues } = parseAndPrepare(content);
 
     let totals = 0;
     let categoryCount = 0;
@@ -286,11 +329,15 @@ ${jsonSchema}`;
         return plainText.includes(term);
       });
 
+    if (Array.isArray(structureIssues) && structureIssues.length) {
+      console.warn('[optimize] structure issues:', structureIssues.join(' | '));
+    }
     const stats = {
       jdShare: jdShare ?? 0,
       categories: categoryCount,
       totalSkills: totals,
-      categorySizeViolations: boundsViolations
+      categorySizeViolations: boundsViolations,
+      structureIssues: structureIssues || []
     };
     res.json({
       cvContent: markdown,

@@ -13,5 +13,5 @@ services:
       - .:/app:delegated     # your repo
       - /app/node_modules    # deps live in the container
     command: >
-      sh -lc "npm ci && npm start"
+      sh -lc "npm install && npm start"
     restart: unless-stopped
