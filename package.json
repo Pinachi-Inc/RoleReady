@@ -8,15 +8,29 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "start": "concurrently -k -n server,client -c red,blue \"npm run server\" \"npm run dev\""
+    "start": "concurrently -k -n server,client -c red,blue \"npm run server\" \"npm run dev\"",
+    "postinstall": "node scripts/patch-pdfjs.cjs",
+    "vercel-build": "node scripts/patch-pdfjs.cjs && npm run build",
+    "firebase:emulators": "firebase emulators:start",
+    "firebase:deploy": "node scripts/deploy-firebase.js",
+    "firebase:functions:deploy": "firebase deploy --only functions",
+    "firebase:hosting:deploy": "npm run build && firebase deploy --only hosting",
+    "vercel:dev": "vercel dev",
+    "vercel:deploy": "vercel --prod",
+    "vercel:setup": "node scripts/setup-vercel-env.js",
+    "showcase": "vite --config vite.showcase.config.js"
   },
   "dependencies": {
+    "@vercel/speed-insights": "^1.2.0",
     "axios": "^1.7.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "firebase": "^10.13.0",
+    "html2pdf.js": "^0.12.1",
     "lucide-react": "^0.453.0",
+    "multer": "^1.4.5-lts.1",
+    "pdfjs-dist": "^3.11.174",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -29,5 +43,3 @@
     "vite": "^5.4.0"
   }
 }
-
-

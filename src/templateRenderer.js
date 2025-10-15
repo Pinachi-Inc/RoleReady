@@ -16,22 +16,26 @@ export const renderCvHtml = (cv) => {
     })
     .join('');
 
-  const certsHtml = (Array.isArray(cv.certifications) ? cv.certifications : [])
-    .map((c) => `<li>${esc(c)}</li>`)
-    .join('');
+  const certsInline = (Array.isArray(cv.certifications) ? cv.certifications : [])
+    .map((c) => esc(c))
+    .join(' | ');
 
   const jobsHtml = (Array.isArray(cv.experience) ? cv.experience : [])
     .map((job) => {
       const titleLine = join([job?.title, job?.company, job?.location]);
       const dateLine = join([job?.start, job?.end], ' — ');
-      const bullets = (Array.isArray(job?.achievements) ? job.achievements : [])
-        .map((b) => `<li>${esc(b)}</li>`)
-        .join('');
+      const bulletsArr = (Array.isArray(job?.achievements) ? job.achievements : []).map((b) => esc(b));
+      const firstBullet = bulletsArr.length > 0 ? bulletsArr[0] : null;
+      const restBullets = bulletsArr.length > 1 ? bulletsArr.slice(1) : [];
+      const restBulletsHtml = restBullets.map((b) => `<li>${b}</li>`).join('');
       return `
         <div class="job">
-          <div class="job-title">${esc(titleLine)}</div>
-          ${dateLine ? `<div class="job-meta">${esc(dateLine)}</div>` : ''}
-          <ul class="bullets">${bullets}</ul>
+          <div class="job-head">
+            <div class="job-title">${esc(titleLine)}</div>
+            ${dateLine ? `<div class="job-meta">${esc(dateLine)}</div>` : ''}
+            ${firstBullet ? `<ul class="bullets first-bullet"><li>${firstBullet}</li></ul>` : ''}
+          </div>
+          ${restBulletsHtml ? `<ul class=\"bullets\">${restBulletsHtml}</ul>` : ''}
         </div>`;
     })
     .join('');
@@ -44,18 +48,21 @@ export const renderCvHtml = (cv) => {
   <title>Optimized CV</title>
   <style>
     @media print {
-      .print-btn { display: none; }
-      body { margin: 0; }
-      /* Option A: keep header with at least one bullet on the same page */
-      .job { break-inside: avoid; page-break-inside: avoid; }
-      .job .job-title,
-      .job .job-meta { break-after: avoid; page-break-after: avoid; }
-      .job ul { break-inside: auto; }
-      .job ul li { break-inside: avoid; page-break-inside: avoid; }
-      .job ul li:first-child { break-before: avoid; page-break-before: avoid; }
+      html, body { margin: 0; }
+      /* Avoid cutting lines across pages */
+      *, *::before, *::after { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      /* Allow jobs to split across pages at list items, but keep section title + job head together */
+      .job { page-break-inside: auto; break-inside: auto; }
+      .job-head { page-break-inside: avoid; break-inside: avoid; }
+      .job .job-title, .job .job-meta { page-break-after: avoid; break-after: avoid; }
+      .job ul { page-break-inside: auto; break-inside: auto; }
+      .job ul li { page-break-inside: avoid; break-inside: avoid; }
+      /* Keep section header with at least one following item */
+      .section-title { page-break-after: avoid; break-after: avoid; }
+      .section-content { page-break-inside: auto; break-inside: auto; }
     }
     :root { --text:#111827; --muted:#374151; --border:#d1d5db; --accent:#9ca3af; --section-bg:#f3f4f6; }
-    html, body { font-family: Arial, sans-serif; color: var(--text); }
+    html, body { font-family: Arial, sans-serif; color: var(--text); line-height: 1.4; }
     body { max-width: 900px; margin: 0 auto; padding: 24px; background: white; }
     .header { padding: 12px; text-align: center; }
     .name { font-weight: 800; letter-spacing: 0.04em; }
@@ -67,15 +74,16 @@ export const renderCvHtml = (cv) => {
     .skills-block { margin-bottom: 8px; }
     .skills-block .label { font-weight: 700; }
     .skills-block .items { color: var(--muted); }
+    .certs-inline { color: var(--text); }
     .bullets { margin: 8px 0 0 0; padding-left: 16px; }
     .bullets li { margin-bottom: 6px; }
     .job { margin-bottom: 12px; }
+    .job-head .first-bullet { margin-top: 6px; }
     .job .job-title { font-weight: 700; text-decoration: underline; }
     .job .job-meta { color: var(--muted); margin-bottom: 6px; }
   </style>
 </head>
 <body>
-  <button class="print-btn" onclick="window.print()">Print as PDF</button>
   <div class="header">
     <div class="name">${esc(cv.name || '')}</div>
     <div class="contact">
@@ -94,9 +102,9 @@ export const renderCvHtml = (cv) => {
     <div class="section-content">${skillsHtml}</div>
   </div>
 
-  ${certsHtml ? `<div class="section">
+  ${certsInline ? `<div class="section">
     <div class="section-title">CERTIFICATIONS</div>
-    <div class="section-content"><ul class="bullets">${certsHtml}</ul></div>
+    <div class="section-content"><div class="certs-inline">${certsInline}</div></div>
   </div>` : ''}
 
   <div class="section">
