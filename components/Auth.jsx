@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { signInWithGoogle, signOutUser } from '../services/auth.js';
+import { Sun, Moon } from 'lucide-react';
 
-const Auth = ({ user, onAuthChange }) => {
+const Auth = ({ user, onAuthChange, onToggleTheme, isDark }) => {
   const [showDropdown, setShowDropdown] = useState(false);
 
   // Debug: Check environment variables on component mount
@@ -42,14 +43,22 @@ const Auth = ({ user, onAuthChange }) => {
 
   if (user) {
     return (
-      <div className="relative">
+      <div className="relative flex items-center gap-3">
+        <button
+          onClick={onToggleTheme}
+          className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-white/30 text-white/80 hover:text-white hover:border-white/60 transition-colors"
+          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
         <button
           onClick={() => setShowDropdown(!showDropdown)}
           className="w-10 h-10 rounded-full border-2 border-white/20 hover:border-white/40 transition-colors focus:outline-none focus:border-white/60"
         >
           <img 
-            src={user.photoURL} 
-            alt={user.displayName}
+            src={user.photoURL || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.displayName || 'User') + '&background=0D8ABC&color=ffffff&size=128'} 
+            alt={user.displayName || 'User'}
             className="w-full h-full rounded-full object-cover"
           />
         </button>

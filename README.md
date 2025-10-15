@@ -68,11 +68,16 @@ Vite runs on 5173 and proxies `/api` to the local server on 8787.
   - For each role: `roleId`, `title`, `company`, `location`, `start`, `end`, `baseAchievements` (bullets to use as examples)
 - Fixed User Info (NOT sent to AI): `name`, `contact`, `certifications`, `education`
 
-Click Optimize. You’ll get:
+**PDF Upload:**
+- You can upload a PDF CV to auto-extract your information
+- **Only text-based PDFs are supported** (created from Word, Google Docs, etc.)
+- **Scanned/image-based PDFs are NOT supported** - please use the manual input instead
+
+Click Optimize. You'll get:
 - Template HTML preview (iframe)
 - Download button for an HTML file you can Print → Save as PDF
 - Keywords Integrated (from response, filtered to those present in CV)
-- AI Stats (JD share %, category counts). If constraints aren’t met, a red banner appears.
+- AI Stats (JD share %, category counts). If constraints aren't met, a red banner appears.
 
 ### JSON schemas (also available in the UI modal)
 
