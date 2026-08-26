@@ -14,6 +14,12 @@ export default async function handler(req, res) {
     return;
   }
 
+  // A JSON body carries client-extracted OCR text, not a file. multer has nothing to
+  // do there and its parser expects multipart, so route around it.
+  if ((req.headers['content-type'] || '').includes('application/json')) {
+    return handlePdfProcessing(req, res);
+  }
+
   // Use multer middleware for file upload
   uploadMiddleware(req, res, (err) => {
     if (err) {

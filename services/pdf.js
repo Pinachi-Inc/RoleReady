@@ -25,3 +25,19 @@ export const processPdf = async (pdfFile) => {
     throw error;
   }
 };
+
+// Posts text the client already extracted (the browser OCR fallback) instead of a file.
+// The server skips its own extraction when this field is present.
+export const processPdfText = async (extractedText) => {
+  const response = await fetch('/api/process-pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
+    body: JSON.stringify({ extractedText })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+};
