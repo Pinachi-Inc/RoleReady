@@ -1,18 +1,56 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { signInWithGoogle, signOutUser } from '../services/auth.js';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, FolderOpen } from 'lucide-react';
+import { isFolderApiSupported, getStoredFolderName, pickNewFolder } from '../services/folderManager.js';
 
-const Auth = ({ user, onAuthChange, onToggleTheme, isDark }) => {
+const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, onToggleFolderMgmt }) => {
   const [showDropdown, setShowDropdown] = useState(false);
+  const [folderName, setFolderName] = useState(null);
 
-  // Debug: Check environment variables on component mount
+  const [folderError, setFolderError] = useState('');
+  // Bumped by every explicit pick. A folder-name read that started earlier must not
+  // overwrite a newer pick — that race is what blanked the field after choosing.
+  const folderReadRef = useRef(0);
+
+  // Re-read when the dropdown opens, since a folder chosen during a download goes
+  // straight through folderManager and this component never hears about it.
   useEffect(() => {
-    console.log('🔍 Environment Variables Check:');
-    console.log('VITE_FIREBASE_API_KEY:', import.meta.env.VITE_FIREBASE_API_KEY ? 'SET' : 'MISSING');
-    console.log('VITE_FIREBASE_AUTH_DOMAIN:', import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'MISSING');
-    console.log('VITE_FIREBASE_PROJECT_ID:', import.meta.env.VITE_FIREBASE_PROJECT_ID || 'MISSING');
-    console.log('All env vars:', import.meta.env);
-  }, []);
+    if (!folderMgmtEnabled || !isFolderApiSupported()) {
+      folderReadRef.current++;
+      setFolderName(null);
+      return;
+    }
+    const read = ++folderReadRef.current;
+    getStoredFolderName().then((name) => {
+      // Ignore a stale read, and never clobber a known name with nothing.
+      if (folderReadRef.current !== read) return;
+      if (name) setFolderName(name);
+    });
+  }, [folderMgmtEnabled, showDropdown]);
+
+  const handleChangeFolder = async () => {
+    setFolderError('');
+    console.log('[folder] Choose clicked');
+    try {
+      const handle = await pickNewFolder();
+      console.log('[folder] picker resolved with "%s"', handle?.name);
+      folderReadRef.current++;            // this pick wins over any in-flight read
+      setFolderName(handle?.name || null);
+      if (!handle?.name) setFolderError('The picker returned no folder.');
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        console.log('[folder] picker cancelled by the user');
+        return;
+      }
+      console.warn('[folder] could not pick a folder: %s', err?.name || err?.message || err);
+      const wedged = err?.name === 'PICKER_TIMEOUT' || /already active|already in progress/i.test(err?.message || '');
+      setFolderError(
+        wedged
+          ? 'Chrome is not responding to the folder picker. Restart Chrome to clear it — downloads still work without folder management.'
+          : `Could not open the folder picker (${err?.name || 'error'}).`
+      );
+    }
+  };
 
   const handleSignIn = async () => {
     try {
@@ -74,9 +112,50 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark }) => {
                 <p className="font-medium text-gray-900 text-sm">{user.displayName}</p>
                 <p className="text-xs text-gray-600">{user.email}</p>
               </div>
+              {onToggleFolderMgmt && (
+                <>
+                  <div className={`px-4 py-2 flex items-center justify-between gap-3 border-t border-gray-100 ${!isFolderApiSupported() ? 'opacity-40' : ''}`}>
+                    <div className="flex items-center gap-2">
+                      <FolderOpen className="h-4 w-4 text-gray-500" />
+                      <span className="text-sm text-gray-700" title={!isFolderApiSupported() ? 'Not supported in this browser' : ''}>
+                        Folder management
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!isFolderApiSupported()}
+                      onClick={() => onToggleFolderMgmt(!folderMgmtEnabled)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${folderMgmtEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}
+                    >
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${folderMgmtEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+                  {folderMgmtEnabled && isFolderApiSupported() && (
+                    <div className="px-4 py-2 flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={folderName || 'No folder selected'}
+                        className="flex-1 text-xs bg-gray-100 text-gray-600 rounded px-2 py-1 border border-gray-200 truncate"
+                        title={folderName || 'No folder selected'}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleChangeFolder}
+                        className="text-xs px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded border border-blue-200 whitespace-nowrap transition-colors"
+                      >
+                        {folderName ? 'Change' : 'Choose'}
+                      </button>
+                    </div>
+                  )}
+                  {folderMgmtEnabled && folderError && (
+                    <div className="px-4 pb-2 text-xs text-red-600">{folderError}</div>
+                  )}
+                </>
+              )}
               <button
                 onClick={handleSignOut}
-                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-100"
               >
                 Sign Out
               </button>

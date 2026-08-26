@@ -1,12 +1,88 @@
-export const renderCvHtml = (cv) => {
-  const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const join = (arr, sep = ' | ') => arr.filter(Boolean).join(sep);
+// Cover letter on the same paper as the CV, so switching between the two in the
+// preview does not feel like switching products. Plain text in, paragraphs out.
+export const renderCoverLetterHtml = (letter, cv) => {
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
   const contactParts = [];
   if (cv?.contact?.location) contactParts.push(esc(cv.contact.location));
   if (cv?.contact?.phone) contactParts.push(esc(cv.contact.phone));
   if (cv?.contact?.email) contactParts.push(esc(cv.contact.email));
-  const links = Array.isArray(cv?.contact?.links) ? cv.contact.links.map(esc) : [];
+
+  const paragraphs = String(letter || '')
+    .split(/\n\s*\n/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => `<p>${esc(p).replace(/\n/g, '<br/>')}</p>`)
+    .join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cover Letter</title>
+  <style>
+    @media print { html, body { margin: 0; } p { orphans: 3; widows: 3; } }
+    :root { --text:#111827; --muted:#374151; --section-bg:#f3f4f6; }
+    html, body { font-family: Arial, sans-serif; color: var(--text); line-height: 1.55; }
+    body { max-width: 900px; margin: 0 auto; padding: 24px; background: white; }
+    .header { padding: 12px; text-align: center; }
+    .name { font-weight: 800; letter-spacing: 0.04em; }
+    .contact { margin-top: 6px; line-height: 1.5; color: var(--muted); }
+    .section { margin-top: 18px; }
+    .section-title { background: var(--section-bg); font-weight: 700; padding: 8px 12px; }
+    .section-content { padding: 12px; }
+    .section-content p { margin: 0 0 12px 0; }
+    .section-content p:last-child { margin-bottom: 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="name">${esc(cv?.name || '')}</div>
+    <div class="contact">${esc(contactParts.join(' | '))}</div>
+  </div>
+  <div class="section">
+    <div class="section-title">COVER LETTER</div>
+    <div class="section-content">${paragraphs || '<p></p>'}</div>
+  </div>
+</body>
+</html>`;
+};
+
+export const renderCvHtml = (cv) => {
+  // Escapes quotes too — some of these values land in attribute position.
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const join = (arr, sep = ' | ') => arr.filter(Boolean).join(sep);
+
+  // Only http(s) and mailto reach an href. Anything else (javascript:, data:, …)
+  // is dropped; a bare domain gets https:// so it does not resolve relative.
+  const safeUrl = (raw) => {
+    const value = String(raw ?? '').trim();
+    if (!value) return null;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(value)) {
+      return /^(https?|mailto):/i.test(value) ? value : null;
+    }
+    return `https://${value}`;
+  };
+
+  const contactParts = [];
+  if (cv?.contact?.location) contactParts.push(esc(cv.contact.location));
+  if (cv?.contact?.phone) contactParts.push(esc(cv.contact.phone));
+  if (cv?.contact?.email) contactParts.push(esc(cv.contact.email));
+  const links = (Array.isArray(cv?.contact?.links) ? cv.contact.links : [])
+    .map(safeUrl)
+    .filter(Boolean)
+    .map(esc);
 
   const skillsHtml = (Array.isArray(cv.coreSkills) ? cv.coreSkills : [])
     .map((cat) => {

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Download, FileText, Target, Zap, AlertCircle, Save, Info, Copy, Check, Bot, Upload, User } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Download, FileText, Target, Zap, AlertCircle, Save, Info, Copy, Check, Bot, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, ArrowLeft, Link2, Award, GraduationCap, Briefcase } from 'lucide-react';
 import { convertMarkdownToHtml } from '../utils/markdown.js';
 import { generateDownloadHtml, downloadHtml } from '../utils/download.js';
 import html2pdf from 'html2pdf.js';
@@ -12,11 +12,146 @@ function extractBody(htmlString) {
     return htmlString;
   }
 }
-import { renderCvHtml } from '../src/templateRenderer.js';
-import { optimizeCv as optimizeCvService } from '../services/openai.js';
+import { renderCvHtml, renderCoverLetterHtml } from '../src/templateRenderer.js';
+import { buildCvPdf } from '../src/cvPdf.js';
+import { optimizeCv as optimizeCvService, detectAiContent } from '../services/openai.js';
 import { processPdf } from '../services/pdf.js';
 import { onAuthStateChange, saveUserData, getUserData } from '../services/auth.js';
+import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
 import Auth from './Auth.jsx';
+
+// Repairs role ids on a raw aiUserInfo JSON string. The dedupe inside formDataToJson
+// only runs on Save, but aiUserInfo also arrives straight from PDF extraction and from
+// Firestore — and handleOptimize sends that state as-is. Without this, importing a CV
+// and optimising without saving ships the extraction model's duplicate/placeholder ids,
+// and every job in the result inherits the last role's title, company and dates.
+const withUniqueRoleIds = (aiJson) => {
+  try {
+    const parsed = JSON.parse(aiJson || '{}');
+    if (!Array.isArray(parsed?.experienceSource)) return aiJson;
+    const used = new Set();
+    parsed.experienceSource = parsed.experienceSource.map((role) => {
+      let id = role?.roleId || makeRoleId();
+      while (used.has(id)) id = makeRoleId();
+      used.add(id);
+      return { ...role, roleId: id };
+    });
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return aiJson;
+  }
+};
+
+// Setup page sections, ordered low-effort first so the heavy ones come after the
+// user has already invested something. Drives the rail, the counts and the progress meter.
+const SETUP_SECTIONS = [
+  { id: 'import', label: 'Import' },
+  { id: 'personal', label: 'Personal' },
+  { id: 'links', label: 'Links' },
+  { id: 'skills', label: 'Skills' },
+  { id: 'experience', label: 'Experience' },
+  { id: 'education', label: 'Education' },
+  { id: 'certifications', label: 'Certifications' }
+];
+
+// Role ids key the server-side merge that re-attaches title/company/dates to each
+// job. They must be unique: Date.now() alone is not, because the roles are built
+// in one synchronous map and all land in the same millisecond.
+const makeRoleId = () => (
+  typeof globalThis.crypto?.randomUUID === 'function'
+    ? `role_${globalThis.crypto.randomUUID()}`
+    : `role_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+);
+
+// Factory, not a shared constant — the form handlers mutate nested arrays in place,
+// so every reset needs its own copy.
+const emptyFormData = () => ({
+  // Personal Info
+  name: '',
+  email: '',
+  phone: '',
+  location: '',
+  yearsOfExperience: '', // Total years of professional experience
+  links: [''],
+  certifications: [''],
+  education: [''],
+
+  // Skills & Experience
+  skills: [
+    { category: '', items: [''] }
+  ],
+  experience: [
+    {
+      roleId: '',
+      title: '',
+      company: '',
+      location: '',
+      start: '',
+      end: '',
+      achievements: ['']
+    }
+  ]
+});
+
+// Shared style tokens and presentational pieces for the setup page. These MUST live
+// at module scope: defined inside the component they would be a new component type on
+// every render, remounting their inputs and dropping focus after each keystroke.
+  const inputCls = 'w-full min-w-0 px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow';
+  const labelCls = 'block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5';
+  const cardCls = 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden';
+
+  const SectionHead = ({ icon: Icon, title, hint, actions }) => (
+    <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-3">
+      <div className="min-w-0">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-gray-800 dark:text-gray-100">
+          <Icon className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+          {title}
+        </h2>
+        {hint && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{hint}</p>}
+      </div>
+      {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+    </div>
+  );
+
+  const SimpleList = ({ values, onChange, onAdd, onRemove, placeholder, addLabel, type = 'text' }) => (
+    <div className={cardCls}>
+      <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+        {values.map((value, index) => (
+          <li key={index} className="flex items-center gap-2 p-3">
+            <span className="w-6 shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-600 text-center">{index + 1}</span>
+            <input
+              type={type}
+              value={value}
+              onChange={(e) => onChange(index, e.target.value)}
+              className={inputCls}
+              placeholder={placeholder}
+            />
+            {values.length > 1 && (
+              <button
+                type="button"
+                onClick={() => onRemove(index)}
+                className="shrink-0 p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                aria-label="Remove"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-2">
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+          {addLabel}
+        </button>
+      </div>
+    </div>
+  );
+
 
 const CVOptimizer = () => {
   const [jobDescription, setJobDescription] = useState('');
@@ -28,6 +163,8 @@ const CVOptimizer = () => {
   const [stats, setStats] = useState(null);
   const [needsFix, setNeedsFix] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [aiScore, setAiScore] = useState(null);
+  const [aiScoreLoading, setAiScoreLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState('main'); // 'main' | 'setup'
   const [user, setUser] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -38,39 +175,43 @@ const CVOptimizer = () => {
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   const [pdfError, setPdfError] = useState('');
   const [setupTab, setSetupTab] = useState('personal');
+  const [jdCollapsed, setJdCollapsed] = useState(false); // Desktop-only JD sidebar collapse
+  const [folderMgmtEnabled, setFolderMgmtEnabled] = useState(() => localStorage.getItem('folderMgmtEnabled') === 'true');
+  const [companyName, setCompanyName] = useState('');
+  const [wantsCoverLetter, setWantsCoverLetter] = useState(() => localStorage.getItem('wantsCoverLetter') === 'true');
+  const [coverLetter, setCoverLetter] = useState('');
+  const [activeDoc, setActiveDoc] = useState('cv'); // 'cv' | 'letter'
+  const [letterCopied, setLetterCopied] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadNotice, setDownloadNotice] = useState('');
+  const [downloadNoticeTone, setDownloadNoticeTone] = useState('warn'); // 'warn' | 'ok'
+  const downloadingRef = useRef(false);
+
+  const detectableWordCount = (cv) => {
+    if (!cv) return 0;
+    const parts = [];
+    if (cv.summary) parts.push(cv.summary);
+    if (Array.isArray(cv.experience)) {
+      for (const job of cv.experience) {
+        if (Array.isArray(job.achievements)) parts.push(...job.achievements);
+      }
+    }
+    return parts.join(' ').trim().split(/\s+/).filter(Boolean).length;
+  };
+
+  const handleToggleFolderMgmt = (val) => {
+    setFolderMgmtEnabled(val);
+    localStorage.setItem('folderMgmtEnabled', val ? 'true' : 'false');
+  };
   
   // Structured form data
-  const [formData, setFormData] = useState({
-    // Personal Info
-    name: '',
-    email: '',
-    phone: '',
-    location: '',
-    links: [''],
-    certifications: [''],
-    education: [''],
-    
-    // Skills & Experience
-    skills: [
-      { category: '', items: [''] }
-    ],
-    experience: [
-      {
-        roleId: '',
-        title: '',
-        company: '',
-        location: '',
-        start: '',
-        end: '',
-        achievements: ['']
-      }
-    ]
-  });
+  const [formData, setFormData] = useState(emptyFormData);
 
   // Helper functions to convert between form data and JSON
   const formDataToJson = () => {
     const fixedUserInfo = {
       name: formData.name,
+      yearsOfExperience: formData.yearsOfExperience ? parseFloat(formData.yearsOfExperience) : null,
       contact: {
         email: formData.email,
         phone: formData.phone,
@@ -81,6 +222,9 @@ const CVOptimizer = () => {
       education: formData.education.filter(edu => edu.trim())
     };
 
+    // Also repairs profiles saved before role ids were unique: any duplicate that
+    // comes back from storage is reissued rather than silently shadowing a sibling.
+    const usedRoleIds = new Set();
     const aiUserInfo = {
       coreSkillsBase: formData.skills
         .filter(skill => skill.category.trim())
@@ -90,15 +234,21 @@ const CVOptimizer = () => {
         })),
       experienceSource: formData.experience
         .filter(exp => exp.title.trim())
-        .map(exp => ({
-          roleId: exp.roleId || `role_${Date.now()}`,
-          title: exp.title,
-          company: exp.company,
-          location: exp.location,
-          start: exp.start,
-          end: exp.end,
-          baseAchievements: exp.achievements.filter(ach => ach.trim())
-        }))
+        .map(exp => {
+          let roleId = exp.roleId || makeRoleId();
+          while (usedRoleIds.has(roleId)) roleId = makeRoleId();
+          usedRoleIds.add(roleId);
+
+          return {
+            roleId,
+            title: exp.title,
+            company: exp.company,
+            location: exp.location,
+            start: exp.start,
+            end: exp.end,
+            baseAchievements: exp.achievements.filter(ach => ach.trim())
+          };
+        })
     };
 
     return { fixedUserInfo, aiUserInfo };
@@ -109,37 +259,50 @@ const CVOptimizer = () => {
       const fixed = fixedJson ? JSON.parse(fixedJson) : {};
       const ai = aiJson ? JSON.parse(aiJson) : {};
       
+      // Everything here is coerced. The source is model-generated JSON with no shape
+      // validation on the server, so a missing key must not reach a controlled input or
+      // a .trim() call during render — either one takes the page down.
+      const strList = (value, fallback = ['']) => {
+        const clean = Array.isArray(value) ? value.filter(v => typeof v === 'string') : [];
+        return clean.length ? clean : fallback;
+      };
+
       setFormData({
         name: fixed.name || '',
         email: fixed.contact?.email || '',
         phone: fixed.contact?.phone || '',
         location: fixed.contact?.location || '',
-        links: fixed.contact?.links?.length ? fixed.contact.links : [''],
-        certifications: fixed.certifications?.length ? fixed.certifications : [''],
-        education: fixed.education?.length ? fixed.education : [''],
-        
-        skills: ai.coreSkillsBase?.length ? ai.coreSkillsBase.map(skill => ({
-          category: skill.category,
-          items: skill.items.length ? skill.items : ['']
-        })) : [{ category: '', items: [''] }],
-        
-        experience: ai.experienceSource?.length ? ai.experienceSource.map(exp => ({
-          roleId: exp.roleId,
-          title: exp.title,
-          company: exp.company,
-          location: exp.location,
-          start: exp.start,
-          end: exp.end,
-          achievements: exp.baseAchievements.length ? exp.baseAchievements : ['']
-        })) : [{
-          roleId: '',
-          title: '',
-          company: '',
-          location: '',
-          start: '',
-          end: '',
-          achievements: ['']
-        }]
+        yearsOfExperience: fixed.yearsOfExperience ? String(fixed.yearsOfExperience) : '',
+        links: strList(fixed.contact?.links),
+        certifications: strList(fixed.certifications),
+        education: strList(fixed.education),
+
+        skills: Array.isArray(ai.coreSkillsBase) && ai.coreSkillsBase.length
+          ? ai.coreSkillsBase.map(skill => ({
+              category: skill?.category || '',
+              items: strList(skill?.items)
+            }))
+          : [{ category: '', items: [''] }],
+
+        experience: Array.isArray(ai.experienceSource) && ai.experienceSource.length
+          ? ai.experienceSource.map(exp => ({
+              roleId: exp?.roleId || '',
+              title: exp?.title || '',
+              company: exp?.company || '',
+              location: exp?.location || '',
+              start: exp?.start || '',
+              end: exp?.end || '',
+              achievements: strList(exp?.baseAchievements)
+            }))
+          : [{
+              roleId: '',
+              title: '',
+              company: '',
+              location: '',
+              start: '',
+              end: '',
+              achievements: ['']
+            }]
       });
     } catch (error) {
       console.error('Error parsing JSON:', error);
@@ -160,6 +323,37 @@ const CVOptimizer = () => {
     const root = document.documentElement;
     if (isDark) root.classList.add('dark'); else root.classList.remove('dark');
   }, [isDark]);
+
+  // Setup page: section rail state. Declared here, above the early returns, so hook
+  // order stays stable regardless of which page is rendering.
+  const [activeSection, setActiveSection] = useState(SETUP_SECTIONS[0].id);
+  const [collapsedSkills, setCollapsedSkills] = useState(() => new Set());
+  const [collapsedRoles, setCollapsedRoles] = useState(() => new Set());
+  const [skillDrafts, setSkillDrafts] = useState({});
+  const sectionRefs = useRef({});
+  // Bumped whenever a run starts or the session is cleared. A detection response
+  // that resolves after its bump is stale and must not touch state — that is how a
+  // score ended up on a page with no CV on it.
+  const detectRunRef = useRef(0);
+
+  // Scroll-spy for the rail. Re-armed whenever the setup page mounts its sections.
+  useEffect(() => {
+    if (currentPage !== 'setup') return undefined;
+    const nodes = SETUP_SECTIONS.map(s => sectionRefs.current[s.id]).filter(Boolean);
+    if (nodes.length === 0) return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter(e => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]?.target?.id) setActiveSection(visible[0].target.id);
+      },
+      { rootMargin: '-10% 0px -70% 0px', threshold: 0 }
+    );
+    nodes.forEach(n => observer.observe(n));
+    return () => observer.disconnect();
+  }, [currentPage]);
 
   const fixedInfoSchema = `{
   "name": "string",
@@ -185,6 +379,32 @@ const CVOptimizer = () => {
   ]
 }`;
 
+  // Wipe everything derived from the signed-in account. Called on sign-out and
+  // whenever a signed-in account turns out to have no stored profile, so one
+  // user's data can never be shown to (or saved under) the next.
+  const clearSessionData = () => {
+    setFormData(emptyFormData());
+    setAiUserInfo('');
+    setFixedUserInfo('');
+    setJobDescription('');
+    setOptimizedCv('');
+    setStructuredCv(null);
+    setKeywords([]);
+    setStats(null);
+    setNeedsFix(false);
+    setOverlapSkills([]);
+    detectRunRef.current++;
+    setAiScore(null);
+    setAiScoreLoading(false);
+    setCompanyName('');
+    setCoverLetter('');
+    setActiveDoc('cv');
+    setJdCollapsed(false);
+    setPdfError('');
+    setDownloadNotice('');
+    setCurrentPage('main');
+  };
+
   // Auth state management
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (user) => {
@@ -194,19 +414,24 @@ const CVOptimizer = () => {
         try {
           const userData = await getUserData(user.uid);
           if (userData) {
-            setAiUserInfo(userData.aiUserInfo || '');
+            // Repair role ids on the way in: profiles saved before ids were unique
+            // would otherwise optimise into a CV where every job shares one header.
+            const storedAi = withUniqueRoleIds(userData.aiUserInfo || '');
+            setAiUserInfo(storedAi);
             setFixedUserInfo(userData.fixedUserInfo || '');
-            
+
             // Populate form data from existing JSON
-            jsonToFormData(userData.fixedUserInfo || '', userData.aiUserInfo || '');
+            jsonToFormData(userData.fixedUserInfo || '', storedAi);
+          } else {
+            // Fresh account with nothing stored — start from a blank profile
+            // rather than inheriting whoever was signed in before.
+            clearSessionData();
           }
         } catch (error) {
           console.error('Error loading user data:', error);
         }
       } else {
-        // Clear data when signed out (optional - you can keep data in session)
-        // setAiUserInfo('');
-        // setFixedUserInfo('');
+        clearSessionData();
       }
     });
 
@@ -253,12 +478,18 @@ const CVOptimizer = () => {
     try {
       console.log('📄 Processing PDF:', file.name);
       const result = await processPdf(file);
-      
+
+      // The extraction model is given a roleId field with no uniqueness instruction, so
+      // repair before anything reads it. Optimize sends this state directly, and the
+      // setup overlay lifts as soon as the form is valid, so a user can generate from
+      // an import without ever saving.
+      const importedAi = withUniqueRoleIds(result.aiUserInfo);
+
       // Auto-populate the form data from PDF processing
-      jsonToFormData(result.fixedUserInfo, result.aiUserInfo);
-      
+      jsonToFormData(result.fixedUserInfo, importedAi);
+
       // Also update the JSON fields for backward compatibility
-      setAiUserInfo(result.aiUserInfo);
+      setAiUserInfo(importedAi);
       setFixedUserInfo(result.fixedUserInfo);
       
       // Move to personal info tab to show the results
@@ -276,6 +507,48 @@ const CVOptimizer = () => {
   };
 
   const downloadCv = async () => {
+    if (downloadingRef.current) return;
+    downloadingRef.current = true;
+    setIsDownloading(true);
+
+    // Everything below is inside the try whose finally releases downloadingRef.
+    // It used to start after the folder-handle await — so when that await hung, the
+    // guard stayed true forever and every later click returned silently.
+    try {
+    setDownloadNotice('');
+    setDownloadNoticeTone('warn');
+
+    // Acquire folder handle FIRST — must happen early while user gesture
+    // (transient activation) is still valid.
+    let preFetchedFolderHandle = null;
+    let filePickerBlocked = false;
+    console.log('[download] start: folderMgmt=%s apiSupported=%s doc=%s',
+      folderMgmtEnabled, isFolderApiSupported(), activeDoc);
+
+    if (folderMgmtEnabled && isFolderApiSupported()) {
+      try {
+        preFetchedFolderHandle = await getFolderHandle();
+        console.log('[download] folder handle acquired: %s', preFetchedFolderHandle?.name);
+      } catch (err) {
+        // Any failure here blocks the later save picker as well. By the time that
+        // picker would run, PDF rendering has consumed the click's transient
+        // activation, so it can only throw SecurityError and drop the file into
+        // the default download folder without saying so.
+        filePickerBlocked = true;
+        if (err?.name === 'AbortError') {
+          setDownloadNotice('Folder access was cancelled, so the PDF went to your usual downloads folder.');
+        } else if (err?.name === 'PICKER_TIMEOUT' || /already active/i.test(err?.message || '')) {
+          // Chrome is not answering its own file picker. Nothing the app can do about
+          // that, so stop letting it cost the user their download.
+          console.warn('[download] folder picker unavailable; continuing without it');
+          setDownloadNotice('Chrome did not respond to the folder picker, so the PDF went to your usual downloads folder. Restarting Chrome usually clears this, or switch folder management off.');
+        } else {
+          console.error('[download] could not acquire folder handle:', err);
+          setDownloadNotice('Could not open the chosen folder, so the PDF went to your usual downloads folder.');
+        }
+      }
+    }
+
     const formatName = (raw) => {
       const clean = String(raw || '').trim();
       if (!clean) return '';
@@ -305,16 +578,24 @@ const CVOptimizer = () => {
       return 'RoleReady_CV';
     };
 
-    const baseFilename = getPreferredFilename();
+    // The download follows whichever document is on screen.
+    const showingLetter = Boolean(coverLetter) && activeDoc === 'letter';
+    const baseFilename = showingLetter
+      ? `${getPreferredFilename()}_Cover_Letter`
+      : getPreferredFilename();
+
     // Build full HTML document including styles
     let fullHtml = '';
-    if (structuredCv) {
+    if (showingLetter) {
+      fullHtml = renderCoverLetterHtml(coverLetter, structuredCv);
+    } else if (structuredCv) {
       fullHtml = renderCvHtml(structuredCv);
     } else if (optimizedCv) {
       fullHtml = generateDownloadHtml(optimizedCv);
     }
 
     if (fullHtml) {
+
       const opt = {
         margin:       [10, 10, 10, 10],
         filename:     `${baseFilename}.pdf`,
@@ -324,9 +605,26 @@ const CVOptimizer = () => {
         pagebreak:    { mode: ['css', 'legacy'], avoid: ['li', '.skills-block'] }
       };
 
-      // Helper to use File System Access API when available
       const saveWithPicker = async (blob) => {
-        if (!('showSaveFilePicker' in window)) return false;
+        if (preFetchedFolderHandle) {
+          try {
+            const where = await writePdfWithHandle(blob, preFetchedFolderHandle, companyName, `${baseFilename}.pdf`);
+            // Each download makes its own numbered folder, so say which one — otherwise
+            // the file looks missing when the user checks the folder they named.
+            if (where?.folder) {
+              console.log('[download] saved to %s/%s/%s', where.root, where.folder, where.filename);
+              setDownloadNoticeTone('ok');
+              setDownloadNotice(`Saved to ${where.root}/${where.folder}/${where.filename}`);
+            }
+            return true;
+          } catch (err) {
+            console.error('[download] writing into the chosen folder failed:', err);
+            setDownloadNoticeTone('warn');
+            setDownloadNotice(`Could not write into "${preFetchedFolderHandle?.name || 'the chosen folder'}" (${err?.name || 'error'}). The PDF went to your usual downloads folder instead.`);
+            return false;
+          }
+        }
+        if (filePickerBlocked || !('showSaveFilePicker' in window)) return false;
         try {
           const handle = await window.showSaveFilePicker({
             suggestedName: `${baseFilename}.pdf`,
@@ -336,23 +634,46 @@ const CVOptimizer = () => {
           await writable.write(blob);
           await writable.close();
           return true;
-        } catch {
+        } catch (err) {
+          // SecurityError here means PDF rendering outlived the click's transient
+          // activation, which is expected for anything but a very small CV.
+          if (err?.name !== 'AbortError') {
+            console.warn('[download] save picker unavailable (%s), using the default download', err?.name || err);
+          }
           return false;
         }
       };
 
+      // The CV is drawn with jsPDF text primitives, not screenshotted. html2pdf is
+      // html2canvas + addImage: it produced a PDF containing two JPEGs and zero
+      // extractable text, so an ATS parsing it read nothing at all. Verified with
+      // poppler, mupdf and pdfjs — all returned 0 characters.
+      if (!showingLetter && structuredCv) {
+        try {
+          const pdf = buildCvPdf(structuredCv);
+          const blob = pdf.output('blob');
+          const saved = await saveWithPicker(blob);
+          if (!saved) {
+            console.log('[download] falling back to the browser download');
+            pdf.save(`${baseFilename}.pdf`);
+          }
+          return;
+        } catch (err) {
+          // Fall through to the html2pdf path rather than lose the download.
+          console.error('[download] text PDF build failed, falling back to the image renderer:', err);
+        }
+      }
+
       try {
-        // Try generate blob and use Save File Picker
         const pdf = await html2pdf().set(opt).from(fullHtml).toPdf().get('pdf');
         const blob = pdf.output('blob');
         const saved = await saveWithPicker(blob);
         if (!saved) {
-          // Fallback to automatic download
-          await html2pdf().set(opt).from(fullHtml).save();
+          console.log('[download] falling back to the browser download');
+          pdf.save(`${baseFilename}.pdf`);
         }
         return;
       } catch (e) {
-        console.warn('html2pdf(from string) failed, trying DOM container', e);
         // Fallback to DOM container render
         const container = document.createElement('div');
         container.style.position = 'fixed';
@@ -370,11 +691,23 @@ const CVOptimizer = () => {
           const blob = pdf.output('blob');
           const saved = await saveWithPicker(blob);
           if (!saved) {
-            await html2pdf().set(opt).from(container).save();
+            console.log('[download] falling back to the browser download (container)');
+            pdf.save(`${baseFilename}.pdf`);
           }
-        } finally {
+        } catch (inner) {
+          // Both render paths failed. Fall through to the HTML download below rather
+          // than throwing out of downloadCv, which produced no file and no message.
+          console.error('[download] both PDF render paths failed:', e, inner);
+          setDownloadNoticeTone('warn');
+          setDownloadNotice('Could not build the PDF, so an HTML copy was downloaded instead. Open it and print to PDF.');
           document.body.removeChild(container);
+          const htmlOnly = structuredCv && !(coverLetter && activeDoc === 'letter')
+            ? renderCvHtml(structuredCv)
+            : fullHtml;
+          downloadHtml(htmlOnly, `${baseFilename}.html`);
+          return;
         }
+        document.body.removeChild(container);
         return;
       }
     }
@@ -397,9 +730,62 @@ const CVOptimizer = () => {
         await writable.write(new Blob([htmlFallback], { type: 'text/html' }));
         await writable.close();
         return;
-      } catch {}
+      } catch (err) {
+        if (err?.name !== 'AbortError') {
+          console.warn('[download] HTML save picker unavailable (%s), using the default download', err?.name || err);
+        }
+      }
     }
     downloadHtml(htmlFallback, `${baseFilename}.html`);
+    } catch (err) {
+      // Last resort. Without this the exception escaped downloadCv entirely: no file,
+      // no message, nothing but an unhandled rejection in the console.
+      console.error('[download] failed:', err);
+      setDownloadNoticeTone('warn');
+      setDownloadNotice('The download failed. Nothing was saved — please try again.');
+    } finally {
+      downloadingRef.current = false;
+      setIsDownloading(false);
+    }
+  };
+
+
+  // Copies the letter as plain text. navigator.clipboard needs a secure context and
+  // permission, so fall back to a hidden textarea + execCommand rather than failing
+  // silently on http origins or older browsers.
+  const copyCoverLetter = async () => {
+    if (!coverLetter) return;
+    const done = () => {
+      setLetterCopied(true);
+      setTimeout(() => setLetterCopied(false), 2000);
+    };
+
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(coverLetter);
+        done();
+        return;
+      }
+    } catch {
+      // fall through to the legacy path
+    }
+
+    try {
+      const scratch = document.createElement('textarea');
+      scratch.value = coverLetter;
+      scratch.setAttribute('readonly', '');
+      scratch.style.position = 'fixed';
+      scratch.style.opacity = '0';
+      document.body.appendChild(scratch);
+      scratch.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(scratch);
+      if (ok) done();
+      else setDownloadNotice('Could not copy the letter. Select the text in the preview and copy it manually.');
+    } catch (err) {
+      console.error('[copy] cover letter copy failed', err);
+      setDownloadNotice('Could not copy the letter. Select the text in the preview and copy it manually.');
+    }
   };
 
   const handleOptimize = async () => {
@@ -415,19 +801,52 @@ const CVOptimizer = () => {
     setIsProcessing(true);
     setOptimizedCv('');
     setKeywords([]);
+    detectRunRef.current++;
+    setAiScore(null);
+    setCoverLetter('');
+    setActiveDoc('cv');
 
     try {
-      const { cvContent, keywords: kws, keywordsFiltered: kf, cv, needsFix: nf, stats: st, overlapSkills: os } = await optimizeCvService({
+      const { cvContent, keywords: kws, keywordsFiltered: kf, cv, needsFix: nf, stats: st, overlapSkills: os, companyName: cn, coverLetter: cl } = await optimizeCvService({
         jobDescription,
         aiUserInfo,
-        fixedUserInfo
+        fixedUserInfo,
+        includeCoverLetter: wantsCoverLetter
       });
       setOptimizedCv(cvContent);
       setStructuredCv(cv || null);
       setKeywords(kf && kf.length ? kf : kws);
+      if (cn) setCompanyName(cn);
       setNeedsFix(Boolean(nf));
       setStats(st || null);
       setOverlapSkills(Array.isArray(os) ? os : []);
+      setCoverLetter(typeof cl === 'string' ? cl : '');
+      if (wantsCoverLetter && !cl) {
+        setDownloadNotice('The CV is ready, but the cover letter could not be written this time.');
+      }
+
+      // Non-blocking AI detection — runs after main optimization
+      if (cv) {
+        const parts = [];
+        if (cv.summary) parts.push(cv.summary);
+        if (Array.isArray(cv.experience)) {
+          for (const job of cv.experience) {
+            if (Array.isArray(job.achievements)) parts.push(...job.achievements);
+          }
+        }
+        const detectText = parts.join('\n').trim();
+        if (detectText) {
+          const run = ++detectRunRef.current;
+          setAiScoreLoading(true);
+          detectAiContent(detectText)
+            .then(score => { if (detectRunRef.current === run) setAiScore(score); })
+            .catch(() => {/* silently ignore detection errors */})
+            .finally(() => { if (detectRunRef.current === run) setAiScoreLoading(false); });
+        }
+      }
+      
+      // Collapse JD into sidebar after CV is successfully generated (desktop only)
+      setJdCollapsed(true);
     } catch (error) {
       if (error.message.includes('500')) {
         alert('Server error occurred. The OpenAI API may be temporarily unavailable. Please try again in a few moments.');
@@ -449,488 +868,553 @@ const CVOptimizer = () => {
 
   // Show setup page
   if (currentPage === 'setup') {
+    const sectionState = (id) => {
+      switch (id) {
+        case 'import':
+          return { count: null, done: Boolean(formData.name.trim()) };
+        case 'personal':
+          return {
+            count: [formData.name, formData.email, formData.phone, formData.location, formData.yearsOfExperience].filter(v => String(v).trim()).length,
+            done: Boolean(formData.name.trim() && formData.email.trim())
+          };
+        case 'links': {
+          const n = formData.links.filter(l => l.trim()).length;
+          return { count: n, done: n > 0 };
+        }
+        case 'skills': {
+          const n = formData.skills.filter(s => s.category.trim() && s.items.some(i => i.trim())).length;
+          return { count: n, done: n > 0 };
+        }
+        case 'experience': {
+          const n = formData.experience.filter(e => e.title.trim()).length;
+          return { count: n, done: n > 0 };
+        }
+        case 'education': {
+          const n = formData.education.filter(e => e.trim()).length;
+          return { count: n, done: n > 0 };
+        }
+        case 'certifications': {
+          const n = formData.certifications.filter(c => c.trim()).length;
+          return { count: n, done: n > 0 };
+        }
+        default:
+          return { count: null, done: false };
+      }
+    };
+
+    const completed = SETUP_SECTIONS.filter(s => sectionState(s.id).done).length;
+    const progressPct = Math.round((completed / SETUP_SECTIONS.length) * 100);
+
+    const scrollToSection = (id) => {
+      const node = sectionRefs.current[id];
+      if (node) node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const addSkillToken = (skillIndex) => {
+      const raw = (skillDrafts[skillIndex] || '').trim();
+      if (!raw) return;
+      const newSkills = formData.skills.map((s, i) => (
+        i === skillIndex
+          ? { ...s, items: [...s.items.filter(x => x.trim()), ...raw.split(',').map(x => x.trim()).filter(Boolean)] }
+          : s
+      ));
+      setFormData(prev => ({ ...prev, skills: newSkills }));
+      setSkillDrafts(prev => ({ ...prev, [skillIndex]: '' }));
+    };
+
+    const removeSkillToken = (skillIndex, itemIndex) => {
+      const newSkills = formData.skills.map((s, i) => (
+        i === skillIndex ? { ...s, items: s.items.filter((_, j) => j !== itemIndex) } : s
+      ));
+      setFormData(prev => ({ ...prev, skills: newSkills }));
+    };
+
+    const toggleRecord = (setter, key) => setter(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+
     return (
-      <div className="min-h-screen p-6 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-lg overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 dark:from-gray-800 dark:to-gray-700">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Target className="h-8 w-8" />
-                  <h1 className="text-3xl font-bold">Setup Your Profile</h1>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4 sm:p-6">
+        <div className="max-w-7xl mx-auto bg-white dark:bg-gray-900 rounded-xl shadow-lg">
+          {/* Gradient header band, matching the main app */}
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-gray-800 dark:to-gray-700 text-white p-5 sm:p-6 rounded-t-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <Target className="h-7 w-7 shrink-0" />
+                <div className="min-w-0">
+                  <h1 className="text-2xl font-bold truncate">Setup Your Profile</h1>
+                  <p className="text-blue-100 dark:text-gray-300 text-sm">This is the raw material every tailored CV is built from</p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage('main')}
-                    className="px-4 py-2 rounded-md bg-white/20 text-white hover:bg-white/30 transition-colors"
-                  >
-                    ← Back to Main
-                  </button>
-                  <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v => !v)} isDark={isDark} />
-                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage('main')}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-white/20 text-white text-sm hover:bg-white/30 transition-colors"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to app
+                </button>
+                <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v => !v)} isDark={isDark} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
               </div>
             </div>
-            <div className="p-6 space-y-6 text-gray-900 dark:text-gray-100">
-              
-              {/* CV Upload Section */}
-              <div className="border border-blue-200 dark:border-gray-700 rounded-lg p-6 bg-blue-50 dark:bg-gray-900">
-                <h3 className="text-lg font-semibold text-blue-900 dark:text-gray-100 mb-3 flex items-center gap-2">
-                  <Upload className="h-5 w-5 text-blue-800 dark:text-gray-200" />
-                  Upload Your CV (Recommended)
-                </h3>
-                <p className="text-blue-800 dark:text-gray-300 text-sm mb-4">
-                  Upload your CV in PDF format and we'll automatically extract both your skills/experience and personal information.
-                </p>
-                <div className="flex flex-col gap-2">
-                  <label className="relative cursor-pointer inline-block w-fit">
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      onChange={handlePdfUpload}
-                      disabled={isProcessingPdf}
-                      className="hidden"
-                    />
-                    <div className={`inline-flex items-center gap-2 px-6 py-3 rounded-md text-sm font-medium transition-colors ${
-                      isProcessingPdf ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer'
-                    }`}>
-                      {isProcessingPdf ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                          Processing PDF...
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="h-4 w-4" />
-                          Upload CV (PDF)
-                        </>
-                      )}
+          </div>
+
+          <div className="flex gap-6 p-4 sm:p-6">
+            {/* Section rail */}
+            <aside className="hidden lg:block w-60 shrink-0">
+              <div className="sticky top-6 space-y-4">
+                <nav aria-label="Profile sections" className="space-y-0.5">
+                  <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-600">Sections</div>
+                  {SETUP_SECTIONS.map((s) => {
+                    const state = sectionState(s.id);
+                    const active = activeSection === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => scrollToSection(s.id)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+                          active
+                            ? 'bg-blue-50 dark:bg-blue-900/25 text-blue-700 dark:text-blue-300 font-medium'
+                            : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                            state.done ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                        />
+                        <span className="flex-1 text-left truncate">{s.label}</span>
+                        {state.count !== null && state.count > 0 && (
+                          <span className="text-xs tabular-nums text-gray-400 dark:text-gray-600">{state.count}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </nav>
+
+                <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
+                  <div>
+                    <div className="h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all duration-500"
+                        style={{ width: `${progressPct}%` }}
+                      />
                     </div>
-                  </label>
-                  {pdfError && (
-                    <div className="text-red-600 text-xs bg-red-50 border border-red-200 rounded p-2">
-                      {pdfError}
+                    <div className="mt-1.5 flex justify-between text-[11px] text-gray-500 dark:text-gray-400">
+                      <span>{completed} of {SETUP_SECTIONS.length} complete</span>
+                      <span className="tabular-nums">{progressPct}%</span>
                     </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => { await saveUserInfo(); setCurrentPage('main'); }}
+                    disabled={isSaving || !isValidFormData()}
+                    className="w-full px-4 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition-all"
+                  >
+                    {isSaving ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4" />
+                        Save &amp; Continue
+                      </>
+                    )}
+                  </button>
+                  {!isValidFormData() && (
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
+                      Needs a name, one skill group and one role before it can be saved.
+                    </p>
                   )}
                 </div>
               </div>
+            </aside>
 
-              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                <User className="h-5 w-5 text-gray-700 dark:text-gray-200" />
-                Personal Info
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                  <input type="text" value={formData.name} onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))} className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" placeholder="John Doe" />
+            {/* Canvas */}
+            <div className="flex-1 min-w-0 space-y-8">
+              {/* Import */}
+              <section id="import" ref={(el) => { sectionRefs.current.import = el; }} className="scroll-mt-6">
+                <SectionHead icon={Upload} title="Import" hint="Fastest way to fill this in. We read the PDF and populate every section below." />
+                <div className="rounded-xl border border-blue-200 dark:border-gray-700 bg-blue-50 dark:bg-gray-800/50 p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                    <label className="cursor-pointer shrink-0">
+                      <input type="file" accept=".pdf" onChange={handlePdfUpload} disabled={isProcessingPdf} className="hidden" />
+                      <span className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                        isProcessingPdf ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}>
+                        {isProcessingPdf ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                            Reading your CV...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-4 w-4" />
+                            Upload CV (PDF)
+                          </>
+                        )}
+                      </span>
+                    </label>
+                    <p className="text-sm text-blue-900 dark:text-gray-300">
+                      Or fill everything in by hand below. Text-based PDFs only, up to 10MB.
+                    </p>
+                  </div>
+                  {pdfError && (
+                    <div className="mt-3 flex items-start gap-2 text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 rounded-lg p-2.5">
+                      <AlertCircle className="h-4 w-4 mt-px shrink-0" />
+                      <span>{pdfError}</span>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input type="email" value={formData.email} onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))} className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" placeholder="john@example.com" />
+              </section>
+
+              {/* Personal */}
+              <section id="personal" ref={(el) => { sectionRefs.current.personal = el; }} className="scroll-mt-6">
+                <SectionHead icon={User} title="Personal" hint="Printed at the top of every CV. Never sent to the model except your years of experience." />
+                <div className={`${cardCls} p-4 sm:p-5`}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelCls}>Full name</label>
+                      <input type="text" value={formData.name} onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))} className={inputCls} placeholder="Jane Doe" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Email</label>
+                      <input type="email" value={formData.email} onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))} className={inputCls} placeholder="jane@example.com" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Phone</label>
+                      <input type="tel" value={formData.phone} onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))} className={inputCls} placeholder="+1 555 123 4567" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Location</label>
+                      <input type="text" value={formData.location} onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))} className={inputCls} placeholder="Berlin, Germany" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className={labelCls}>
+                        Total years of experience
+                        <span className="ml-2 font-normal text-gray-400 dark:text-gray-600">Calculated from your roles below. Override it here if it is wrong.</span>
+                      </label>
+                      <input type="number" min="0" step="0.5" value={formData.yearsOfExperience} onChange={(e) => setFormData(prev => ({ ...prev, yearsOfExperience: e.target.value }))} className={`${inputCls} sm:max-w-[10rem]`} placeholder="8" />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                  <input type="tel" value={formData.phone} onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))} className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" placeholder="+1 (555) 123-4567" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                  <input type="text" value={formData.location} onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))} className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500" placeholder="San Francisco, CA" />
-                </div>
-              </div>
+              </section>
+
               {/* Links */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Links (LinkedIn, GitHub, etc.)</label>
-                {formData.links.map((link, index) => (
-                  <div key={index} className="flex gap-2 mb-2">
-                    <input
-                      type="url"
-                      value={link}
-                      onChange={(e) => {
-                        const newLinks = [...formData.links];
-                        newLinks[index] = e.target.value;
-                        setFormData(prev => ({ ...prev, links: newLinks }));
-                      }}
-                      className="flex-1 p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-                      placeholder="https://linkedin.com/in/yourprofile"
-                    />
-                    {formData.links.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newLinks = formData.links.filter((_, i) => i !== index);
-                          setFormData(prev => ({ ...prev, links: newLinks }));
-                        }}
-                        className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, links: [...prev.links, ''] }))}
-                  className="text-blue-600 hover:text-blue-700 text-sm"
-                >
-                  + Add Link
-                </button>
-              </div>
-
-              {/* Certifications */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Certifications</label>
-                {formData.certifications.map((cert, index) => (
-                  <div key={index} className="flex gap-2 mb-2">
-                    <input
-                      type="text"
-                      value={cert}
-                      onChange={(e) => {
-                        const newCerts = [...formData.certifications];
-                        newCerts[index] = e.target.value;
-                        setFormData(prev => ({ ...prev, certifications: newCerts }));
-                      }}
-                      className="flex-1 p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-                      placeholder="AWS Certified Solutions Architect"
-                    />
-                    {formData.certifications.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newCerts = formData.certifications.filter((_, i) => i !== index);
-                          setFormData(prev => ({ ...prev, certifications: newCerts }));
-                        }}
-                        className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, certifications: [...prev.certifications, ''] }))}
-                  className="text-blue-600 hover:text-blue-700 text-sm"
-                >
-                  + Add Certification
-                </button>
-              </div>
-
-              {/* Education */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Education</label>
-                {formData.education.map((edu, index) => (
-                  <div key={index} className="flex gap-2 mb-2">
-                    <input
-                      type="text"
-                      value={edu}
-                      onChange={(e) => {
-                        const newEdu = [...formData.education];
-                        newEdu[index] = e.target.value;
-                        setFormData(prev => ({ ...prev, education: newEdu }));
-                      }}
-                      className="flex-1 p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-                      placeholder="Bachelor of Computer Science, Stanford University (2020)"
-                    />
-                    {formData.education.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newEdu = formData.education.filter((_, i) => i !== index);
-                          setFormData(prev => ({ ...prev, education: newEdu }));
-                        }}
-                        className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, education: [...prev.education, ''] }))}
-                  className="text-blue-600 hover:text-blue-700 text-sm"
-                >
-                  + Add Education
-                </button>
-              </div>
+              <section id="links" ref={(el) => { sectionRefs.current.links = el; }} className="scroll-mt-6">
+                <SectionHead icon={Link2} title="Links" hint="LinkedIn, GitHub, a portfolio. Printed under your contact line." />
+                <SimpleList
+                  values={formData.links}
+                  type="url"
+                  placeholder="https://linkedin.com/in/yourprofile"
+                  addLabel="Add link"
+                  onChange={(i, v) => setFormData(prev => ({ ...prev, links: prev.links.map((l, j) => (j === i ? v : l)) }))}
+                  onAdd={() => setFormData(prev => ({ ...prev, links: [...prev.links, ''] }))}
+                  onRemove={(i) => setFormData(prev => ({ ...prev, links: prev.links.filter((_, j) => j !== i) }))}
+                />
+              </section>
 
               {/* Skills */}
-              <div className="space-y-6">
-                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                  <Target className="h-5 w-5 text-gray-700 dark:text-gray-200" />
-                  Skills
-                </h3>
-                {/* Skills */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Skills by Category</label>
-                  {formData.skills.map((skill, skillIndex) => (
-                    <div key={skillIndex} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-4 bg-white dark:bg-gray-900">
-                      {/* Category Header */}
-                      <div className="flex gap-2 mb-4">
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Category Name</label>
-                          <input
-                            type="text"
-                            value={skill.category}
-                            onChange={(e) => {
-                              const newSkills = [...formData.skills];
-                              newSkills[skillIndex].category = e.target.value;
-                              setFormData(prev => ({ ...prev, skills: newSkills }));
-                            }}
-                            className="w-full p-3 border-2 border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-400 bg-white dark:bg-gray-800 dark:text-gray-100 font-medium"
-                            placeholder="Programming Languages"
-                          />
-                        </div>
-                        {formData.skills.length > 1 && (
-                          <div className="flex items-end">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newSkills = formData.skills.filter((_, i) => i !== skillIndex);
-                                setFormData(prev => ({ ...prev, skills: newSkills }));
-                              }}
-                              className="px-3 py-3 text-red-600 hover:bg-red-50 rounded-lg border border-red-200"
-                            >
-                              Remove Category
-                            </button>
+              <section id="skills" ref={(el) => { sectionRefs.current.skills = el; }} className="scroll-mt-6">
+                <SectionHead
+                  icon={Zap}
+                  title="Skills"
+                  hint="Grouped the way you want them printed. Type a skill and press Enter, or paste a comma-separated list."
+                  actions={
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, skills: [...prev.skills, { category: '', items: [] }] }))}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add group
+                    </button>
+                  }
+                />
+                <div className={cardCls}>
+                  <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {formData.skills.map((skill, skillIndex) => {
+                      const open = !collapsedSkills.has(skillIndex);
+                      const liveItems = skill.items.filter(i => i.trim());
+                      return (
+                        <article key={skillIndex} className="flex">
+                          <div className="w-10 shrink-0 pt-4 text-center">
+                            <span className="text-xs tabular-nums text-gray-400 dark:text-gray-600">{skillIndex + 1}</span>
                           </div>
-                        )}
-                      </div>
-                      {/* Skills Items */}
-                      <div className="space-y-2">
-                        <label className="block text-xs font-medium text-gray-600 mb-2">Skills in this category</label>
-                        {skill.items.map((item, itemIndex) => (
-                          <div key={itemIndex} className="flex gap-2">
-                            <input
-                              type="text"
-                              value={item}
-                              onChange={(e) => {
-                                const newSkills = [...formData.skills];
-                                newSkills[skillIndex].items[itemIndex] = e.target.value;
-                                setFormData(prev => ({ ...prev, skills: newSkills }));
-                              }}
-                              className="flex-1 p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-                              placeholder="JavaScript, Python, Java"
-                            />
-                            {skill.items.length > 1 && (
+                          <div className="flex-1 min-w-0 p-4 pl-0 pr-4">
+                            <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  const newSkills = [...formData.skills];
-                                  newSkills[skillIndex].items = newSkills[skillIndex].items.filter((_, i) => i !== itemIndex);
+                                onClick={() => toggleRecord(setCollapsedSkills, skillIndex)}
+                                className="p-1 -ml-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 shrink-0"
+                                aria-expanded={open}
+                                aria-label={open ? 'Collapse group' : 'Expand group'}
+                              >
+                                <ChevronRight className={`h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`} />
+                              </button>
+                              <input
+                                type="text"
+                                value={skill.category}
+                                onChange={(e) => {
+                                  const newSkills = formData.skills.map((s, i) => (i === skillIndex ? { ...s, category: e.target.value } : s));
                                   setFormData(prev => ({ ...prev, skills: newSkills }));
                                 }}
-                                className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg text-sm"
-                              >
-                                Remove
-                              </button>
+                                className="flex-1 min-w-0 bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none text-sm font-semibold text-gray-800 dark:text-gray-100 placeholder-gray-400 py-1"
+                                placeholder="Group name, e.g. Cloud & Infrastructure"
+                                aria-label="Category name"
+                              />
+                              <span className="text-xs text-gray-400 dark:text-gray-600 shrink-0 tabular-nums">{liveItems.length} skills</span>
+                              {formData.skills.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData(prev => ({ ...prev, skills: prev.skills.filter((_, i) => i !== skillIndex) }));
+                                    setCollapsedSkills(new Set());
+                                  }}
+                                  className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                  aria-label="Remove group"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+
+                            {open && (
+                              <div className="mt-3 ml-6 pl-3 border-l-2 border-gray-100 dark:border-gray-800">
+                                <div className="flex flex-wrap gap-1.5 items-center">
+                                  {skill.items.map((item, itemIndex) => (
+                                    item.trim() ? (
+                                      <span key={itemIndex} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 text-xs font-medium">
+                                        {item}
+                                        <button
+                                          type="button"
+                                          onClick={() => removeSkillToken(skillIndex, itemIndex)}
+                                          className="p-0.5 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                                          aria-label={`Remove ${item}`}
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </button>
+                                      </span>
+                                    ) : null
+                                  ))}
+                                  <input
+                                    type="text"
+                                    value={skillDrafts[skillIndex] || ''}
+                                    onChange={(e) => setSkillDrafts(prev => ({ ...prev, [skillIndex]: e.target.value }))}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addSkillToken(skillIndex); }
+                                      if (e.key === 'Backspace' && !(skillDrafts[skillIndex] || '') && liveItems.length) {
+                                        removeSkillToken(skillIndex, skill.items.length - 1);
+                                      }
+                                    }}
+                                    onBlur={() => addSkillToken(skillIndex)}
+                                    className="flex-1 min-w-[8rem] bg-transparent border-0 focus:outline-none text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600 py-1"
+                                    placeholder={liveItems.length ? 'Add another…' : 'Type a skill and press Enter'}
+                                    aria-label={`Add skill to ${skill.category || 'group'}`}
+                                  />
+                                </div>
+                              </div>
                             )}
                           </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newSkills = [...formData.skills];
-                            newSkills[skillIndex].items.push('');
-                            setFormData(prev => ({ ...prev, skills: newSkills }));
-                          }}
-                          className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                        >
-                          + Add Skill to this Category
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, skills: [...prev.skills, { category: '', items: [''] }] }))}
-                    className="text-blue-600 hover:text-blue-700 text-sm font-medium border border-blue-200 rounded-lg px-4 py-2 hover:bg-blue-50"
-                  >
-                    + Add New Skill Category
-                  </button>
+                        </article>
+                      );
+                    })}
+                  </div>
                 </div>
+              </section>
 
-                {/* Experience */}
-                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                  <Target className="h-5 w-5 text-gray-700 dark:text-gray-200" />
-                  Experience
-                </h3>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Work Experience</label>
-                  {formData.experience.map((exp, expIndex) => (
-                    <div key={expIndex} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-4 bg-white dark:bg-gray-900">
-                      {/* Job Header */}
-                      <div className="mb-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Job Title</label>
-                            <input
-                              type="text"
-                              value={exp.title}
-                              onChange={(e) => {
-                                const newExp = [...formData.experience];
-                                newExp[expIndex].title = e.target.value;
-                                setFormData(prev => ({ ...prev, experience: newExp }));
-                              }}
-                              className="w-full p-3 border-2 border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-400 bg-white dark:bg-gray-800 dark:text-gray-100 font-medium"
-                              placeholder="Software Engineer"
-                            />
+              {/* Experience */}
+              <section id="experience" ref={(el) => { sectionRefs.current.experience = el; }} className="scroll-mt-6">
+                <SectionHead
+                  icon={Briefcase}
+                  title="Experience"
+                  hint="Write what you actually did. Each tailored CV re-angles these toward the job, it never invents new ones."
+                  actions={
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({
+                        ...prev,
+                        experience: [...prev.experience, { roleId: '', title: '', company: '', location: '', start: '', end: '', achievements: [''] }]
+                      }))}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add role
+                    </button>
+                  }
+                />
+                <div className={cardCls}>
+                  <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {formData.experience.map((exp, expIndex) => {
+                      const open = !collapsedRoles.has(expIndex);
+                      const achievementCount = exp.achievements.filter(a => a.trim()).length;
+                      const dates = [exp.start, exp.end].filter(Boolean).join(' – ');
+                      const setExp = (patch) => setFormData(prev => ({
+                        ...prev,
+                        experience: prev.experience.map((e, i) => (i === expIndex ? { ...e, ...patch } : e))
+                      }));
+                      return (
+                        <article key={expIndex} className="flex">
+                          <div className="w-10 shrink-0 pt-4 text-center">
+                            <span className="text-xs tabular-nums text-gray-400 dark:text-gray-600">{expIndex + 1}</span>
                           </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Company</label>
-                            <input
-                              type="text"
-                              value={exp.company}
-                              onChange={(e) => {
-                                const newExp = [...formData.experience];
-                                newExp[expIndex].company = e.target.value;
-                                setFormData(prev => ({ ...prev, experience: newExp }));
-                              }}
-                              className="w-full p-3 border-2 border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-400 bg-white dark:bg-gray-800 dark:text-gray-100 font-medium"
-                              placeholder="Tech Corp"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Location</label>
-                            <input
-                              type="text"
-                              value={exp.location}
-                              onChange={(e) => {
-                                const newExp = [...formData.experience];
-                                newExp[expIndex].location = e.target.value;
-                                setFormData(prev => ({ ...prev, experience: newExp }));
-                              }}
-                              className="w-full p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-                              placeholder="San Francisco, CA"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Duration</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                value={exp.start}
-                                onChange={(e) => {
-                                  const newExp = [...formData.experience];
-                                  newExp[expIndex].start = e.target.value;
-                                  setFormData(prev => ({ ...prev, experience: newExp }));
-                                }}
-                                className="flex-1 p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-                                placeholder="2020-01"
-                              />
-                              <span className="flex items-center text-gray-500 text-sm">to</span>
-                              <input
-                                type="text"
-                                value={exp.end}
-                                onChange={(e) => {
-                                  const newExp = [...formData.experience];
-                                  newExp[expIndex].end = e.target.value;
-                                  setFormData(prev => ({ ...prev, experience: newExp }));
-                                }}
-                                className="flex-1 p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-                                placeholder="Present"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      {/* Achievements Section */}
-                      <div className="space-y-2">
-                        <label className="block text-xs font-medium text-gray-600 mb-2">Key Achievements</label>
-                        {exp.achievements.map((achievement, achIndex) => (
-                          <div key={achIndex} className="flex gap-2">
-                            <textarea
-                              value={achievement}
-                              onChange={(e) => {
-                                const newExp = [...formData.experience];
-                                newExp[expIndex].achievements[achIndex] = e.target.value;
-                                setFormData(prev => ({ ...prev, experience: newExp }));
-                              }}
-                              className="flex-1 p-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-                              placeholder="Developed web applications using React and Node.js"
-                              rows="2"
-                            />
-                            {exp.achievements.length > 1 && (
+                          <div className="flex-1 min-w-0 p-4 pl-0 pr-4">
+                            <div className="flex items-start gap-2">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  const newExp = [...formData.experience];
-                                  newExp[expIndex].achievements = newExp[expIndex].achievements.filter((_, i) => i !== achIndex);
-                                  setFormData(prev => ({ ...prev, experience: newExp }));
-                                }}
-                                className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg text-sm"
+                                onClick={() => toggleRecord(setCollapsedRoles, expIndex)}
+                                className="p-1 -ml-1 mt-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 shrink-0"
+                                aria-expanded={open}
+                                aria-label={open ? 'Collapse role' : 'Expand role'}
                               >
-                                Remove
+                                <ChevronRight className={`h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`} />
                               </button>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">
+                                  {exp.title || <span className="text-gray-400 font-normal">Untitled role</span>}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                  {[exp.company, exp.location].filter(Boolean).join(' · ') || 'No company yet'}
+                                </div>
+                              </div>
+                              <span className="hidden sm:block text-xs text-gray-400 dark:text-gray-600 shrink-0 text-right">
+                                {dates && <span className="tabular-nums">{dates}</span>}
+                                {dates && achievementCount > 0 && <span> · </span>}
+                                {achievementCount > 0 && <span>{achievementCount} achievements</span>}
+                              </span>
+                              {formData.experience.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData(prev => ({ ...prev, experience: prev.experience.filter((_, i) => i !== expIndex) }));
+                                    setCollapsedRoles(new Set());
+                                  }}
+                                  className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                  aria-label="Remove role"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+
+                            {open && (
+                              <div className="mt-4 ml-6 pl-3 border-l-2 border-gray-100 dark:border-gray-800 space-y-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className={labelCls}>Job title</label>
+                                    <input type="text" value={exp.title} onChange={(e) => setExp({ title: e.target.value })} className={inputCls} placeholder="Senior Platform Engineer" />
+                                  </div>
+                                  <div>
+                                    <label className={labelCls}>Company</label>
+                                    <input type="text" value={exp.company} onChange={(e) => setExp({ company: e.target.value })} className={inputCls} placeholder="Northwind Data" />
+                                  </div>
+                                  <div>
+                                    <label className={labelCls}>Location</label>
+                                    <input type="text" value={exp.location} onChange={(e) => setExp({ location: e.target.value })} className={inputCls} placeholder="Berlin, Germany" />
+                                  </div>
+                                  <div>
+                                    <label className={labelCls}>Dates</label>
+                                    <div className="flex items-center gap-2">
+                                      <input type="text" value={exp.start} onChange={(e) => setExp({ start: e.target.value })} className={inputCls} placeholder="2021-03" />
+                                      <span className="text-xs text-gray-400 shrink-0">to</span>
+                                      <input type="text" value={exp.end} onChange={(e) => setExp({ end: e.target.value })} className={inputCls} placeholder="Present" />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <div className={labelCls}>Key achievements</div>
+                                  <div className="space-y-2">
+                                    {exp.achievements.map((achievement, achIndex) => (
+                                      <div key={achIndex} className="flex items-start gap-2">
+                                        <span className="mt-3 h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600 shrink-0" />
+                                        <textarea
+                                          value={achievement}
+                                          onChange={(e) => setExp({ achievements: exp.achievements.map((a, j) => (j === achIndex ? e.target.value : a)) })}
+                                          rows="2"
+                                          className={`${inputCls} resize-y`}
+                                          placeholder="Cut deploy time from 45 minutes to 12 by rebuilding the pipeline"
+                                        />
+                                        {exp.achievements.length > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setExp({ achievements: exp.achievements.filter((_, j) => j !== achIndex) })}
+                                            className="shrink-0 mt-1 p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                            aria-label="Remove achievement"
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExp({ achievements: [...exp.achievements, ''] })}
+                                    className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                    Add achievement
+                                  </button>
+                                </div>
+                              </div>
                             )}
                           </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newExp = [...formData.experience];
-                            newExp[expIndex].achievements.push('');
-                            setFormData(prev => ({ ...prev, experience: newExp }));
-                          }}
-                          className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                        >
-                          + Add Achievement
-                        </button>
-                      </div>
-                      {formData.experience.length > 1 && (
-                        <div className="mt-3 pt-3 border-t border-gray-200">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newExp = formData.experience.filter((_, i) => i !== expIndex);
-                              setFormData(prev => ({ ...prev, experience: newExp }));
-                            }}
-                            className="text-red-600 hover:text-red-700 text-sm"
-                          >
-                            Remove Experience
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
+
+              {/* Education */}
+              <section id="education" ref={(el) => { sectionRefs.current.education = el; }} className="scroll-mt-6">
+                <SectionHead icon={GraduationCap} title="Education" hint="One line each, exactly as you want it printed." />
+                <SimpleList
+                  values={formData.education}
+                  placeholder="BSc Computer Science, TU Berlin (2016)"
+                  addLabel="Add education"
+                  onChange={(i, v) => setFormData(prev => ({ ...prev, education: prev.education.map((e, j) => (j === i ? v : e)) }))}
+                  onAdd={() => setFormData(prev => ({ ...prev, education: [...prev.education, ''] }))}
+                  onRemove={(i) => setFormData(prev => ({ ...prev, education: prev.education.filter((_, j) => j !== i) }))}
+                />
+              </section>
+
+              {/* Certifications */}
+              <section id="certifications" ref={(el) => { sectionRefs.current.certifications = el; }} className="scroll-mt-6">
+                <SectionHead icon={Award} title="Certifications" hint="Optional. Printed as a single line under Core Skills." />
+                <SimpleList
+                  values={formData.certifications}
+                  placeholder="AWS Certified Solutions Architect"
+                  addLabel="Add certification"
+                  onChange={(i, v) => setFormData(prev => ({ ...prev, certifications: prev.certifications.map((c, j) => (j === i ? v : c)) }))}
+                  onAdd={() => setFormData(prev => ({ ...prev, certifications: [...prev.certifications, ''] }))}
+                  onRemove={(i) => setFormData(prev => ({ ...prev, certifications: prev.certifications.filter((_, j) => j !== i) }))}
+                />
+              </section>
+
+              {/* Mobile save bar (the rail is hidden below lg) */}
+              <div className="lg:hidden sticky bottom-4 z-10">
+                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-900/95 backdrop-blur p-3 shadow-lg">
+                  <div className="mb-2 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                    <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all duration-500" style={{ width: `${progressPct}%` }} />
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setFormData(prev => ({ 
-                      ...prev, 
-                      experience: [...prev.experience, {
-                        roleId: '',
-                        title: '',
-                        company: '',
-                        location: '',
-                        start: '',
-                        end: '',
-                        achievements: ['']
-                      }]
-                    }))}
-                    className="text-blue-600 hover:text-blue-700 text-sm font-medium border border-blue-200 rounded-lg px-4 py-2 hover:bg-blue-50"
+                    onClick={async () => { await saveUserInfo(); setCurrentPage('main'); }}
+                    disabled={isSaving || !isValidFormData()}
+                    className="w-full px-4 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                   >
-                    + Add New Work Experience
+                    {isSaving ? 'Saving...' : <><Save className="h-4 w-4" /> Save &amp; Continue</>}
                   </button>
                 </div>
               </div>
-
-              {/* Save Button */}
-              <div className="flex justify-end pt-6 border-t">
-                <button type="button" onClick={async () => { await saveUserInfo(); setCurrentPage('main'); }} disabled={isSaving || !isValidFormData()} className="px-6 py-3 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
-                  {isSaving ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border border-white border-t-transparent"></div>
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4" />
-                      Save & Continue
-                    </>
-                  )}
-                </button>
-              </div>
-            
             </div>
           </div>
         </div>
@@ -958,8 +1442,8 @@ const CVOptimizer = () => {
               <p className="text-gray-400">Sign in to save your templates and optimize your CV</p>
             </div>
             
-            <Auth user={user} onAuthChange={setUser} />
-            
+            <Auth user={user} onAuthChange={setUser} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
+
             <div className="mt-8 pt-6 border-t border-gray-700">
               <div className="grid grid-cols-2 gap-4 text-center text-sm text-gray-400">
                 <div>
@@ -989,22 +1473,21 @@ const CVOptimizer = () => {
   return (
     <div className="min-h-screen p-6 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       <div className="max-w-7xl mx-auto">
-        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-lg overflow-hidden">
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-lg overflow-hidden relative">
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 sm:p-8 dark:from-gray-800 dark:to-gray-700">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
               <div className="flex items-center gap-3">
               <Target className="h-8 w-8" />
               <h1 className="text-3xl font-bold">RoleReady</h1>
               </div>
-              <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v=>!v)} isDark={isDark} />
+              <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v=>!v)} isDark={isDark} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
             </div>
             <p className="text-blue-100 text-lg dark:text-gray-300">Maximize your ATS compatibility while maintaining professional readability</p>
           </div>
 
           <div className="p-4 sm:p-8 space-y-8 text-gray-900 dark:text-gray-100">
-            
             {/* Buttons Section - Full Width */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="text-sm text-gray-600"></div>
               <div className="flex items-center gap-2">
                   <button
@@ -1023,10 +1506,10 @@ const CVOptimizer = () => {
                   Optimization Tips
                 </button>
               </div>
-            </div>
+                </div>
 
-            {/* Responsive Layout: Single column on mobile, two columns on desktop */}
-            <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-8 min-h-[70vh]">
+            {/* Responsive Layout: Single column on mobile, JD collapses on desktop */}
+            <div className={`relative grid grid-cols-1 ${jdCollapsed ? 'lg:grid-cols-1' : 'lg:grid-cols-2'} gap-8 min-h-[70vh] transition-all duration-700 ease-in-out`}>
               {needsSetup && (
                 <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center">
                   <button
@@ -1039,8 +1522,8 @@ const CVOptimizer = () => {
                 </div>
               )}
               
-              {/* Left Column: Job Description */}
-              <div className="flex flex-col gap-6 h-full">
+              {/* Left Column: Job Description (collapsible on desktop) */}
+              <div className={`flex flex-col gap-6 h-full transition-all duration-700 ease-in-out overflow-hidden ${jdCollapsed ? 'lg:absolute lg:opacity-0 lg:pointer-events-none lg:-left-full' : 'lg:relative lg:opacity-100'}`}>
                 <div className="flex-1 flex flex-col min-h-[40vh]">
                   <div className="flex items-center gap-2 mb-3">
                     <FileText className="h-5 w-5 text-gray-600" />
@@ -1054,37 +1537,158 @@ const CVOptimizer = () => {
                   />
                 </div>
 
-                <button
-                  onClick={handleOptimize}
-                  disabled={isProcessing}
-                  className="mt-auto w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-6 rounded-lg font-semibold inline-flex items-center justify-center gap-2 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                >
-                  {isProcessing ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                      Optimizing...
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="h-5 w-5" />
-                      Optimize CV
-                    </>
-                  )}
-                </button>
+                {/* Cover letter switch, welded to the top edge of the action so the two
+                    read as one block: this modifies the thing you are about to press. */}
+                <div className="mt-auto">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={wantsCoverLetter}
+                    onClick={() => {
+                      const next = !wantsCoverLetter;
+                      setWantsCoverLetter(next);
+                      localStorage.setItem('wantsCoverLetter', next ? 'true' : 'false');
+                    }}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-t-lg border border-b-0 text-sm transition-colors ${
+                      wantsCoverLetter
+                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200'
+                        : 'bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
+                    }`}
+                  >
+                    <span className="font-medium">Also write a cover letter</span>
+                    <span className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                      wantsCoverLetter ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}>
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                        wantsCoverLetter ? 'translate-x-5' : 'translate-x-1'
+                      }`} />
+                    </span>
+                  </button>
+                  <button
+                    onClick={handleOptimize}
+                    disabled={isProcessing}
+                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-6 rounded-b-lg font-semibold inline-flex items-center justify-center gap-2 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                  >
+                    {isProcessing ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                        Optimizing...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-5 w-5" />
+                        Optimize CV
+                        {wantsCoverLetter && (
+                          <span className="ml-1 text-xs font-medium px-2 py-0.5 rounded-full bg-white/20">+ cover letter</span>
+                        )}
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {/* Right Column: Results */}
-              <div className="flex flex-col gap-6 h-full">
+              <div className={`flex flex-col gap-6 h-full transition-all duration-700 ease-in-out`}>
                 {/* JD share warning moved into Analysis modal */}
                 <div className="flex-1 flex flex-col min-h-[40vh]">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <Target className="h-5 w-5 text-gray-600" />
-                      <label className="text-lg font-semibold text-gray-700">Optimized CV Preview</label>
+                      <label className="text-lg font-semibold text-gray-700">
+                        {activeDoc === 'letter' ? 'Cover Letter Preview' : 'Optimized CV Preview'}
+                      </label>
+                      {aiScoreLoading && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">AI detecting…</span>
+                      )}
+                      {!aiScoreLoading && aiScore !== null && (() => {
+                        const pct = Math.round(aiScore * 100);
+                        const color = pct >= 70 ? 'bg-red-50 text-red-700 border-red-200' : pct >= 40 ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-green-50 text-green-700 border-green-200';
+                        return <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${color}`}>{pct}% AI</span>;
+                      })()}
                     </div>
+                    {folderMgmtEnabled && (optimizedCv || structuredCv) && (
+                      <div className="flex items-center gap-2">
+                        <FolderOpen className="h-4 w-4 text-gray-400 shrink-0" />
+                        <input
+                          type="text"
+                          value={companyName}
+                          onChange={(e) => setCompanyName(e.target.value)}
+                          placeholder="Company name"
+                          className="text-sm px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 w-40 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                    )}
                   </div>
+                  {/* Document stepper. Only exists once there is a second document; sizes
+                      to its content rather than stretching across the column. */}
+                  {coverLetter && (
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                    <div
+                      role="tablist"
+                      aria-label="Document"
+                      className="w-fit inline-flex items-center gap-px p-0.5 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+                    >
+                      <button
+                        type="button"
+                        aria-label="Previous document"
+                        onClick={() => setActiveDoc(activeDoc === 'cv' ? 'letter' : 'cv')}
+                        className="grid place-items-center h-5 w-5 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <ChevronRight className="h-3 w-3 rotate-180" />
+                      </button>
+                      {[['cv', 'CV'], ['letter', 'Cover letter']].map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          role="tab"
+                          aria-selected={activeDoc === id}
+                          onClick={() => setActiveDoc(id)}
+                          className={`px-2.5 py-1 rounded-full text-[11.5px] font-semibold whitespace-nowrap transition-colors ${
+                            activeDoc === id
+                              ? 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-300 shadow-sm'
+                              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        aria-label="Next document"
+                        onClick={() => setActiveDoc(activeDoc === 'cv' ? 'letter' : 'cv')}
+                        className="grid place-items-center h-5 w-5 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <ChevronRight className="h-3 w-3" />
+                      </button>
+                    </div>
+
+                    {/* Cover letters get pasted into a form or an email far more often than
+                        they get attached, so copying is worth reaching from either tab —
+                        no need to switch documents just to grab the text. */}
+                    <button
+                      type="button"
+                      onClick={() => copyCoverLetter()}
+                      title="Copy the cover letter text to the clipboard"
+                      className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
+                        letterCopied
+                          ? 'bg-green-50 dark:bg-green-900/25 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300'
+                          : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                      aria-live="polite"
+                    >
+                      {letterCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {letterCopied ? 'Copied' : 'Copy cover letter'}
+                    </button>
+                    </div>
+                  )}
                   <div id="cv-preview" className="flex-1 p-0 border border-gray-300 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 overflow-auto">
-                    {structuredCv ? (
+                    {coverLetter && activeDoc === 'letter' ? (
+                      <iframe
+                        title="Cover Letter Preview"
+                        style={{ width: '100%', height: '100%', minHeight: '40vh', border: '0' }}
+                        srcDoc={renderCoverLetterHtml(coverLetter, structuredCv)}
+                      />
+                    ) : structuredCv ? (
                       <iframe
                         title="CV Preview"
                         style={{ width: '100%', height: '100%', minHeight: '40vh', border: '0' }}
@@ -1107,11 +1711,13 @@ const CVOptimizer = () => {
                     <button
                       type="button"
                       onClick={downloadCv}
-                      disabled={!optimizedCv}
+                      disabled={!optimizedCv || isDownloading}
                       className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-lg font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
                     >
                       <Download className="h-4 w-4" />
-                      Download PDF
+                      {isDownloading
+                        ? 'Downloading...'
+                        : (coverLetter && activeDoc === 'letter' ? 'Download cover letter' : 'Download PDF')}
                     </button>
                     {(stats || (keywords && keywords.length > 0)) && (
                       <button
@@ -1125,11 +1731,33 @@ const CVOptimizer = () => {
                         View Analysis
                       </button>
                     )}
+                    </div>
+                )}
+
+                {downloadNotice && (
+                  <div className={`flex items-start gap-2 text-sm px-3 py-2 rounded-md border ${
+                    downloadNoticeTone === 'ok'
+                      ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300'
+                      : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300'
+                  }`}>
+                    {downloadNoticeTone === 'ok'
+                      ? <Check className="h-4 w-4 mt-0.5 shrink-0" />
+                      : <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+                    <span className="flex-1 break-all">{downloadNotice}</span>
+                    <button
+                      type="button"
+                      onClick={() => setDownloadNotice('')}
+                      className="shrink-0 opacity-70 hover:opacity-100"
+                      aria-label="Dismiss"
+                    >
+                      ✕
+                    </button>
                   </div>
                 )}
-              </div>
+                  </div>
+            </div>
 
-                      
+            {/* Modals */}
             {showAnalysis && (
               <div className="fixed inset-0 z-50 flex items-center justify-center">
                 <div className="absolute inset-0 bg-black/50" onClick={() => setShowAnalysis(false)}></div>
@@ -1152,7 +1780,7 @@ const CVOptimizer = () => {
                       </div>
                     )}
                     {keywords.length > 0 && (
-                      <div>
+                <div>
                         <h4 className="text-lg font-semibold text-gray-700 mb-2">Keywords Integrated</h4>
                         <div className="flex flex-wrap gap-2">
                           {keywords.map((keyword, index) => (
@@ -1172,6 +1800,7 @@ const CVOptimizer = () => {
                           <div className="bg-gray-50 border border-gray-200 rounded p-3">Categories: {stats.categories}</div>
                           <div className="bg-gray-50 border border-gray-200 rounded p-3">Total Skills: {stats.totalSkills}</div>
                           <div className="sm:col-span-3 bg-gray-50 border border-gray-200 rounded p-3">Overlap Skills: {stats.overlapCount ?? 0}</div>
+                          <div className="sm:col-span-3 bg-gray-50 border border-gray-200 rounded p-3">AI-detectable words (summary + bullets): {detectableWordCount(structuredCv)}</div>
                           {Array.isArray(stats.categorySizeViolations) && stats.categorySizeViolations.length > 0 && (
                             <div className="sm:col-span-3 bg-yellow-50 border border-yellow-200 rounded p-3">
                               Category size issues: {stats.categorySizeViolations.join(', ')}
@@ -1182,7 +1811,7 @@ const CVOptimizer = () => {
                     )}
 
                     {Array.isArray(overlapSkills) && overlapSkills.length > 0 && (
-                      <div>
+                <div>
                         <h4 className="text-lg font-semibold text-gray-700 mb-2">Skills Overlap (JD ∩ Base)</h4>
                         <div className="flex flex-wrap gap-2">
                           {overlapSkills.map((s, i) => (
@@ -1231,7 +1860,7 @@ const CVOptimizer = () => {
                       <li>Customize further based on your specific industry and role.</li>
                   </ul>
                 </div>
-                <div className="px-6 py-4 border-t bg-gray-50 text-right">
+                  <div className="px-6 py-4 border-t bg-gray-50 text-right">
                     <button
                       type="button"
                       onClick={() => setShowTips(false)}
@@ -1241,14 +1870,24 @@ const CVOptimizer = () => {
                     </button>
               </div>
             </div>
-          </div>
+              </div>
             )}
 
-            {/* Optimization Tips moved to modal */}
+            {/* Floating restore button when JD is collapsed - positioned relative to the card */}
+            {jdCollapsed && (
+              <button
+                type="button"
+                onClick={() => setJdCollapsed(false)}
+                className="hidden lg:flex absolute left-4 top-1/2 -translate-y-1/2 items-center justify-center rounded-full shadow-2xl bg-blue-600 text-white p-4 hover:bg-blue-700 z-50"
+                aria-label="Expand Job Description"
+                title="Expand Job Description"
+              >
+                <ChevronRight className="h-8 w-8" />
+              </button>
+            )}
           </div>
         </div>
       </div>
-    </div>
     </div>
   );
 };
