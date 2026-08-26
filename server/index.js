@@ -24,7 +24,8 @@ app.use(cors({
   }
 }));
 
-app.use(express.json({ limit: '1mb' }));
+// OCR text from a scanned CV can run past the old 1mb ceiling.
+app.use(express.json({ limit: '4mb' }));
 
 // Simple request logger
 app.use((req, res, next) => {
