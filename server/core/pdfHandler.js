@@ -1,29 +1,19 @@
 import multer from 'multer';
 import axios from 'axios';
 import PDFTextExtractor from './PDFTextExtractor.js';
+import { requireAuth } from './firebaseAuth.js';
 
-// Environment-aware config getter (same as optimizeHandler)
+// Config getter (same as optimizeHandler). Reads process.env only — this module
+// is ESM, so the old `require('firebase-functions')` branch threw ReferenceError
+// on every request under Firebase Functions.
 function getConfig() {
-  const isFirebase = process.env.FUNCTIONS_EMULATOR || process.env.FUNCTION_NAME;
-
-  if (isFirebase) {
-    const functions = require('firebase-functions');
-    return {
-      OPENAI_API_KEY: process.env.OPENAI_API_KEY || functions.config().openai?.key,
-      DEFAULT_MODEL: process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini',
-      API_BASE_URL: process.env.OPENAI_BASE_URL || functions.config().openai?.base_url || 'https://api.openai.com/v1',
-      OPENROUTER_SITE_URL: process.env.OPENROUTER_SITE_URL || functions.config().openrouter?.site_url || '',
-      OPENROUTER_APP_TITLE: process.env.OPENROUTER_APP_TITLE || functions.config().openrouter?.app_title || ''
-    };
-  } else {
-    return {
-      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-      DEFAULT_MODEL: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      API_BASE_URL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-      OPENROUTER_SITE_URL: process.env.OPENROUTER_SITE_URL || '',
-      OPENROUTER_APP_TITLE: process.env.OPENROUTER_APP_TITLE || ''
-    };
-  }
+  return {
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    DEFAULT_MODEL: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    API_BASE_URL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+    OPENROUTER_SITE_URL: process.env.OPENROUTER_SITE_URL || '',
+    OPENROUTER_APP_TITLE: process.env.OPENROUTER_APP_TITLE || ''
+  };
 }
 
 // Get PDF extractor configuration from environment
@@ -67,11 +57,95 @@ async function extractTextFromPdf(pdfBuffer) {
   } catch (error) {
     console.error('PDF parsing error:', error);
     if (error && error.message === 'IMAGE_BASED_PDF_NOT_SUPPORTED') {
-      // Image-based PDFs are not supported
-      throw new Error('Image-based CVs are not supported. Please upload a text-based PDF (created from Word, Google Docs, etc.) instead of a scanned document.');
+      // Explicit message for disabled OCR
+      throw new Error('Image-based CVs are not supported. Please upload a text-based PDF (created from Word, Google Docs, etc.).');
     }
-    throw new Error('Failed to extract text from PDF. Please ensure the PDF is not password-protected and contains readable text.');
+    if (error && error.message === 'OCR_RENDERER_UNAVAILABLE') {
+      throw new Error('OCR is not available on this deployment environment. Please upload a text-based PDF.');
+    }
+    throw new Error('Failed to extract text from PDF. Please ensure the PDF contains readable text.');
   }
+}
+
+// Helper function to calculate total years of experience from work history
+function calculateYearsOfExperience(experienceSource) {
+  if (!Array.isArray(experienceSource) || experienceSource.length === 0) {
+    return null;
+  }
+
+  let totalMonths = 0;
+
+  for (const exp of experienceSource) {
+    const startStr = exp.start;
+    const endStr = exp.end;
+
+    if (!startStr) continue;
+
+    // Parse start date
+    const startParts = String(startStr).split('-');
+    const startYear = parseInt(startParts[0]);
+    const startMonth = startParts.length > 1 ? parseInt(startParts[1]) : 1;
+
+    if (isNaN(startYear)) continue;
+
+    // Parse end date (handle "Present" or current date)
+    let endYear, endMonth;
+    if (!endStr || endStr.toLowerCase().includes('present') || endStr.toLowerCase().includes('current')) {
+      const now = new Date();
+      endYear = now.getFullYear();
+      endMonth = now.getMonth() + 1;
+    } else {
+      const endParts = String(endStr).split('-');
+      endYear = parseInt(endParts[0]);
+      endMonth = endParts.length > 1 ? parseInt(endParts[1]) : 12;
+
+      if (isNaN(endYear)) continue;
+    }
+
+    // Calculate months for this job
+    const months = (endYear - startYear) * 12 + (endMonth - startMonth);
+    if (months > 0) {
+      totalMonths += months;
+    }
+  }
+
+  // Convert to years (rounded to 1 decimal place)
+  return totalMonths > 0 ? Math.round((totalMonths / 12) * 10) / 10 : null;
+}
+
+// Pull the first balanced {...} object that follows a label.
+// Brace-aware (and string-aware) so it survives nested objects, code fences
+// around the JSON, and any commentary the model adds before or after.
+function extractJsonObject(text, label) {
+  const labelIdx = text.indexOf(label);
+  if (labelIdx === -1) return null;
+
+  const start = text.indexOf('{', labelIdx + label.length);
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+
+  return null;
 }
 
 // Process CV text with GPT to extract structured data
@@ -160,25 +234,33 @@ Extract all skills organized by categories, work experience with achievements, p
     console.log('✅ AI response received, parsing JSON...');
     
     // Parse the structured response
-    const skillsMatch = aiResponse.match(/SKILLS_AND_EXPERIENCE:\s*(\{[\s\S]*?\})\s*(?=PERSONAL_INFO:|$)/);
-    const personalMatch = aiResponse.match(/PERSONAL_INFO:\s*(\{[\s\S]*?\})\s*$/);
+    const skillsJson = extractJsonObject(aiResponse, 'SKILLS_AND_EXPERIENCE:');
+    const personalJson = extractJsonObject(aiResponse, 'PERSONAL_INFO:');
 
-    if (!skillsMatch || !personalMatch) {
+    if (!skillsJson || !personalJson) {
+      console.error('[process-pdf] could not locate both labelled JSON objects. Response preview: %s', aiResponse.slice(0, 400));
       throw new Error('AI response format is invalid. Could not extract both JSON objects.');
     }
 
     let aiUserInfo, fixedUserInfo;
-    
+
     try {
-      aiUserInfo = JSON.parse(skillsMatch[1].trim());
+      aiUserInfo = JSON.parse(skillsJson);
     } catch (error) {
       throw new Error('Invalid JSON format in skills and experience data');
     }
 
     try {
-      fixedUserInfo = JSON.parse(personalMatch[1].trim());
+      fixedUserInfo = JSON.parse(personalJson);
     } catch (error) {
       throw new Error('Invalid JSON format in personal information data');
+    }
+
+    // Calculate years of experience from work history
+    const yearsOfExperience = calculateYearsOfExperience(aiUserInfo.experienceSource);
+    if (yearsOfExperience !== null) {
+      fixedUserInfo.yearsOfExperience = yearsOfExperience;
+      console.log(`📊 Auto-calculated years of experience: ${yearsOfExperience}`);
     }
 
     return {
@@ -203,6 +285,8 @@ Extract all skills organized by categories, work experience with achievements, p
 
 // Main handler for PDF processing
 export async function handlePdfProcessing(req, res) {
+  if (!(await requireAuth(req, res))) return;
+
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No PDF file uploaded' });

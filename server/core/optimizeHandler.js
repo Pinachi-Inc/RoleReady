@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { validateAndFixSkills, reorderSkills } from '../cvValidation.js';
 import { renderCvMarkdown } from '../cvRenderer.js';
+import { requireAuth } from './firebaseAuth.js';
 
 // Ensure env values are safe for HTTP headers/URLs
 function sanitizeEnv(value) {
@@ -9,36 +10,147 @@ function sanitizeEnv(value) {
   return value.trim().replace(/^['\"]|['\"]$/g, '');
 }
 
-// Environment-aware config getter
-function getConfig() {
-  // Check if running in Firebase Functions
-  const isFirebase = process.env.FUNCTIONS_EMULATOR || process.env.FUNCTION_NAME;
-  
-  if (isFirebase) {
-    // Firebase Functions - try secrets first, fall back to config
-    const functions = require('firebase-functions');
-    return {
-      OPENAI_API_KEY: sanitizeEnv(process.env.OPENAI_API_KEY || functions.config().openai?.key),
-      DEFAULT_MODEL: sanitizeEnv(process.env.OPENAI_MODEL || functions.config().openai?.model || 'gpt-4o-mini'),
-      API_BASE_URL: sanitizeEnv(process.env.OPENAI_BASE_URL || functions.config().openai?.base_url || 'https://api.openai.com/v1'),
-      OPENROUTER_SITE_URL: sanitizeEnv(process.env.OPENROUTER_SITE_URL || functions.config().openrouter?.site_url || ''),
-      OPENROUTER_APP_TITLE: sanitizeEnv(process.env.OPENROUTER_APP_TITLE || functions.config().openrouter?.app_title || '')
-    };
-  } else {
-    // Express/local environment
-    return {
-      OPENAI_API_KEY: sanitizeEnv(process.env.OPENAI_API_KEY),
-      DEFAULT_MODEL: sanitizeEnv(process.env.OPENAI_MODEL || 'gpt-4o-mini'),
-      API_BASE_URL: sanitizeEnv(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'),
-      OPENROUTER_SITE_URL: sanitizeEnv(process.env.OPENROUTER_SITE_URL || ''),
-      OPENROUTER_APP_TITLE: sanitizeEnv(process.env.OPENROUTER_APP_TITLE || '')
-    };
+// One greppable line per model call. The question these answer: is Gemini's thinking
+// budget eating the output allowance (reasoning>0 and completion near max_tokens), is the
+// response being cut off (finish=length), and which provider actually served it. Without
+// finish_reason the logs cannot tell "wrote bad JSON" from "was truncated", and those two
+// need opposite fixes. Grep production with:  vercel logs <url> | grep '\[usage\]'
+function logModelCall(label, result, requestedMaxTokens) {
+  try {
+    const data = result?.data || {};
+    const choice = data.choices?.[0] || {};
+    const usage = data.usage || {};
+    const details = usage.completion_tokens_details || {};
+    const content = choice.message?.content;
+    const completion = usage.completion_tokens ?? null;
+
+    console.log(
+      '[usage] call=%s model=%s provider=%s finish=%s prompt=%s completion=%s reasoning=%s total=%s cap=%s used_pct=%s chars=%s empty=%s',
+      label,
+      data.model || '?',
+      data.provider || '?',
+      choice.finish_reason || choice.native_finish_reason || '?',
+      usage.prompt_tokens ?? '?',
+      completion ?? '?',
+      details.reasoning_tokens ?? 0,
+      usage.total_tokens ?? '?',
+      requestedMaxTokens,
+      completion != null && requestedMaxTokens ? Math.round((completion / requestedMaxTokens) * 100) : '?',
+      typeof content === 'string' ? content.length : -1,
+      !content
+    );
+  } catch (err) {
+    console.warn('[usage] could not read usage for %s: %s', label, err?.message || err);
   }
 }
 
+// The cover letter is a SEPARATE completion, deliberately. Folding it into the CV
+// schema would grow an already long JSON response and make truncation — which used to
+// 500 the whole request — more likely. Plain text out, so there is nothing to parse.
+function buildCoverLetterPrompt() {
+  return `<format>
+Plain text. Three paragraphs, one blank line between them, nothing else. No greeting and no signature: both are added afterward. No markdown, no bold, no bullets, no headings, no subject line, no address block, no closing salutation.
+</format>
+
+<voice>
+You are the applicant. The profile in the user message is your history; write as "I", never in the third person and never by name.
+Plain verbs: ran, built, cut, moved, replaced, fixed, owned, rewrote. Contractions are fine. Vary sentence length, and let one or two run short.
+</voice>
+
+<paragraphs>
+One, four sentences. Sentence one: what I do and how long, taken from my profile alone.
+Sentence two: the one thing this posting most needs, described as theirs, not as something I already focus on.
+Then two sentences connecting my actual work to it.
+Two, four or five sentences. One piece of work from my profile that meets that need: what was slow, breaking or missing before, what I changed, what happened after. Include one detail a reader could not get from my CV.
+Three, three sentences. One thing the posting names, a tool, a scale figure, an awkward constraint, in their term for it and at most a few words of it, with no quotation marks and no lists copied from the posting; my real experience of it; and a closing sentence offering to talk about that specific thing.
+Write full sentences that carry content. Eleven or twelve sentences in total.
+</paragraphs>
+
+<sourcing>
+Every number, tool, system and employer in the letter comes from my profile or from the posting.
+Every claim about what I do or what my work achieved is one my profile supports. Keep the profile's own hedging: "roughly in half" stays roughly in half. Improvements stay improvements, so where my profile says something happened less often, say less often.
+Name a system and its size only where my profile names them; where it does not, say what kind of work it was and what was at stake.
+Where my profile has no number, name the thing that stopped happening.
+If my profile holds nothing on the thing the posting emphasises, pick a different thing the posting names that it does cover.
+Re-angling real work toward this job is right; the letter holds only work I did.
+</sourcing>
+
+<register note="pitch and rhythm only; write my own sentences from my own profile">
+"The reports went out late most months and nobody owned them. I rewrote the part that kept failing and put one name against it. They have been on time since."
+"You mention the scale you are running at. I have worked at that size, and the hard part was keeping everything consistent."
+</register>
+
+Three paragraphs of plain text. No greeting, no signature, no markdown.`;
+}
+
+async function generateCoverLetter({ config, model, jobDescription, cv, temperature, companyName }) {
+  const me = {
+    name: cv?.name || null,
+    summary: cv?.summary || '',
+    experience: (Array.isArray(cv?.experience) ? cv.experience : []).slice(0, 3).map(job => ({
+      title: job.title,
+      company: job.company,
+      start: job.start,
+      end: job.end,
+      achievements: (job.achievements || []).slice(0, 4)
+    })),
+    skills: (Array.isArray(cv?.coreSkills) ? cv.coreSkills : []).flatMap(c => (c.items || []).map(i => i.skill)).slice(0, 25)
+  };
+
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${config.OPENAI_API_KEY}`
+  };
+  if (config.API_BASE_URL.includes('openrouter.ai')) {
+    if (config.OPENROUTER_SITE_URL) headers['HTTP-Referer'] = config.OPENROUTER_SITE_URL;
+    if (config.OPENROUTER_APP_TITLE) headers['X-Title'] = config.OPENROUTER_APP_TITLE;
+  }
+
+  const result = await axios.post(`${config.API_BASE_URL}/chat/completions`, {
+    model,
+    max_tokens: 900,
+    temperature,
+    messages: [
+      { role: 'system', content: buildCoverLetterPrompt() },
+      { role: 'user', content: JSON.stringify({ jobDescription, myProfile: me }) }
+    ]
+  }, { headers });
+
+  logModelCall('cover-letter', result, 900);
+
+  const text = result.data?.choices?.[0]?.message?.content;
+  if (!text) {
+    // Previously this returned '' and the caller reported a blank letter with no cause.
+    console.warn('[usage] cover-letter returned empty content — see the [usage] line above for finish/reasoning');
+    return '';
+  }
+
+  // Greeting and signature are assembled here rather than asked of the model. They are
+  // pure slot-fills from data the server already holds; in the prompt they cost two
+  // instruction slots and risked a literal placeholder reaching the rendered PDF.
+  const body = String(text).trim();
+  const greeting = companyName ? `Dear ${companyName} hiring team,` : 'Dear hiring team,';
+  return [greeting, body, cv?.name].filter(Boolean).join('\n\n');
+}
+
+// Config getter. Reads process.env only — this module is ESM, so the old
+// `require('firebase-functions')` branch threw ReferenceError on every request
+// under Firebase Functions. Set the same env vars there as everywhere else.
+function getConfig() {
+  return {
+    OPENAI_API_KEY: sanitizeEnv(process.env.OPENAI_API_KEY),
+    DEFAULT_MODEL: sanitizeEnv(process.env.OPENAI_MODEL || 'gpt-4o-mini'),
+    API_BASE_URL: sanitizeEnv(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'),
+    OPENROUTER_SITE_URL: sanitizeEnv(process.env.OPENROUTER_SITE_URL || ''),
+    OPENROUTER_APP_TITLE: sanitizeEnv(process.env.OPENROUTER_APP_TITLE || '')
+  };
+}
+
 export async function handleOptimizeRequest(req, res) {
-  const { jobDescription, aiUserInfo, fixedUserInfo, max_tokens = 4000, temperature = 0.7 } = req.body || {};
-  
+  if (!(await requireAuth(req, res))) return;
+
+  const { jobDescription, aiUserInfo, fixedUserInfo, max_tokens = 4000, temperature = 0.45, includeCoverLetter = false } = req.body || {};
+
   const config = getConfig();
   const model = config.DEFAULT_MODEL;
 
@@ -68,29 +180,82 @@ export async function handleOptimizeRequest(req, res) {
       { "roleId": "string|null", "achievements": ["string"] }
     ],
     "keywordsUsed": ["string"],
-    "overlapSkills": ["string"]
+    "overlapSkills": ["string"],
+    "companyName": "string"
   }`;
 
-  const instruction = `You are a CV optimizer. Return ONLY valid JSON matching the schema below. No extra text, no code fences. Do not include name, contact, certifications, or education in the JSON.
+  const instruction = `You rewrite one candidate's real CV data to fit one job description. Your output is parsed by a program, not read by a person.
 
-Rules:
-- Core Skills must have 6–9 categories; each category has 3–9 skills.
-- At least 50% of ALL skills across all categories must be taken literally from the job description.
-- When a concept appears in both base skills and the job description, USE THE EXACT JD SPELLING in the final list.
-- Within each category: list JD skills first (sorted by prominence in the JD), then base skills.
-- Compute overlapSkills = skills that appear BOTH in aiUserInfo.coreSkillsBase (case-insensitive) AND literally in the jobDescription. Every skill in overlapSkills MUST appear in coreSkills using the EXACT spelling from the job description.
-- If category limits force removal, drop non-overlap items first; NEVER drop items from overlapSkills.
-- If the most suitable category does not exist, create it or place the skill in the closest relevant category.
-- Experience achievements: 4–6 concise bullets per job, action-led, include metrics if possible. For each role, use the provided baseAchievements ONLY as examples of scope and outcomes; GENERATE NEW bullet points tailored to the specific job description. Do not copy or lightly rephrase the input bullets; write fresh, JD-aligned achievements and incorporate literal JD keywords where appropriate.
-- Summary: 2–4 sentences tailored to the job.
-- Remove exact duplicates (case-insensitive). If both JD and base forms exist, keep the JD form.
-- Do NOT copy the input text verbatim. Paraphrase base bullets to match the job description and integrate literal JD keywords where appropriate.
-- Never include the employer/company name, product or brand names, or any job-post identifiers from the job description anywhere in the output. Keep wording generic and not addressed to a specific company.
+<output_contract>
+Reply with exactly one JSON object and nothing else: no code fences, no commentary, no text before or after it.
+${jsonSchema}
+Exactly these six keys, no others. Name, contact, education and certifications are supplied separately, and anything written for them is discarded.
+experience: one entry per role in aiUserInfo.experienceSource, in the same order, with that role's roleId copied character for character. The server attaches job titles and dates by roleId.
+</output_contract>
 
-Schema:
-${jsonSchema}`;
+<plan>
+Before writing, name to yourself the five things this job description needs most. Everything below is written to those five.
+</plan>
 
-  const userPayload = { jobDescription, aiUserInfo };
+<voice>
+Summary and achievement text read like the candidate typed them quickly:
+"Built the whole CI/CD setup from scratch since the team was deploying manually. Cut release time from about an hour to 12 minutes."
+Verbs stay plain: built, set up, ran, cut, fixed, moved, wrote, shipped, added, tested, handled, rewrote, reduced, merged.
+Bullet shapes vary: some open with a verb, some with the problem; some under 10 words, some 15 to 20. Consecutive bullets open differently.
+Number formats vary too: exact ("45 min to 12"), approximate ("about 10 hours a week"), tilde ("~30 deploys a week").
+</voice>
+
+<summary>
+Four full sentences, each doing its own job.
+One: the profession itself as the first word, matching the role title in the job description, then a connector, then the years: "DevOps engineer with 7 years across AWS and Azure." Use yearsOfExperience exactly as given when it is provided; the JD's experience requirement describes the vacancy, not the candidate.
+Two: what this candidate is strongest at, drawn from their own experience.
+Three: two concrete things from the JD, a tool, a responsibility, a domain, that the candidate has genuinely worked with.
+Four: how they work or what they leave behind, in the plain voice above.
+Third person throughout, no pronouns for the candidate.
+<example note="tone and opening shape only; write new sentences">
+"SRE with over 8 years in cloud infrastructure. Strongest at taking systems that page people at night and making them boring. Has run Kubernetes across two regions and owned the Terraform that provisions them. Most of that time went into making sure teams weren't stuck waiting on environments or deploys."
+</example>
+</summary>
+
+<skills>
+8 or 9 categories, 4 to 6 skills in each, around 36 to 50 skills in total. More categories is better: split broad groupings into specific ones rather than lumping them together.
+Every category carries at least 4. A category holding two or three is not shipped: either fill it out from the candidate's base skills and the JD, or merge it into the nearest category.
+Half or more of all skills are lifted literally from the job description in its exact spelling. Those carry source:"jd" and jdLiteral set to the exact JD substring; the rest carry source:"base" and jdLiteral:null.
+overlapSkills = skills present in both aiUserInfo.coreSkillsBase and the JD, written in JD spelling. Every one of them stays in coreSkills.
+Order inside a category: JD skills first by prominence, then base skills.
+Prefer skills that also appear in the experience bullets; a reader checks the two against each other.
+When these pull against each other, the category and per-category counts win, then overlapSkills, then the JD share. Drop non-overlap base skills first.
+</skills>
+
+<experience>
+4 to 6 bullets per role, the ones that matter most for THIS job first; weaker ones move down or go.
+Reframe the candidate's real work toward the JD's priorities: same work, different angle. If the JD cares about reliability and the base achievement is a CI/CD build, angle it at fewer failed deploys.
+baseAchievements are evidence of scope, not text to reuse. Paraphrase them.
+At least one bullet per role says what was broken, slow, or missing before the work.
+Carry over every number that exists in baseAchievements, rounded conversationally where that reads better. A number needs its before-state or its scale to mean anything ("from 45 min to 12", "across 40 services"); a bare percentage reads as filler. Where the real work carries no number, give the scope instead.
+Use the JD's literal wording inside bullets wherever it fits the real work.
+</experience>
+
+<hard_limits>
+Only real experience. Naming a task the described work necessarily included is fine, and so is calling Docker work container orchestration. Stating a role, employer, domain or technology the candidate has not touched is not, and a JD priority with no counterpart in their history is left out rather than filled in.
+Organisation names from the JD stay out of the summary, the skills and the bullets: the hiring company, its customers, partners, parent, competitors, plus req numbers, posting ids and URLs. Technologies are not organisations, so AWS, Kubernetes, Terraform, React and PostgreSQL are used verbatim wherever the JD uses them. The candidate's own employers are rendered separately from saved data, so bullets do not repeat them.
+companyName holds the hiring company's name. It is metadata, never rendered into the CV; empty string if the JD does not say.
+keywordsUsed: JD terms that actually appear in the text you wrote.
+Reply with the JSON object only.
+</hard_limits>`;
+
+  // Extract only yearsOfExperience from fixedUserInfo
+  let yearsOfExperience = null;
+  if (fixedUserInfo) {
+    try {
+      const fixed = JSON.parse(fixedUserInfo);
+      yearsOfExperience = fixed.yearsOfExperience || null;
+    } catch (e) {
+      // If parsing fails, ignore
+    }
+  }
+
+  const userPayload = { jobDescription, aiUserInfo, yearsOfExperience };
 
   try {
     const url = `${config.API_BASE_URL}/chat/completions`;
@@ -109,7 +274,8 @@ ${jsonSchema}`;
     const initialBody = {
       model,
       max_tokens,
-      temperature: 0.2,
+      temperature,
+      top_p: 0.9,
       messages: [
         { role: 'system', content: instruction },
         { role: 'user', content: JSON.stringify(userPayload) }
@@ -122,6 +288,8 @@ ${jsonSchema}`;
       JSON.stringify(userPayload).slice(0, 400)
     );
     const result = await axios.post(url, initialBody, { headers });
+
+    logModelCall('cv', result, max_tokens);
 
     let content = result.data?.choices?.[0]?.message?.content;
     console.log('[optimize] success; tokens_requested=%s content_length=%s', max_tokens, content?.length ?? 0);
@@ -142,10 +310,15 @@ ${jsonSchema}`;
 
     const stripCodeFences = (raw) => {
       if (typeof raw !== 'string') return '';
-      const fenced = raw.match(/```[a-zA-Z]*\n[\s\S]*?```/);
-      if (fenced) {
+      // Full fence (opening + closing)
+      if (/```[a-zA-Z]*\n[\s\S]*?```/.test(raw)) {
         console.log('[optimize] stripping code fences from model output');
         return raw.replace(/```[a-zA-Z]*\n([\s\S]*?)```/, '$1').trim();
+      }
+      // Opening fence only (truncated response — strip the prefix and take what we have)
+      if (/^```[a-zA-Z]*\n/.test(raw.trim())) {
+        console.log('[optimize] stripping opening-only code fence (truncated response)');
+        return raw.trim().replace(/^```[a-zA-Z]*\n/, '').trim();
       }
       return raw.trim();
     };
@@ -179,10 +352,11 @@ ${jsonSchema}`;
         return { error: 'parse' };
       }
       console.log('[optimize] parsed keys: %s', Object.keys(parsed || {}).join(', ') || '(none)');
+      console.log('[optimize] companyName: %s', parsed?.companyName ?? '(missing)');
 
       // Structural validation to explain why JSON may be considered invalid
       const structureIssues = [];
-      const allowedKeys = new Set(['summary', 'coreSkills', 'experience', 'keywordsUsed', 'overlapSkills']);
+      const allowedKeys = new Set(['summary', 'coreSkills', 'experience', 'keywordsUsed', 'overlapSkills', 'companyName']);
       for (const k of Object.keys(parsed || {})) {
         if (!allowedKeys.has(k)) structureIssues.push(`Unexpected key: ${k}`);
       }
@@ -222,8 +396,13 @@ ${jsonSchema}`;
           }
         });
       }
-      const { coreSkills, jdShare } = validateAndFixSkills(parsed.coreSkills);
+      const { coreSkills, jdShare, dropped } = validateAndFixSkills(parsed.coreSkills);
       const orderedSkills = reorderSkills(coreSkills);
+      if (dropped && (dropped.items > 0 || dropped.categories > 0)) {
+        console.warn('[optimize] over-production trimmed: %s skills (%s), %s categories',
+          dropped.items, dropped.itemsByCategory.join(', ') || 'none', dropped.categories);
+        structureIssues.push(`Model over-produced: ${dropped.items} skill(s) and ${dropped.categories} category(ies) dropped to fit the limits`);
+      }
 
       // Merge role metadata from aiUserInfo (if JSON with experienceSource is provided)
       const roleMetaMap = (() => {
@@ -234,6 +413,11 @@ ${jsonSchema}`;
           const map = new Map();
           for (const r of src) {
             if (!r || !r.roleId) continue;
+            if (map.has(r.roleId)) {
+              // Duplicates make every job inherit the last one's header. Should be
+              // impossible now that ids are uuid-based; log it if it ever recurs.
+              console.warn('[optimize] duplicate roleId %s — job headers will collide', r.roleId);
+            }
             map.set(r.roleId, {
               title: r.title || null,
               company: r.company || null,
@@ -271,10 +455,10 @@ ${jsonSchema}`;
         experience: enrichedExperience,
         education: Array.isArray(parsed.education) ? parsed.education : []
       };
-      return { cv: prepared, jdShare, keywords: Array.isArray(parsed.keywordsUsed) ? parsed.keywordsUsed : [], overlapSkills: Array.isArray(parsed.overlapSkills) ? parsed.overlapSkills : [], structureIssues };
+      return { cv: prepared, jdShare, dropped, keywords: Array.isArray(parsed.keywordsUsed) ? parsed.keywordsUsed : [], overlapSkills: Array.isArray(parsed.overlapSkills) ? parsed.overlapSkills : [], structureIssues, companyName: typeof parsed.companyName === 'string' ? parsed.companyName.trim() : '' };
     };
 
-    let { cv, jdShare, keywords, overlapSkills, structureIssues } = parseAndPrepare(content);
+    let { cv, jdShare, dropped, keywords, overlapSkills, structureIssues, companyName } = parseAndPrepare(content);
 
     let totals = 0;
     let categoryCount = 0;
@@ -292,11 +476,11 @@ ${jsonSchema}`;
         console.log('[optimize] category size violations: %s', boundsViolations.join(', '));
       }
     } else {
-      needsFix = true; // parsing failed; request strict JSON
+      needsFix = true; // parsing failed
     }
 
     if (!cv || !Array.isArray(cv.coreSkills) || cv.coreSkills.length === 0) {
-      console.error('[optimize] final JSON invalid or empty after retry. Last output preview (first 400): %s', String(content || '').slice(0, 400));
+      console.error('[optimize] JSON invalid or empty. Last output preview (first 400): %s', String(content || '').slice(0, 400));
       return res.status(500).json({ error: 'Model did not return valid structured JSON for skills. Please try again.' });
     }
 
@@ -345,22 +529,39 @@ ${jsonSchema}`;
     if (Array.isArray(structureIssues) && structureIssues.length) {
       console.warn('[optimize] structure issues:', structureIssues.join(' | '));
     }
+
+    // Optional second pass. A failure here must not cost the user their CV, so it is
+    // caught and reported as an empty letter rather than failing the request.
+    let coverLetter = '';
+    if (includeCoverLetter) {
+      try {
+        console.log('[optimize] generating cover letter');
+        coverLetter = await generateCoverLetter({ config, model, jobDescription, cv, temperature, companyName });
+        console.log('[optimize] cover letter length=%s', coverLetter.length);
+      } catch (err) {
+        console.error('[optimize] cover letter failed: %s', err.response?.status || err.message);
+      }
+    }
     const stats = {
       jdShare: jdShare ?? 0,
       categories: categoryCount,
       totalSkills: totals,
       categorySizeViolations: boundsViolations,
       structureIssues: structureIssues || [],
-      overlapCount: Array.isArray(overlapSkills) ? overlapSkills.length : 0
+      overlapCount: Array.isArray(overlapSkills) ? overlapSkills.length : 0,
+      droppedSkills: dropped?.items ?? 0,
+      droppedCategories: dropped?.categories ?? 0
     };
     res.json({
       cvContent: markdown,
       keywords: (keywords || []).slice(0, 20),
       keywordsFiltered: filteredKeywords.slice(0, 20),
       cv,
+      coverLetter,
       needsFix,
       stats,
-      overlapSkills: Array.isArray(overlapSkills) ? overlapSkills : []
+      overlapSkills: Array.isArray(overlapSkills) ? overlapSkills : [],
+      companyName: companyName || ''
     });
   } catch (err) {
     const status = err.response?.status || 500;
