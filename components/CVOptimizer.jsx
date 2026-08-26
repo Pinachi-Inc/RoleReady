@@ -14,8 +14,9 @@ function extractBody(htmlString) {
 }
 import { renderCvHtml, renderCoverLetterHtml } from '../src/templateRenderer.js';
 import { buildCvPdf } from '../src/cvPdf.js';
+import { prefetchOcrAssets, ocrPdfInBrowser, isOcrSupported } from '../services/browserOcr.js';
 import { optimizeCv as optimizeCvService, detectAiContent } from '../services/openai.js';
-import { processPdf } from '../services/pdf.js';
+import { processPdf, processPdfText } from '../services/pdf.js';
 import { onAuthStateChange, saveUserData, getUserData } from '../services/auth.js';
 import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
 import Auth from './Auth.jsx';
@@ -174,6 +175,7 @@ const CVOptimizer = () => {
   const [showTips, setShowTips] = useState(false);
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   const [pdfError, setPdfError] = useState('');
+  const [ocrStatus, setOcrStatus] = useState('');
   const [setupTab, setSetupTab] = useState('personal');
   const [jdCollapsed, setJdCollapsed] = useState(false); // Desktop-only JD sidebar collapse
   const [folderMgmtEnabled, setFolderMgmtEnabled] = useState(() => localStorage.getItem('folderMgmtEnabled') === 'true');
@@ -336,6 +338,14 @@ const CVOptimizer = () => {
   // score ended up on a page with no CV on it.
   const detectRunRef = useRef(0);
 
+  // A signed-in user with no profile can only go to the setup page and its CV upload,
+  // so start warming the OCR assets now rather than making them wait for a ~7MB
+  // download at the moment they pick a scanned file. Never blocks and never throws.
+  useEffect(() => {
+    if (!user || !needsSetup || !isOcrSupported()) return;
+    prefetchOcrAssets();
+  }, [user, needsSetup]);
+
   // Scroll-spy for the rail. Re-armed whenever the setup page mounts its sections.
   useEffect(() => {
     if (currentPage !== 'setup') return undefined;
@@ -477,7 +487,29 @@ const CVOptimizer = () => {
 
     try {
       console.log('📄 Processing PDF:', file.name);
-      const result = await processPdf(file);
+
+      let result;
+      try {
+        result = await processPdf(file);
+      } catch (serverErr) {
+        // The server refuses image-based PDFs. That is the only case we take over:
+        // everything else is re-thrown so the existing error handling is unchanged.
+        const isImageBased = /image-based/i.test(serverErr?.message || '');
+        if (!isImageBased || !isOcrSupported()) throw serverErr;
+
+        console.log('[ocr] server reported an image-based PDF, running OCR in the browser');
+        setOcrStatus('Scanned CV detected. Reading it here in your browser…');
+        const text = await ocrPdfInBrowser(file, ({ page, pages }) => {
+          setOcrStatus(`Reading page ${page} of ${pages}…`);
+        });
+
+        if (!text || text.trim().length < 50) {
+          throw new Error('Could not read enough text from this scan. A clearer copy, or a text-based PDF, would work better.');
+        }
+        console.log('[ocr] extracted %s characters, sending for processing', text.length);
+        setOcrStatus('Building your profile…');
+        result = await processPdfText(text);
+      }
 
       // The extraction model is given a roleId field with no uniqueness instruction, so
       // repair before anything reads it. Optimize sends this state directly, and the
@@ -501,6 +533,7 @@ const CVOptimizer = () => {
       setPdfError(error.message || 'Failed to process PDF');
     } finally {
       setIsProcessingPdf(false);
+      setOcrStatus('');
       // Clear the file input
       event.target.value = '';
     }
@@ -1051,7 +1084,7 @@ const CVOptimizer = () => {
                         {isProcessingPdf ? (
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                            Reading your CV...
+                            {ocrStatus || 'Reading your CV...'}
                           </>
                         ) : (
                           <>
