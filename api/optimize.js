@@ -2,13 +2,12 @@
 // Uses the same shared handler as Express and Firebase Functions
 
 import { handleOptimizeRequest } from '../server/core/optimizeHandler.js';
+import { applyCors } from '../server/core/cors.js';
 
 // Vercel serverless function
 export default async function handler(req, res) {
-  // Enable CORS for all origins (adjust as needed)
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  // Cross-origin callers must be listed in ALLOWED_ORIGINS; same-origin needs nothing.
+  applyCors(req, res);
 
   // Handle preflight OPTIONS request
   if (req.method === 'OPTIONS') {
@@ -23,5 +22,6 @@ export default async function handler(req, res) {
   }
 
   // Use the same shared handler as Express and Firebase Functions
+  // (it performs the Firebase ID token check itself)
   return handleOptimizeRequest(req, res);
 }
