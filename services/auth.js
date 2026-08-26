@@ -40,6 +40,22 @@ export const onAuthStateChange = (callback) => {
   return onAuthStateChanged(auth, callback);
 };
 
+// Firebase ID token for the current user, used as the API bearer token.
+// Returns null when nobody is signed in.
+export const getIdToken = async () => {
+  const current = auth.currentUser;
+  if (!current) return null;
+  return current.getIdToken();
+};
+
+// Authorization header for API calls. Throws if the user is not signed in,
+// since every API route now requires a verified token.
+export const getAuthHeaders = async () => {
+  const token = await getIdToken();
+  if (!token) throw new Error('You must be signed in to do this.');
+  return { Authorization: `Bearer ${token}` };
+};
+
 // Save user data to Firestore
 export const saveUserData = async (userId, userData) => {
   try {

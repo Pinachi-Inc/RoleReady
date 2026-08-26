@@ -1,11 +1,15 @@
+import { getAuthHeaders } from './auth.js';
+
 // PDF processing service
 export const processPdf = async (pdfFile) => {
   const formData = new FormData();
   formData.append('pdf', pdfFile);
 
   try {
+    // No Content-Type here on purpose — the browser sets the multipart boundary.
     const response = await fetch('/api/process-pdf', {
       method: 'POST',
+      headers: { ...(await getAuthHeaders()) },
       body: formData,
     });
 

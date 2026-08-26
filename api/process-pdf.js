@@ -1,10 +1,8 @@
 import { handlePdfProcessing, uploadMiddleware } from '../server/core/pdfHandler.js';
+import { applyCors } from '../server/core/cors.js';
 
 export default async function handler(req, res) {
-  // Set CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -23,7 +21,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: err.message });
     }
     
-    // Call the PDF processing handler
+    // Call the PDF processing handler (it performs the Firebase ID token check itself)
     return handlePdfProcessing(req, res);
   });
 }
