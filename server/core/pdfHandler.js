@@ -288,6 +288,19 @@ export async function handlePdfProcessing(req, res) {
   if (!(await requireAuth(req, res))) return;
 
   try {
+    // Text already extracted by the client. This is the OCR fallback path: the server
+    // refuses image-based PDFs, so the browser OCRs them and posts the text back.
+    // Deliberately additive — the file path below is untouched and still runs first.
+    const preExtracted = typeof req.body?.extractedText === 'string' ? req.body.extractedText.trim() : '';
+    if (preExtracted) {
+      if (preExtracted.length < 50) {
+        return res.status(400).json({ error: 'The extracted text was too short to build a profile from.' });
+      }
+      console.log('📝 Using client-extracted text (%s chars), skipping server extraction', preExtracted.length);
+      const result = await processWithGPT(preExtracted.slice(0, 60000));
+      return res.json({ success: true, extractionMode: 'client-ocr', ...result });
+    }
+
     if (!req.file) {
       return res.status(400).json({ error: 'No PDF file uploaded' });
     }
