@@ -37,3 +37,6 @@ temp/
 *.local
 
 .vercel
+
+# Claude Code local machine settings
+.claude/settings.local.json
