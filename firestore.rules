@@ -1,0 +1,79 @@
+rules_version = '2';
+
+// Until now there were no rules in this repo at all, so whatever is configured in the
+// Firebase console was the only thing standing between one user's CV data and another's.
+//
+// The rules below assume the split the app actually uses: profile content is written by
+// the browser, while entitlement, usage counters and run history are written only by the
+// server through the Admin SDK. The Admin SDK bypasses these rules entirely, so denying
+// the client those fields costs the server nothing and makes the paywall real. Without
+// this file, `plan: 'paid'` is a one-line devtools edit.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Fields the client may never create or modify.
+    function serverOwned() {
+      return ['plan', 'planSince', 'planRenewsAt', 'stripeCustomerId', 'stripeSubscriptionId', 'usage'];
+    }
+
+    function noServerFields() {
+      return !request.resource.data.keys().hasAny(serverOwned());
+    }
+
+    function serverFieldsUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOwned());
+    }
+
+    // Free gets one profile, paid three, comped accounts ten. The plan is read from the
+    // STORED document, never from the incoming write, so a client cannot raise its own cap
+    // in the same request that adds a profile.
+    //
+    // 'unlimited' is stamped onto the document by the server for accounts named in
+    // UNLIMITED_EMAILS / UNLIMITED_UIDS. These rules cannot read environment variables, so
+    // the server mirrors the grant here; see server/core/firestore.js.
+    function profileCap() {
+      let plan = resource.data.get('plan', 'free');
+      return plan == 'unlimited' ? 10 : (plan == 'paid' ? 3 : 1);
+    }
+
+    function profilesWithinCap() {
+      return !request.resource.data.keys().hasAny(['profiles'])
+        || request.resource.data.profiles.size() <= profileCap();
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+
+      // A brand new document is free by definition, so it may carry at most one profile.
+      allow create: if isOwner(uid)
+        && noServerFields()
+        && (!request.resource.data.keys().hasAny(['profiles'])
+            || request.resource.data.profiles.size() <= 1);
+
+      allow update: if isOwner(uid)
+        && serverFieldsUnchanged()
+        && profilesWithinCap();
+
+      // Account deletion runs server-side so billing state is torn down with it.
+      allow delete: if false;
+
+      // Written by the server when a run succeeds. The client reads its own history and
+      // never writes it, so records cannot be forged, back-dated or quietly removed to
+      // dodge the free-tier window.
+      match /history/{runId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+    }
+
+    // Anything not matched above is denied, including at the collection-group level.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
