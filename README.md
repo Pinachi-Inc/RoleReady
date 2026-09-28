@@ -1,4 +1,4 @@
-## TailorCV (working title)
+## RoleBerry (working title)
 
 Opinionated CV optimizer that tailors your CV to a specific Job Description (JD), injects literal JD keywords into skills, and renders a consistent, professional HTML layout you can print to PDF.
 
@@ -44,7 +44,7 @@ OPENAI_MODEL=openai/gpt-4o-mini
 
 # Optional but recommended for OpenRouter attribution
 OPENROUTER_SITE_URL=http://localhost:5173
-OPENROUTER_APP_TITLE=TailorCV
+OPENROUTER_APP_TITLE=RoleBerry
 ```
 
 OpenAI

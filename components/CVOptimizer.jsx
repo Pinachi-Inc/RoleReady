@@ -13,7 +13,7 @@ function extractBody(htmlString) {
   }
 }
 import { renderCvHtml, renderCoverLetterHtml } from '../src/templateRenderer.js';
-import { buildCvPdf } from '../src/cvPdf.js';
+import { buildCvPdf, buildCoverLetterPdf } from '../src/cvPdf.js';
 import { prefetchOcrAssets, ocrPdfInBrowser, isOcrSupported } from '../services/browserOcr.js';
 import { optimizeCv as optimizeCvService, detectAiContent } from '../services/openai.js';
 import { processPdf, processPdfText } from '../services/pdf.js';
@@ -608,7 +608,7 @@ const CVOptimizer = () => {
         if (n) return n;
       } catch {}
       // Fallback
-      return 'RoleReady_CV';
+      return 'RoleBerry_CV';
     };
 
     // The download follows whichever document is on screen.
@@ -677,13 +677,18 @@ const CVOptimizer = () => {
         }
       };
 
-      // The CV is drawn with jsPDF text primitives, not screenshotted. html2pdf is
-      // html2canvas + addImage: it produced a PDF containing two JPEGs and zero
-      // extractable text, so an ATS parsing it read nothing at all. Verified with
-      // poppler, mupdf and pdfjs — all returned 0 characters.
-      if (!showingLetter && structuredCv) {
-        try {
-          const pdf = buildCvPdf(structuredCv);
+      // Both documents are drawn with jsPDF text primitives, not screenshotted. html2pdf
+      // is html2canvas + addImage: it produced a PDF containing JPEGs and zero extractable
+      // text, so an ATS parsing it read nothing at all. Verified with poppler, mupdf and
+      // pdfjs — all returned 0 characters.
+      const buildTextPdf = () => {
+        if (showingLetter) return coverLetter ? buildCoverLetterPdf(coverLetter, structuredCv) : null;
+        return structuredCv ? buildCvPdf(structuredCv) : null;
+      };
+
+      try {
+        const pdf = buildTextPdf();
+        if (pdf) {
           const blob = pdf.output('blob');
           const saved = await saveWithPicker(blob);
           if (!saved) {
@@ -691,10 +696,10 @@ const CVOptimizer = () => {
             pdf.save(`${baseFilename}.pdf`);
           }
           return;
-        } catch (err) {
-          // Fall through to the html2pdf path rather than lose the download.
-          console.error('[download] text PDF build failed, falling back to the image renderer:', err);
         }
+      } catch (err) {
+        // Fall through to the html2pdf path rather than lose the download.
+        console.error('[download] text PDF build failed, falling back to the image renderer:', err);
       }
 
       try {
@@ -1095,7 +1100,7 @@ const CVOptimizer = () => {
                       </span>
                     </label>
                     <p className="text-sm text-blue-900 dark:text-gray-300">
-                      Or fill everything in by hand below. Text-based PDFs only, up to 10MB.
+                      Or fill everything in by hand below. PDFs up to 10MB, including scans.
                     </p>
                   </div>
                   {pdfError && (
@@ -1463,7 +1468,7 @@ const CVOptimizer = () => {
           <div className="text-center mb-8">
             <div className="flex items-center justify-center gap-3 mb-6">
               <Target className="h-12 w-12 text-blue-400" />
-              <h1 className="text-4xl font-bold text-white">TailorCV</h1>
+              <h1 className="text-4xl font-bold text-white">RoleBerry</h1>
             </div>
             <p className="text-gray-300 text-lg mb-2">AI-Powered CV Optimization</p>
             <p className="text-gray-400">Transform your CV to match any job description with precision and professionalism</p>
@@ -1511,7 +1516,7 @@ const CVOptimizer = () => {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
               <div className="flex items-center gap-3">
               <Target className="h-8 w-8" />
-              <h1 className="text-3xl font-bold">RoleReady</h1>
+              <h1 className="text-3xl font-bold">RoleBerry</h1>
               </div>
               <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v=>!v)} isDark={isDark} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
             </div>
@@ -1889,7 +1894,7 @@ const CVOptimizer = () => {
                       <li>Use the complete job posting, including requirements and preferred qualifications.</li>
                       <li>Provide detailed CV content with specific achievements and metrics.</li>
                       <li>Review the optimized CV to ensure it accurately represents your experience.</li>
-                      <li>Download as HTML and print to PDF for best formatting results.</li>
+                      <li>The downloaded PDF contains real text, so keep it as-is rather than printing it to a new file.</li>
                       <li>Customize further based on your specific industry and role.</li>
                   </ul>
                 </div>
