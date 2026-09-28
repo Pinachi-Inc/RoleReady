@@ -2,6 +2,7 @@ import axios from 'axios';
 import { validateAndFixSkills, reorderSkills } from '../cvValidation.js';
 import { renderCvMarkdown } from '../cvRenderer.js';
 import { requireAuth } from './firebaseAuth.js';
+import { reasoningConfig } from './modelOptions.js';
 
 // Ensure env values are safe for HTTP headers/URLs
 function sanitizeEnv(value) {
@@ -21,16 +22,24 @@ function logModelCall(label, result, requestedMaxTokens) {
     const choice = data.choices?.[0] || {};
     const usage = data.usage || {};
     const details = usage.completion_tokens_details || {};
+    // Gemini 2.5 reports prompt-cache hits here. Logged because the cacheable prefix is
+    // only worth restructuring the prompt for if it actually hits, and the Gemini cache
+    // has a fixed 5-minute TTL that does not extend on reuse — so for spread-out usage
+    // this is expected to read 0 most of the time. Measure before optimising.
+    const promptDetails = usage.prompt_tokens_details || {};
+    const cached = promptDetails.cached_tokens ?? 0;
     const content = choice.message?.content;
     const completion = usage.completion_tokens ?? null;
 
     console.log(
-      '[usage] call=%s model=%s provider=%s finish=%s prompt=%s completion=%s reasoning=%s total=%s cap=%s used_pct=%s chars=%s empty=%s',
+      '[usage] call=%s model=%s provider=%s finish=%s prompt=%s cached=%s cached_pct=%s completion=%s reasoning=%s total=%s cap=%s used_pct=%s chars=%s empty=%s',
       label,
       data.model || '?',
       data.provider || '?',
       choice.finish_reason || choice.native_finish_reason || '?',
       usage.prompt_tokens ?? '?',
+      cached,
+      usage.prompt_tokens ? Math.round((cached / usage.prompt_tokens) * 100) : '?',
       completion ?? '?',
       details.reasoning_tokens ?? 0,
       usage.total_tokens ?? '?',
@@ -110,6 +119,7 @@ async function generateCoverLetter({ config, model, jobDescription, cv, temperat
     model,
     max_tokens: 900,
     temperature,
+    ...reasoningConfig(),
     messages: [
       { role: 'system', content: buildCoverLetterPrompt() },
       { role: 'user', content: JSON.stringify({ jobDescription, myProfile: me }) }
@@ -146,31 +156,11 @@ function getConfig() {
   };
 }
 
-export async function handleOptimizeRequest(req, res) {
-  if (!(await requireAuth(req, res))) return;
-
-  const { jobDescription, aiUserInfo, fixedUserInfo, max_tokens = 4000, temperature = 0.45, includeCoverLetter = false } = req.body || {};
-
-  const config = getConfig();
-  const model = config.DEFAULT_MODEL;
-
-  console.log('[optimize] model=%s baseUrl=%s', model, config.API_BASE_URL);
-  console.log('[optimize] sizes jd=%s chars, aiUserInfo=%s chars, max_tokens=%s, temp=%s',
-    jobDescription?.length ?? 0,
-    aiUserInfo?.length ?? 0,
-    max_tokens,
-    temperature
-  );
-
-  if (!jobDescription || !aiUserInfo) {
-    return res.status(400).json({ error: 'jobDescription and aiUserInfo are required' });
-  }
-
-  if (!config.OPENAI_API_KEY) {
-    console.warn('[optimize] OPENAI_API_KEY not set');
-    return res.status(500).json({ error: 'OpenAI API key not configured' });
-  }
-
+// The CV instruction, lifted out of the request handler so it can be exercised without an
+// HTTP request or a Firebase token. Moved verbatim: the template literals are byte-identical
+// to what the handler sent before, because re-indenting inside a template literal would
+// silently change the prompt.
+export function buildCvInstruction() {
   const jsonSchema = `{
     "summary": "string",
     "coreSkills": [
@@ -244,6 +234,36 @@ keywordsUsed: JD terms that actually appear in the text you wrote.
 Reply with the JSON object only.
 </hard_limits>`;
 
+  return instruction;
+}
+
+export async function handleOptimizeRequest(req, res) {
+  if (!(await requireAuth(req, res))) return;
+
+  const { jobDescription, aiUserInfo, fixedUserInfo, max_tokens = 4000, temperature = 0.45, includeCoverLetter = false } = req.body || {};
+
+  const config = getConfig();
+  const model = config.DEFAULT_MODEL;
+
+  console.log('[optimize] model=%s baseUrl=%s', model, config.API_BASE_URL);
+  console.log('[optimize] sizes jd=%s chars, aiUserInfo=%s chars, max_tokens=%s, temp=%s',
+    jobDescription?.length ?? 0,
+    aiUserInfo?.length ?? 0,
+    max_tokens,
+    temperature
+  );
+
+  if (!jobDescription || !aiUserInfo) {
+    return res.status(400).json({ error: 'jobDescription and aiUserInfo are required' });
+  }
+
+  if (!config.OPENAI_API_KEY) {
+    console.warn('[optimize] OPENAI_API_KEY not set');
+    return res.status(500).json({ error: 'OpenAI API key not configured' });
+  }
+
+  const instruction = buildCvInstruction();
+
   // Extract only yearsOfExperience from fixedUserInfo
   let yearsOfExperience = null;
   if (fixedUserInfo) {
@@ -276,6 +296,7 @@ Reply with the JSON object only.
       max_tokens,
       temperature,
       top_p: 0.9,
+      ...reasoningConfig(),
       messages: [
         { role: 'system', content: instruction },
         { role: 'user', content: JSON.stringify(userPayload) }
