@@ -186,12 +186,31 @@ async function getOrPickFolder() {
   return openDirectoryPicker();
 }
 
+// Windows device names, which some filesystems still refuse as directory names.
+const RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+// getDirectoryHandle rejects "", ".", ".." and anything containing a path separator or
+// NUL. Filesystems reject more than that: the Windows set <>:"|?*, control characters,
+// and trailing dots or spaces. Strip all of it, then assert the result is legal so no
+// future edit here can hand the browser a name it refuses.
 function sanitizeFolderName(name) {
-  return String(name || '')
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
+  let out = String(name || '')
+    .normalize('NFC')
+    .replace(/[<>:"/\\|?*]/g, '')          // path separators and Windows-illegal chars
+    .replace(/[\x00-\x1f\x7f]/g, '')        // control characters, including DEL
     .trim()
-    .replace(/\s+/g, '_')
-    .slice(0, 50) || 'Company';
+    .replace(/\s+/g, '_')                   // collapse whitespace
+    .replace(/^[.\s_]+|[.\s_]+$/g, '')      // no leading/trailing dots, spaces, underscores
+    .slice(0, 50)
+    .replace(/[.\s_]+$/g, '');              // the slice can re-expose one
+
+  if (!out || RESERVED_NAMES.test(out)) out = 'Company';
+
+  // Final gate. If anything above ever lets an illegal name through, fail safe here
+  // rather than at the browser, where it throws TypeError and kills the download.
+  if (out === '.' || out === '..' || /[/\\\x00]/.test(out)) out = 'Company';
+
+  return out;
 }
 
 export function extractCompanyName(jobDescription) {
@@ -214,8 +233,7 @@ export function extractCompanyName(jobDescription) {
 
 // Each download gets its own folder: Acme, then Acme_2, Acme_3, … Existing
 // versions are kept rather than overwritten.
-async function getUniqueSubfolder(rootHandle, baseName) {
-  const sanitized = sanitizeFolderName(baseName);
+async function createUniqueUnder(rootHandle, sanitized) {
   let candidate = sanitized;
   let i = 2;
   while (true) {
@@ -226,6 +244,23 @@ async function getUniqueSubfolder(rootHandle, baseName) {
       if (err && err.name !== 'NotFoundError') throw err;
       return rootHandle.getDirectoryHandle(candidate, { create: true });
     }
+  }
+}
+
+async function getUniqueSubfolder(rootHandle, baseName) {
+  const sanitized = sanitizeFolderName(baseName);
+  try {
+    return await createUniqueUnder(rootHandle, sanitized);
+  } catch (err) {
+    // A name the browser refuses must not cost the user their download. Sanitising
+    // should prevent this, but the set of rejected names varies by OS and filesystem,
+    // so fall back to a name that is always legal rather than failing the write.
+    if (err?.name === 'TypeError') {
+      console.warn('[folder] the browser refused the folder name "%s" (%s); using "Company" instead',
+        sanitized, err.message);
+      return createUniqueUnder(rootHandle, 'Company');
+    }
+    throw err;
   }
 }
 

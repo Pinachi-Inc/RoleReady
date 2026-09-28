@@ -211,3 +211,90 @@ export function buildCvPdf(cv) {
 
   return doc;
 }
+
+// The cover letter used to be the one document still going through html2pdf, so it
+// shipped as a JPEG of itself with zero extractable text — the same defect the CV
+// export was rewritten to fix. Recruiters paste letters into ATS text fields as often
+// as they read them, so it needs to be real text too.
+//
+// Mirrors src/templateRenderer.js renderCoverLetterHtml: centred name, contact line,
+// one section band, then the letter's paragraphs. The letter arrives from the server
+// with its greeting and sign-off already assembled, so paragraphs are split on blank
+// lines and otherwise left alone.
+export function buildCoverLetterPdf(letter, cv) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  doc.setFont('helvetica', 'normal');
+
+  const contentW = MM.pageW - MM.margin * 2;
+  let y = MM.margin;
+
+  const setColor = (c) => doc.setTextColor(c[0], c[1], c[2]);
+
+  const need = (h) => {
+    if (y + h > MM.pageH - MM.margin) {
+      doc.addPage();
+      y = MM.margin;
+    }
+  };
+
+  // ---- header ----------------------------------------------------------------
+  if (cv?.name) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(FONT.name);
+    setColor(COLOR.text);
+    doc.text(String(cv.name).toUpperCase(), MM.pageW / 2, y + 5, { align: 'center', charSpace: 0.35 });
+    y += 9;
+  }
+
+  const contactBits = [cv?.contact?.location, cv?.contact?.phone, cv?.contact?.email].filter(Boolean);
+  if (contactBits.length) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(FONT.contact);
+    setColor(COLOR.muted);
+    const lineH = FONT.contact * 0.3528 * 1.4;
+    for (const l of doc.splitTextToSize(contactBits.join('  |  '), contentW)) {
+      need(lineH);
+      doc.text(l, MM.pageW / 2, y + lineH * 0.78, { align: 'center' });
+      y += lineH;
+    }
+  }
+  y += MM.gapSection;
+
+  // ---- band ------------------------------------------------------------------
+  // Reserve the band plus two lines so it can never be stranded at the foot of a page.
+  const bodyLine = FONT.body * 0.3528 * 1.42;
+  need(MM.bandH + MM.gapAfterBand + bodyLine * 2);
+  doc.setFillColor(COLOR.band[0], COLOR.band[1], COLOR.band[2]);
+  doc.rect(MM.margin, y, contentW, MM.bandH, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(FONT.sectionTitle);
+  setColor(COLOR.text);
+  doc.text('COVER LETTER', MM.margin + MM.bandPadX, y + MM.bandH * 0.71);
+  y += MM.bandH + MM.gapAfterBand;
+
+  // ---- body ------------------------------------------------------------------
+  const paragraphs = String(letter || '')
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(FONT.body);
+  setColor(COLOR.text);
+
+  paragraphs.forEach((para, idx) => {
+    // A single newline inside a paragraph is a real break in the letter (the sign-off
+    // block above all), so keep it rather than reflowing it away.
+    for (const rawLine of para.split('\n')) {
+      const lines = doc.splitTextToSize(rawLine, contentW);
+      for (const line of lines) {
+        need(bodyLine);
+        doc.text(line, MM.margin, y + bodyLine * 0.78);
+        y += bodyLine;
+      }
+    }
+    if (idx < paragraphs.length - 1) y += bodyLine * 0.55;
+  });
+
+  return doc;
+}
