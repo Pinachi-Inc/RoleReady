@@ -15,3 +15,36 @@ export function reasoningConfig() {
   if (String(process.env.MODEL_REASONING || '').toLowerCase() === 'true') return {};
   return { reasoning: { enabled: false } };
 }
+
+// OpenRouter serves most models from several providers at very different speeds, and picks
+// one for you. Kimi K2.5 alone has five. Measured on this app's own CV prompt, the default
+// choice was the slowest model in the lineup at 32s while producing the FEWEST output tokens,
+// so it was a throughput problem rather than verbosity.
+//
+// MODEL_PROVIDERS pins an ordered preference list, e.g. "AtlasCloud,Novita". With it set,
+// fallbacks are disabled so a slow provider cannot silently be substituted back in. Without
+// it, providers are sorted by throughput.
+//
+// Worth knowing: several of the fastest endpoints are int4-quantized, which is part of why
+// they are fast. MODEL_MIN_QUANT (e.g. "fp8,bf16,fp16") restricts routing to endpoints at or
+// above a given precision when speed must not come at the cost of output quality.
+export function providerConfig() {
+  const pinned = String(process.env.MODEL_PROVIDERS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+  const quantizations = String(process.env.MODEL_MIN_QUANT || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+
+  // Deliberately a no-op unless configured. sort:'throughput' was tried as the default and
+  // measured unreliable: on the same model and prompt it picked a 30.6s provider on one call
+  // and an 8.7s one on another, because it ranks on OpenRouter's own fluctuating stats. An
+  // unpredictable route is worse than a steady one, so routing is left alone by default and
+  // pinned explicitly when a model actually needs it.
+  const provider = {};
+  if (pinned.length) {
+    provider.order = pinned;
+    provider.allow_fallbacks = false;
+  }
+  if (quantizations.length) provider.quantizations = quantizations;
+
+  return Object.keys(provider).length ? { provider } : {};
+}
