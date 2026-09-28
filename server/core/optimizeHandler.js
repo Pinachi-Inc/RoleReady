@@ -2,7 +2,7 @@ import axios from 'axios';
 import { validateAndFixSkills, reorderSkills } from '../cvValidation.js';
 import { renderCvMarkdown } from '../cvRenderer.js';
 import { requireAuth } from './firebaseAuth.js';
-import { reasoningConfig } from './modelOptions.js';
+import { reasoningConfig, providerConfig } from './modelOptions.js';
 
 // Ensure env values are safe for HTTP headers/URLs
 function sanitizeEnv(value) {
@@ -56,7 +56,7 @@ function logModelCall(label, result, requestedMaxTokens) {
 // The cover letter is a SEPARATE completion, deliberately. Folding it into the CV
 // schema would grow an already long JSON response and make truncation — which used to
 // 500 the whole request — more likely. Plain text out, so there is nothing to parse.
-function buildCoverLetterPrompt() {
+export function buildCoverLetterPrompt() {
   return `<format>
 Plain text. Three paragraphs, one blank line between them, nothing else. No greeting and no signature: both are added afterward. No markdown, no bold, no bullets, no headings, no subject line, no address block, no closing salutation.
 </format>
@@ -120,6 +120,7 @@ async function generateCoverLetter({ config, model, jobDescription, cv, temperat
     max_tokens: 900,
     temperature,
     ...reasoningConfig(),
+    ...providerConfig(),
     messages: [
       { role: 'system', content: buildCoverLetterPrompt() },
       { role: 'user', content: JSON.stringify({ jobDescription, myProfile: me }) }
@@ -297,6 +298,7 @@ export async function handleOptimizeRequest(req, res) {
       temperature,
       top_p: 0.9,
       ...reasoningConfig(),
+      ...providerConfig(),
       messages: [
         { role: 'system', content: instruction },
         { role: 'user', content: JSON.stringify(userPayload) }

@@ -2,7 +2,7 @@ import multer from 'multer';
 import axios from 'axios';
 import PDFTextExtractor from './PDFTextExtractor.js';
 import { requireAuth } from './firebaseAuth.js';
-import { reasoningConfig } from './modelOptions.js';
+import { reasoningConfig, providerConfig } from './modelOptions.js';
 
 // Config getter (same as optimizeHandler). Reads process.env only — this module
 // is ESM, so the old `require('firebase-functions')` branch threw ReferenceError
@@ -221,7 +221,8 @@ Extract all skills organized by categories, work experience with achievements, p
     ],
     max_tokens: 4000,
     temperature: 0.3, // Lower temperature for more consistent JSON output
-    ...reasoningConfig()
+    ...reasoningConfig(),
+    ...providerConfig()
   };
 
   try {
