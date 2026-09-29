@@ -39,6 +39,24 @@ export function providerConfig() {
   // and an 8.7s one on another, because it ranks on OpenRouter's own fluctuating stats. An
   // unpredictable route is worse than a steady one, so routing is left alone by default and
   // pinned explicitly when a model actually needs it.
+  //
+  // moonshotai/kimi-k2.5 needs it. Measured on this app's CV prompt, same profile, same
+  // request, the only difference being which provider served it:
+  //
+  //   Venice           9.6s median (8.3-17.6 over 5 runs)   NOT quantized
+  //   AtlasCloud      17.1s                                  int4
+  //   Amazon Bedrock  19.5s
+  //   Novita          20.6s
+  //   SiliconFlow     33.9s                                  int4
+  //   (no pin)        29.2s
+  //
+  // Hence MODEL_PROVIDERS=Venice,AtlasCloud in deployment: Venice first, AtlasCloud as the
+  // only permitted fallback, so a Venice outage cannot quietly land on SiliconFlow at three
+  // times the latency. Venice also happens to be the unquantized endpoint, so the fast path
+  // is the higher-precision one rather than a quality trade.
+  //
+  // This lives in a comment because the value itself is an environment variable, and .env is
+  // not in the repository.
   const provider = {};
   if (pinned.length) {
     provider.order = pinned;
