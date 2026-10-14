@@ -18,7 +18,8 @@ service cloud.firestore {
 
     // Fields the client may never create or modify.
     function serverOwned() {
-      return ['plan', 'planSince', 'planRenewsAt', 'stripeCustomerId', 'stripeSubscriptionId', 'usage'];
+      return ['plan', 'planSince', 'planRenewsAt', 'stripeCustomerId', 'stripeSubscriptionId',
+              'subscriptionStatus', 'cancelAtPeriodEnd', 'usage', 'lifetimeUsage'];
     }
 
     function noServerFields() {
@@ -29,7 +30,9 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOwned());
     }
 
-    // Free gets one profile, paid three, comped accounts ten. The plan is read from the
+    // Saved profiles are a paid feature: free gets none, paid three, comped accounts ten.
+    // (The single working profile, aiUserInfo / fixedUserInfo, is not a saved profile and
+    // stays available to everyone.) The plan is read from the
     // STORED document, never from the incoming write, so a client cannot raise its own cap
     // in the same request that adds a profile.
     //
@@ -38,22 +41,25 @@ service cloud.firestore {
     // the server mirrors the grant here; see server/core/firestore.js.
     function profileCap() {
       let plan = resource.data.get('plan', 'free');
-      return plan == 'unlimited' ? 10 : (plan == 'paid' ? 3 : 1);
+      return plan == 'unlimited' ? 10 : (plan == 'paid' ? 3 : 0);
     }
 
+    // Checked only when the write touches profiles. Someone who cancels keeps profiles they
+    // can no longer add to, and must still be able to save the rest of their document.
     function profilesWithinCap() {
       return !request.resource.data.keys().hasAny(['profiles'])
+        || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['profiles'])
         || request.resource.data.profiles.size() <= profileCap();
     }
 
     match /users/{uid} {
       allow read: if isOwner(uid);
 
-      // A brand new document is free by definition, so it may carry at most one profile.
+      // A brand new document is free by definition, so it may not carry saved profiles.
       allow create: if isOwner(uid)
         && noServerFields()
         && (!request.resource.data.keys().hasAny(['profiles'])
-            || request.resource.data.profiles.size() <= 1);
+            || request.resource.data.profiles.size() == 0);
 
       allow update: if isOwner(uid)
         && serverFieldsUnchanged()

@@ -23,6 +23,16 @@ export const optimizeCv = async ({ jobDescription, aiUserInfo, fixedUserInfo, ma
     body: JSON.stringify({ jobDescription, aiUserInfo, fixedUserInfo, max_tokens: maxTokens, temperature, includeCoverLetter })
   });
 
+  // Out of optimizations. Surfaced as a typed error so the UI can show the paywall
+  // instead of a generic failure alert.
+  if (response.status === 402) {
+    const data = await response.json().catch(() => ({}));
+    const error = new Error(data.error || 'Upgrade required');
+    error.code = data.code || 'upgrade_required';
+    error.quota = data.quota || null;
+    throw error;
+  }
+
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`API request failed: ${response.status} - ${errorText}`);

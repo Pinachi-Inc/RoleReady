@@ -2,6 +2,7 @@ import axios from 'axios';
 import { validateAndFixSkills, reorderSkills } from '../cvValidation.js';
 import { renderCvMarkdown } from '../cvRenderer.js';
 import { requireAuth } from './firebaseAuth.js';
+import { consumeQuota, refundQuota, recordRun } from './firestore.js';
 import { reasoningConfig, providerConfig } from './modelOptions.js';
 
 // Ensure env values are safe for HTTP headers/URLs
@@ -239,8 +240,63 @@ Reply with the JSON object only.
 }
 
 export async function handleOptimizeRequest(req, res) {
-  if (!(await requireAuth(req, res))) return;
+  const user = await requireAuth(req, res);
+  if (!user) return;
 
+  const { jobDescription, aiUserInfo } = req.body || {};
+  if (!jobDescription || !aiUserInfo) {
+    return res.status(400).json({ error: 'jobDescription and aiUserInfo are required' });
+  }
+
+  // Consumed before the model call rather than after, so ten parallel requests from a free
+  // account cannot all slip under the limit. Refunded below if the run then fails.
+  const quota = await consumeQuota(user.uid, 'optimizations', { email: user.email });
+  console.log('[optimize] quota uid=%s plan=%s used=%s limit=%s window=%s allowed=%s enforced=%s',
+    user.uid, quota.plan, quota.used, quota.limit ?? 'none', quota.window || '?', quota.allowed, quota.enforced);
+
+  if (!quota.allowed) {
+    if (quota.enforced) {
+      const unavailable = quota.reason === 'quota_unavailable';
+      return res.status(unavailable ? 503 : 402).json({
+        error: unavailable
+          ? 'Usage tracking is temporarily unavailable. Please try again shortly.'
+          : quota.plan === 'free'
+            ? `You have used all ${quota.limit} free optimizations. Upgrade to keep going.`
+            : `You have used all ${quota.limit} optimizations for this month. Your allowance resets on the 1st.`,
+        code: unavailable ? 'quota_unavailable' : 'upgrade_required',
+        quota: publicQuota(quota),
+      });
+    }
+    console.warn('[optimize] uid=%s is over its %s limit; allowed because BILLING_ENFORCED is off', user.uid, quota.plan);
+  }
+
+  const consumed = quota.allowed && quota.used > 0;
+  let result = null;
+  try {
+    result = await runOptimize(req, res, publicQuota(quota));
+  } finally {
+    // Every failure path in runOptimize answers with a 4xx/5xx rather than throwing.
+    if (consumed && res.statusCode >= 400) await refundQuota(user.uid, 'optimizations');
+  }
+
+  // Saved history is a paid feature. Recorded after the response has gone out, and recordRun
+  // never throws, so it cannot cost the user the CV they just got.
+  if (result && quota.plan !== 'free') {
+    await recordRun(user.uid, {
+      companyName: result.companyName,
+      cv: result.cv,
+      coverLetter: result.coverLetter,
+    });
+  }
+}
+
+// The subset of the quota result the browser is told about.
+function publicQuota(quota) {
+  const remaining = quota.limit == null ? null : Math.max(0, quota.limit - quota.used);
+  return { plan: quota.plan, used: quota.used, limit: quota.limit ?? null, remaining, window: quota.window || null };
+}
+
+async function runOptimize(req, res, quota) {
   const { jobDescription, aiUserInfo, fixedUserInfo, max_tokens = 4000, temperature = 0.45, includeCoverLetter = false } = req.body || {};
 
   const config = getConfig();
@@ -575,7 +631,7 @@ export async function handleOptimizeRequest(req, res) {
       droppedSkills: dropped?.items ?? 0,
       droppedCategories: dropped?.categories ?? 0
     };
-    res.json({
+    const payload = {
       cvContent: markdown,
       keywords: (keywords || []).slice(0, 20),
       keywordsFiltered: filteredKeywords.slice(0, 20),
@@ -584,8 +640,11 @@ export async function handleOptimizeRequest(req, res) {
       needsFix,
       stats,
       overlapSkills: Array.isArray(overlapSkills) ? overlapSkills : [],
-      companyName: companyName || ''
-    });
+      companyName: companyName || '',
+      quota
+    };
+    res.json(payload);
+    return payload;
   } catch (err) {
     const status = err.response?.status || 500;
     const data = err.response?.data || err.message;

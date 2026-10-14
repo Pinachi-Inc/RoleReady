@@ -54,6 +54,7 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 |---|---|---|
 | `services/openai.js` | `optimizeCv`, `detectAiContent` | `POST /api/optimize`, `POST /api/detect-ai` |
 | `services/pdf.js` | `processPdf` | `POST /api/process-pdf` (multipart, field name `pdf`) |
+| `services/billing.js` | `getBillingStatus`, `startCheckout`, `openBillingPortal` | `POST /api/billing/{status,checkout,portal}`; the last two redirect the tab to Stripe |
 | `services/auth.js` | `signInWithGoogle`, `signOutUser`, `onAuthStateChange`, `saveUserData`, `getUserData` | Firebase Auth + Firestore |
 | `services/folderManager.js` | `isFolderApiSupported`, `getFolderHandle`, `pickNewFolder`, `getStoredFolderName`, `writePdfWithHandle`, `savePdfToFolder`, `clearFolderHandle`, `extractCompanyName` | File System Access API + IndexedDB (`roleberry` / `settings` / `downloadFolderHandle`) |
 | `src/firebase.js` | `auth`, `db`, `googleProvider` | Firebase SDK init from `VITE_FIREBASE_*` |
@@ -72,6 +73,8 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 | `server/core/optimizeHandler.js` (422 L) | `handleOptimizeRequest` | The big one. Holds the giant prompt, JSON schema, code-fence stripping, structural validation, role-metadata merge from `aiUserInfo.experienceSource`, keyword filtering, stats. |
 | `server/core/pdfHandler.js` (300 L) | `handlePdfProcessing`, `uploadMiddleware` | multer memory storage, 10MB, PDF-only. Extract -> GPT -> two JSON blobs. Also `calculateYearsOfExperience`. |
 | `server/core/aiDetectHandler.js` (33 L) | `handleAiDetect` | Sapling `/api/v1/aidetect`, returns `{ score }` 0–1 |
+| `server/core/firestore.js` | `PLAN_LIMITS`, `consumeQuota`, `refundQuota`, `getEntitlement`, `recordRun`, user-doc helpers | Admin SDK. Free = 5 optimizations lifetime, paid = 1,000/calendar month. `BILLING_ENFORCED=true` turns limits into refusals. |
+| `server/core/billing.js` | `handleCreateCheckout`, `handleCustomerPortal`, `handleBillingStatus`, `handleStripeWebhook` | Stripe. The signed webhook is the only thing that sets `plan`; it re-reads the subscription from Stripe on every event. |
 | `server/core/PDFTextExtractor.js` (150 L) | `PDFTextExtractor` (default) | pdfjs-dist legacy, worker disabled. `isTextBased` samples N pages; **OCR path throws `IMAGE_BASED_PDF_NOT_SUPPORTED` — deliberately disabled.** |
 | `server/cvValidation.js` | `validateAndFixSkills`, `reorderSkills` | dedupe, clamp 3–9 items / max 9 categories, compute `jdShare`, sort by hardcoded `categoryOrder` |
 | `server/cvRenderer.js` | `renderCvMarkdown` | server-side markdown build; its output is what `cvContent` returns and what keyword filtering greps |
@@ -79,9 +82,10 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 ### Backend — adapters (thin, keep thin)
 | File | Runtime |
 |---|---|
-| `server/index.js` | Express, port `PORT` or 8787. Routes: `/api/optimize`, `/api/process-pdf`, `/api/detect-ai` |
-| `api/optimize.js`, `api/process-pdf.js`, `api/detect-ai.js` | Vercel. CORS `*`, OPTIONS, POST-only, delegate to core |
-| `functions/index.js` | Firebase. Express-in-function, CJS with dynamic `import()` of the ESM core. Routes `/optimize`, `/process-pdf`, `/health`. **No `/detect-ai`.** |
+| `server/index.js` | Express, port `PORT` or 8787. Routes: `/api/optimize`, `/api/process-pdf`, `/api/detect-ai`, `/api/billing/{checkout,portal,status}`, `/api/stripe-webhook` (raw body, registered before `express.json`) |
+| `api/optimize.js`, `api/process-pdf.js`, `api/detect-ai.js`, `api/billing/*.js` | Vercel. CORS `*`, OPTIONS, POST-only, delegate to core |
+| `api/stripe-webhook.js` | Vercel. No CORS; must not touch `req.body` (signature is over the raw stream) |
+| `functions/index.js` | Firebase. Express-in-function, CJS with dynamic `import()` of the ESM core. Routes `/optimize`, `/process-pdf`, `/health`, `/billing/*`, `/stripe-webhook`. **No `/detect-ai`.** |
 
 ### Build / ops
 | File | Role |

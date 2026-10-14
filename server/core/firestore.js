@@ -47,10 +47,14 @@ function db() {
 // Plan limits live here rather than in the client so the numbers cannot drift between what
 // the UI promises and what the server enforces.
 // null means no ceiling.
+//
+// `window` says what the counters count over. Free is a one-off trial, so its allowance is
+// lifetime: 5 optimizations ever, not 5 a month. Paid resets each calendar month.
+// Saved profiles and run history are paid features, so free gets none of either.
 export const PLAN_LIMITS = {
-  free: { optimizations: 15, pdfImports: 10, profiles: 1, historyVisible: 3, historyGreyed: 5 },
-  paid: { optimizations: 1000, pdfImports: 10, profiles: 3, historyVisible: null, historyGreyed: 0 },
-  unlimited: { optimizations: null, pdfImports: null, profiles: 10, historyVisible: null, historyGreyed: 0 },
+  free: { window: 'lifetime', optimizations: 5, pdfImports: 10, profiles: 0, historyVisible: 0, historyGreyed: 0 },
+  paid: { window: 'month', optimizations: 1000, pdfImports: null, profiles: 3, historyVisible: null, historyGreyed: 0 },
+  unlimited: { window: 'month', optimizations: null, pdfImports: null, profiles: 10, historyVisible: null, historyGreyed: 0 },
 };
 
 export function limitsFor(plan) {
@@ -84,24 +88,61 @@ export function isComped(uid, email) {
   return false;
 }
 
-// Calendar month. "15 optimizations/month" reads as a calendar month to a customer, and a
+// Calendar month. "1,000 optimizations/month" reads as a calendar month to a customer, and a
 // rolling window would need a per-event log rather than a counter.
 function currentPeriod(now = new Date()) {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 // Enforcement is deliberately opt-in. Until billing ships, a missing service account must not
-// take down a working app, so the default is to count nothing and allow everything while
-// logging loudly. Set BILLING_ENFORCED=true and this flips to fail-closed: no Firestore means
-// no generation, because silently allowing unlimited paid-tier usage is the worse failure.
-const enforcementOn = () => String(process.env.BILLING_ENFORCED || '').toLowerCase() === 'true';
+// take down a working app, so the default is to count usage and allow everything while
+// logging loudly. Set BILLING_ENFORCED=true and this flips to fail-closed: over-limit requests
+// are refused, and no Firestore means no generation, because silently allowing unlimited
+// paid-tier usage is the worse failure.
+export const enforcementOn = () => String(process.env.BILLING_ENFORCED || '').toLowerCase() === 'true';
+
+function planOf(data, comped) {
+  if (comped) return 'unlimited';
+  return data?.plan === 'paid' || data?.plan === 'unlimited' ? data.plan : 'free';
+}
+
+// Two counters are kept side by side: `usage` resets every calendar month, `lifetimeUsage`
+// never does. Both always move, so someone who cancels lands back on free with their true
+// lifetime count rather than a fresh trial.
+function countersFor(data, period) {
+  const usage = data?.usage && data.usage.period === period ? { ...data.usage } : { period };
+  const lifetime = { ...(data?.lifetimeUsage || {}) };
+  return { usage, lifetime };
+}
 
 /**
- * Atomically check a user's monthly allowance and consume one unit of it.
+ * The caller's plan and where they stand against its optimization allowance, from an already
+ * loaded user document. Pure, so the status endpoint and the quota transaction agree.
+ */
+export function getEntitlement(user, data, kind = 'optimizations') {
+  const comped = isComped(user?.uid, user?.email);
+  const plan = planOf(data, comped);
+  const limits = limitsFor(plan);
+  const { usage, lifetime } = countersFor(data, currentPeriod());
+  const used = Number((limits.window === 'lifetime' ? lifetime : usage)[kind] || 0);
+  const limit = limits[kind] ?? null;
+  return {
+    plan,
+    comped,
+    window: limits.window,
+    used,
+    limit,
+    remaining: limit == null ? null : Math.max(0, limit - used),
+    enforced: enforcementOn(),
+  };
+}
+
+/**
+ * Atomically check a user's allowance and consume one unit of it.
  *
  * @param {string} uid
  * @param {'optimizations'|'pdfImports'} kind
- * @returns {Promise<{allowed:boolean, reason?:string, plan:string, used:number, limit:number, enforced:boolean}>}
+ * @returns {Promise<{allowed:boolean, reason?:string, plan:string, used:number, limit:number, window:string, enforced:boolean}>}
  */
 export async function consumeQuota(uid, kind, { email = null } = {}) {
   const enforced = enforcementOn();
@@ -111,14 +152,14 @@ export async function consumeQuota(uid, kind, { email = null } = {}) {
   // Checked before Firestore is even consulted, so a comped account keeps working when the
   // billing system does not.
   if (comped && !database) {
-    return { allowed: true, plan: 'unlimited', used: 0, limit: null, enforced, comped };
+    return { allowed: true, plan: 'unlimited', used: 0, limit: null, window: 'month', enforced, comped };
   }
 
   if (!database) {
     if (enforced) {
       return { allowed: false, reason: 'quota_unavailable', plan: 'unknown', used: 0, limit: 0, enforced, comped };
     }
-    return { allowed: true, plan: 'free', used: 0, limit: limitsFor('free')[kind], enforced, comped };
+    return { allowed: true, plan: 'free', used: 0, limit: limitsFor('free')[kind], window: 'lifetime', enforced, comped };
   }
 
   const ref = database.collection('users').doc(uid);
@@ -128,17 +169,18 @@ export async function consumeQuota(uid, kind, { email = null } = {}) {
     return await database.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const data = snap.exists ? snap.data() : {};
-      const storedPlan = data.plan === 'paid' || data.plan === 'unlimited' ? data.plan : 'free';
-      const plan = comped ? 'unlimited' : storedPlan;
-      const limit = limitsFor(plan)[kind];
+      const storedPlan = planOf(data, false);
+      const plan = planOf(data, comped);
+      const limits = limitsFor(plan);
+      const limit = limits[kind] ?? null;
 
-      // A new period resets every counter rather than just the one being consumed.
-      const usage = data.usage && data.usage.period === period ? { ...data.usage } : { period };
-      const used = Number(usage[kind] || 0);
+      const { usage, lifetime } = countersFor(data, period);
+      const counted = limits.window === 'lifetime' ? lifetime : usage;
+      const used = Number(counted[kind] || 0);
 
       // null means no ceiling, so comped and paid-unlimited never trip this.
       if (limit != null && used >= limit) {
-        return { allowed: false, reason: 'quota_exceeded', plan, used, limit, enforced, comped };
+        return { allowed: false, reason: 'quota_exceeded', plan, used, limit, window: limits.window, enforced, comped };
       }
 
       // Mirror the env-based grant onto the document. firestore.rules cannot read env vars,
@@ -151,22 +193,74 @@ export async function consumeQuota(uid, kind, { email = null } = {}) {
 
       // Counted even when enforcement is off, so the numbers are real on the day it is
       // switched on and we can see actual usage before committing to the limits.
-      usage[kind] = used + 1;
-      tx.set(ref, { usage }, { merge: true });
+      usage[kind] = Number(usage[kind] || 0) + 1;
+      lifetime[kind] = Number(lifetime[kind] || 0) + 1;
+      tx.set(ref, { usage, lifetimeUsage: lifetime }, { merge: true });
 
-      return { allowed: true, plan, used: used + 1, limit, enforced, comped };
+      return { allowed: true, plan, used: used + 1, limit, window: limits.window, enforced, comped };
     });
   } catch (err) {
     console.error('[firestore] quota transaction failed for %s/%s: %s', uid, kind, err?.message || err);
     // A comped account is never blocked by a billing-system failure.
     if (comped) {
-      return { allowed: true, plan: 'unlimited', used: 0, limit: null, enforced, comped };
+      return { allowed: true, plan: 'unlimited', used: 0, limit: null, window: 'month', enforced, comped };
     }
     if (enforced) {
       return { allowed: false, reason: 'quota_unavailable', plan: 'unknown', used: 0, limit: 0, enforced, comped };
     }
-    return { allowed: true, plan: 'free', used: 0, limit: limitsFor('free')[kind], enforced, comped };
+    return { allowed: true, plan: 'free', used: 0, limit: limitsFor('free')[kind], window: 'lifetime', enforced, comped };
   }
+}
+
+/**
+ * Give back one unit consumed by consumeQuota, for a request that then failed. With only five
+ * free optimizations, a model timeout must not eat one of them. Never throws.
+ */
+export async function refundQuota(uid, kind) {
+  const database = db();
+  if (!database) return;
+
+  const ref = database.collection('users').doc(uid);
+  const period = currentPeriod();
+  try {
+    await database.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return;
+      const { usage, lifetime } = countersFor(snap.data(), period);
+      // Floor at zero: a refund that straddles a month boundary has nothing to give back.
+      usage[kind] = Math.max(0, Number(usage[kind] || 0) - 1);
+      lifetime[kind] = Math.max(0, Number(lifetime[kind] || 0) - 1);
+      tx.set(ref, { usage, lifetimeUsage: lifetime }, { merge: true });
+    });
+    console.log('[firestore] refunded one %s to uid=%s', kind, uid);
+  } catch (err) {
+    console.error('[firestore] refund failed for %s/%s: %s', uid, kind, err?.message || err);
+  }
+}
+
+/**
+ * The stored user document, {} when there is none yet, or undefined when the server has no
+ * Firestore access at all. Callers that need to tell those apart check for undefined.
+ */
+export async function getUserDoc(uid) {
+  const database = db();
+  if (!database) return undefined;
+  const snap = await database.collection('users').doc(uid).get();
+  return snap.exists ? snap.data() : {};
+}
+
+// Server-side merge write. Used for the server-owned fields firestore.rules denies the client.
+export async function updateUserDoc(uid, fields) {
+  const database = db();
+  if (!database) throw new Error('Firestore is not configured on the server');
+  await database.collection('users').doc(uid).set(fields, { merge: true });
+}
+
+export async function findUidByStripeCustomer(customerId) {
+  const database = db();
+  if (!database || !customerId) return null;
+  const snap = await database.collection('users').where('stripeCustomerId', '==', customerId).limit(1).get();
+  return snap.empty ? null : snap.docs[0].id;
 }
 
 /**
