@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, FileText, Target, Zap, AlertCircle, Save, Info, Copy, Check, Bot, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, ArrowLeft, Link2, Award, GraduationCap, Briefcase } from 'lucide-react';
+import { Download, FileText, Target, Zap, AlertCircle, Save, Info, Copy, Check, Bot, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, ArrowLeft, Link2, Award, GraduationCap, Briefcase, Sparkles } from 'lucide-react';
 import { convertMarkdownToHtml } from '../utils/markdown.js';
 import { generateDownloadHtml, downloadHtml } from '../utils/download.js';
 import html2pdf from 'html2pdf.js';
@@ -16,6 +16,7 @@ import { renderCvHtml, renderCoverLetterHtml } from '../src/templateRenderer.js'
 import { buildCvPdf, buildCoverLetterPdf } from '../src/cvPdf.js';
 import { prefetchOcrAssets, ocrPdfInBrowser, isOcrSupported } from '../services/browserOcr.js';
 import { optimizeCv as optimizeCvService, detectAiContent } from '../services/openai.js';
+import { getBillingStatus, startCheckout, openBillingPortal } from '../services/billing.js';
 import { processPdf, processPdfText } from '../services/pdf.js';
 import { onAuthStateChange, saveUserData, getUserData } from '../services/auth.js';
 import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
@@ -187,6 +188,12 @@ const CVOptimizer = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadNotice, setDownloadNotice] = useState('');
   const [downloadNoticeTone, setDownloadNoticeTone] = useState('warn'); // 'warn' | 'ok'
+  const [billing, setBilling] = useState(null); // server's view of plan and allowance, see services/billing.js
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [billingNotice, setBillingNotice] = useState('');
+  // Read once: Stripe sends people back to /?checkout=success|cancelled.
+  const checkoutReturnRef = useRef(new URLSearchParams(window.location.search).get('checkout'));
   const downloadingRef = useRef(false);
 
   const detectableWordCount = (cv) => {
@@ -447,6 +454,75 @@ const CVOptimizer = () => {
 
     return () => unsubscribe();
   }, []);
+
+  const refreshBilling = async () => {
+    try {
+      const status = await getBillingStatus();
+      setBilling(status);
+      return status;
+    } catch (err) {
+      console.warn('[billing] could not load plan: %s', err?.message || err);
+      return null;
+    }
+  };
+
+  // Load the plan whenever the signed-in account changes. After a Stripe Checkout return the
+  // webhook can land a few seconds after the redirect, so poll briefly until it does. The
+  // redirect itself grants nothing; only the webhook does.
+  useEffect(() => {
+    if (!user) {
+      setBilling(null);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      const returned = checkoutReturnRef.current;
+      if (returned) {
+        checkoutReturnRef.current = null;
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+      let status = await refreshBilling();
+      if (returned === 'success') {
+        setBillingNotice('Payment received. Activating your subscription…');
+        for (let i = 0; i < 8 && !cancelled && status?.plan === 'free'; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          status = await refreshBilling();
+        }
+        if (cancelled) return;
+        setBillingNotice(status && status.plan !== 'free'
+          ? 'You are on RoleBerry Pro. Thanks for subscribing!'
+          : 'Payment received. Your plan will update in a moment; refresh the page if it does not.');
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [user?.uid]);
+
+  const handleUpgrade = async () => {
+    setBillingBusy(true);
+    try {
+      await startCheckout();
+    } catch (err) {
+      setBillingBusy(false);
+      if (err.status === 409) {
+        refreshBilling();
+        setShowPaywall(false);
+        setBillingNotice('Your account already has full access.');
+      } else {
+        alert(err.message || 'Could not start checkout. Please try again.');
+      }
+    }
+  };
+
+  const handleManageBilling = async () => {
+    setBillingBusy(true);
+    try {
+      await openBillingPortal();
+    } catch (err) {
+      setBillingBusy(false);
+      alert(err.message || 'Could not open billing settings. Please try again.');
+    }
+  };
 
   const saveUserInfo = async () => {
     if (!user) {
@@ -845,12 +921,13 @@ const CVOptimizer = () => {
     setActiveDoc('cv');
 
     try {
-      const { cvContent, keywords: kws, keywordsFiltered: kf, cv, needsFix: nf, stats: st, overlapSkills: os, companyName: cn, coverLetter: cl } = await optimizeCvService({
+      const { cvContent, keywords: kws, keywordsFiltered: kf, cv, needsFix: nf, stats: st, overlapSkills: os, companyName: cn, coverLetter: cl, quota } = await optimizeCvService({
         jobDescription,
         aiUserInfo,
         fixedUserInfo,
         includeCoverLetter: wantsCoverLetter
       });
+      if (quota) setBilling((prev) => (prev ? { ...prev, ...quota } : prev));
       setOptimizedCv(cvContent);
       setStructuredCv(cv || null);
       setKeywords(kf && kf.length ? kf : kws);
@@ -886,6 +963,11 @@ const CVOptimizer = () => {
       // Collapse JD into sidebar after CV is successfully generated (desktop only)
       setJdCollapsed(true);
     } catch (error) {
+      if (error.code === 'upgrade_required') {
+        if (error.quota) setBilling((prev) => ({ ...(prev || {}), ...error.quota }));
+        setShowPaywall(true);
+        return;
+      }
       if (error.message.includes('500')) {
         alert('Server error occurred. The OpenAI API may be temporarily unavailable. Please try again in a few moments.');
       } else if (error.message.includes('400')) {
@@ -1526,8 +1608,41 @@ const CVOptimizer = () => {
           <div className="p-4 sm:p-8 space-y-8 text-gray-900 dark:text-gray-100">
             {/* Buttons Section - Full Width */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="text-sm text-gray-600"></div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                {billing && billing.plan === 'free' && billing.limit != null && (
+                  <span>{billing.remaining} of {billing.limit} free optimizations left</span>
+                )}
+                {billing && billing.plan === 'paid' && (
+                  <span>
+                    Pro{billing.limit != null ? ` · ${billing.remaining} of ${billing.limit.toLocaleString()} optimizations left this month` : ''}
+                    {billing.cancelAtPeriodEnd && billing.renewsAt ? ` · ends ${new Date(billing.renewsAt).toLocaleDateString()}` : ''}
+                  </span>
+                )}
+                {billingNotice && (
+                  <span className="ml-2 text-green-700 dark:text-green-400">{billingNotice}</span>
+                )}
+              </div>
               <div className="flex items-center gap-2">
+                  {billing?.plan === 'free' && billing.billingAvailable && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPaywall(true)}
+                      className="px-3 py-1.5 rounded-md text-sm font-medium bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 flex items-center gap-1"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      Upgrade
+                    </button>
+                  )}
+                  {billing?.plan === 'paid' && billing.hasCustomer && (
+                    <button
+                      type="button"
+                      onClick={handleManageBilling}
+                      disabled={billingBusy}
+                      className="px-3 py-1.5 rounded-md text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 disabled:opacity-50"
+                    >
+                      Manage subscription
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setCurrentPage('setup')}
@@ -1868,6 +1983,63 @@ const CVOptimizer = () => {
                       className="px-4 py-2 rounded-md bg-gray-800 text-white text-sm hover:bg-gray-700"
                     >
                       Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showPaywall && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center">
+                <div className="absolute inset-0 bg-black/50" onClick={() => setShowPaywall(false)}></div>
+                <div className="relative bg-white w-full max-w-md mx-4 rounded-lg shadow-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-6 py-4 border-b">
+                    <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 text-amber-500" />
+                      RoleBerry Pro
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setShowPaywall(false)}
+                      className="text-gray-500 hover:text-gray-800"
+                      aria-label="Close"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    {billing?.plan === 'free' && billing.remaining === 0 && (
+                      <p className="text-sm text-gray-700">You have used all {billing.limit} free optimizations.</p>
+                    )}
+                    <div>
+                      <span className="text-3xl font-bold text-gray-900">$12</span>
+                      <span className="text-gray-600"> / month</span>
+                    </div>
+                    <ul className="text-sm text-gray-700 space-y-2">
+                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />1,000 optimizations every month</li>
+                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Saved profiles</li>
+                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Saved history of every CV and cover letter</li>
+                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Cancel any time</li>
+                    </ul>
+                    {billing && !billing.billingAvailable && (
+                      <p className="text-xs text-red-600">Upgrades are not available right now. Please try again later.</p>
+                    )}
+                  </div>
+                  <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPaywall(false)}
+                      className="px-4 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      Not now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleUpgrade}
+                      disabled={billingBusy || (billing && !billing.billingAvailable)}
+                      className="px-4 py-2 rounded-md bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-medium hover:from-amber-600 hover:to-orange-600 disabled:opacity-50"
+                    >
+                      {billingBusy ? 'Opening checkout…' : 'Upgrade for $12/month'}
                     </button>
                   </div>
                 </div>

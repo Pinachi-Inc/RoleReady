@@ -73,6 +73,17 @@ app.post('/process-pdf', async (req, res) => {
   });
 });
 
+// Billing. The webhook needs no special body handling here: Firebase keeps the original
+// bytes on req.rawBody, which is what the shared handler verifies the signature against.
+async function billingHandlers() {
+  return import('../server/core/billing.js');
+}
+
+app.post('/billing/checkout', async (req, res) => (await billingHandlers()).handleCreateCheckout(req, res));
+app.post('/billing/portal', async (req, res) => (await billingHandlers()).handleCustomerPortal(req, res));
+app.post('/billing/status', async (req, res) => (await billingHandlers()).handleBillingStatus(req, res));
+app.post('/stripe-webhook', async (req, res) => (await billingHandlers()).handleStripeWebhook(req, res));
+
 // Export the Express app as a Firebase Function
 exports.api = functions.https.onRequest(app);
 

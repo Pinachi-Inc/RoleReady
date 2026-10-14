@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { handleOptimizeRequest } from './core/optimizeHandler.js';
 import { handlePdfProcessing, uploadMiddleware } from './core/pdfHandler.js';
 import { handleAiDetect } from './core/aiDetectHandler.js';
+import { handleCreateCheckout, handleCustomerPortal, handleBillingStatus, handleStripeWebhook } from './core/billing.js';
 
 dotenv.config();
 
@@ -23,6 +24,10 @@ app.use(cors({
     return callback(null, false);
   }
 }));
+
+// Stripe signs the exact bytes it sends, so the webhook must see the raw body. Registered
+// before express.json, which would otherwise consume and re-shape it.
+app.post('/api/stripe-webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
 
 // OCR text from a scanned CV can run past the old 1mb ceiling.
 app.use(express.json({ limit: '4mb' }));
@@ -48,6 +53,11 @@ app.post('/api/process-pdf', uploadMiddleware, handlePdfProcessing);
 
 // AI detection endpoint
 app.post('/api/detect-ai', handleAiDetect);
+
+// Billing
+app.post('/api/billing/checkout', handleCreateCheckout);
+app.post('/api/billing/portal', handleCustomerPortal);
+app.post('/api/billing/status', handleBillingStatus);
 
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
