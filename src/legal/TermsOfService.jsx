@@ -58,11 +58,14 @@ const TermsOfService = () => (
       moves to Free.
     </p>
     <p>
-      <strong>Refunds.</strong> Payments are non-refundable except where the law requires
-      otherwise or we decide to make an exception. If something went wrong, write to <Mail />.
-      If you are a consumer in the EU or UK, you have 14 days from subscribing to withdraw. By
-      using a paid feature during that time you ask us to start straight away, and any refund is
-      reduced in proportion to the period you used.
+      <strong>Refunds.</strong> If {LEGAL.product} is not for you, ask for a full refund within 7
+      days of your first payment on a plan by writing to <Mail />. We do not refund renewals or
+      partly used months. We do refund charges caused by a billing error on our side, and we
+      refund or credit you for a long outage on our side. Switching between Pro and Max is not a
+      refund: Stripe prorates the difference instead. If you are a consumer in the EU or UK, you
+      also have 14 days from subscribing to withdraw. By using a paid feature during that time
+      you ask us to start straight away, and any refund is reduced in proportion to the period
+      you used. None of this limits other rights you have under consumer law.
     </p>
     <p>
       <strong>Price changes.</strong> We will give at least 30 days' notice of a price change,

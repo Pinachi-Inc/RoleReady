@@ -53,21 +53,21 @@ function db() {
 // Every account's runs are recorded. `historyVisible` is how many of the newest a plan can open
 // and download; older ones stay stored and come back as locked stubs.
 //
-// Plans as stored on the user document: 'free', 'paid' (sold as Pro, $12), 'max' ($49) and
-// 'unlimited' (comped). Pro keeps the stored name 'paid' so existing subscribers need no
-// migration.
+// Plans as stored on the user document: 'free', 'paid' (sold as Pro, $12) and 'max' ($49).
+// Pro keeps the stored name 'paid' so existing subscribers need no migration. `plan` always
+// reflects Stripe; complimentary access is kept apart from it (see isCompedAccount), so a
+// webhook can never downgrade a comped account and revoking a comp falls back to what Stripe
+// says.
 //
 // Max is sold as unlimited runs and unlimited profiles. Both carry a hidden ceiling: runs a
 // fair-use cap per calendar month (MAX_MONTHLY_RUNS), so one runaway script cannot run up a
 // model bill, and profiles 100, mirrored in firestore.rules, so the user document stays well
 // inside Firestore's 1 MiB limit. `fairUse` / `unlimitedProfiles` tell the UI to say
-// "Unlimited" rather than show either number. Comped accounts get Max's profile treatment and
-// keep their uncapped runs.
+// "Unlimited" rather than show either number. Comped accounts get exactly Max, cap included.
 export const PLAN_LIMITS = {
   free: { window: 'lifetime', optimizations: 5, pdfImports: 10, profiles: 1, historyVisible: 5 },
   paid: { window: 'month', optimizations: 1000, pdfImports: null, profiles: 3, historyVisible: null },
   max: { window: 'month', optimizations: 5000, pdfImports: null, profiles: 100, historyVisible: null, fairUse: true, unlimitedProfiles: true },
-  unlimited: { window: 'month', optimizations: null, pdfImports: null, profiles: 100, historyVisible: null, unlimitedProfiles: true },
 };
 
 export function maxMonthlyRuns() {
@@ -88,23 +88,36 @@ function parseList(raw) {
 }
 
 /**
- * Comped accounts: full access with no payment, granted by environment variable rather than
- * by a database flag. Deliberately env-based so it cannot be granted by anyone without deploy
- * access, needs no console clicking, and keeps working when Firestore does not — the owner's
- * own access should never depend on the billing system being healthy.
+ * Complimentary Max by allowlist: COMP_MAX_EMAILS=you@example.com,friend@example.com
+ * (case-insensitive). Env-based so it needs deploy access to grant and keeps working when
+ * Firestore does not. UNLIMITED_EMAILS / UNLIMITED_UIDS, the older names, are still honoured.
  *
- * UNLIMITED_EMAILS=you@example.com,friend@example.com
- * UNLIMITED_UIDS=abc123,def456
- *
- * For granting access to someone else later without a redeploy, set plan: 'unlimited' directly
- * on their user document instead. Both routes are honoured.
+ * The other route is the admin script (npm run comp), which sets `comped: true` on the user
+ * document; see server/core/comp.js.
  */
 export function isComped(uid, email) {
   const uids = parseList(process.env.UNLIMITED_UIDS);
-  const emails = parseList(process.env.UNLIMITED_EMAILS);
+  const emails = [...parseList(process.env.COMP_MAX_EMAILS), ...parseList(process.env.UNLIMITED_EMAILS)];
   if (uid && uids.includes(String(uid).toLowerCase())) return true;
   if (email && emails.includes(String(email).toLowerCase())) return true;
   return false;
+}
+
+/**
+ * Whether an account has complimentary Max, by any route: the env allowlist, the admin
+ * script's `comped` flag, or `plan: 'unlimited'`, which is how comps were stored before.
+ */
+export function isCompedAccount(user, data) {
+  return isComped(user?.uid, user?.email) || data?.comped === true || data?.plan === 'unlimited';
+}
+
+// The plan Stripe says the account pays for, ignoring any comp.
+export function stripePlanOf(data) {
+  return data?.plan === 'paid' || data?.plan === 'max' ? data.plan : 'free';
+}
+
+function planOf(data, comped) {
+  return comped ? 'max' : stripePlanOf(data);
 }
 
 // Calendar month. "1,000 optimizations/month" reads as a calendar month to a customer, and a
@@ -120,9 +133,14 @@ function currentPeriod(now = new Date()) {
 // paid-tier usage is the worse failure.
 export const enforcementOn = () => String(process.env.BILLING_ENFORCED || '').toLowerCase() === 'true';
 
-function planOf(data, comped) {
-  if (comped) return 'unlimited';
-  return ['paid', 'max', 'unlimited'].includes(data?.plan) ? data.plan : 'free';
+/**
+ * firestore.rules cannot read env vars, so an allowlisted account's comp is mirrored onto its
+ * document as `compedEnv` (server-owned) for the profile cap. Kept in step both ways, so taking
+ * an email off the allowlist takes the mirror away too. Returns the fields to merge, or null.
+ */
+export function compMirrorUpdate(user, data) {
+  const listed = isComped(user?.uid, user?.email);
+  return Boolean(data?.compedEnv) === listed ? null : { compedEnv: listed };
 }
 
 // Two counters are kept side by side: `usage` resets every calendar month, `lifetimeUsage`
@@ -139,7 +157,7 @@ function countersFor(data, period) {
  * loaded user document. Pure, so the status endpoint and the quota transaction agree.
  */
 export function getEntitlement(user, data, kind = 'optimizations') {
-  const comped = isComped(user?.uid, user?.email);
+  const comped = isCompedAccount(user, data);
   const plan = planOf(data, comped);
   const limits = limitsFor(plan);
   const { usage, lifetime } = countersFor(data, currentPeriod());
@@ -148,6 +166,8 @@ export function getEntitlement(user, data, kind = 'optimizations') {
   return {
     plan,
     comped,
+    // What Stripe bills for, so a comped account that also pays can still reach its subscription.
+    stripePlan: stripePlanOf(data),
     window: limits.window,
     used,
     limit,
@@ -170,20 +190,20 @@ export function getEntitlement(user, data, kind = 'optimizations') {
  */
 export async function consumeQuota(uid, kind, { email = null } = {}) {
   const enforced = enforcementOn();
-  const comped = isComped(uid, email);
+  const listed = isComped(uid, email);
   const database = db();
 
-  // Checked before Firestore is even consulted, so a comped account keeps working when the
-  // billing system does not.
-  if (comped && !database) {
-    return { allowed: true, plan: 'unlimited', used: 0, limit: null, window: 'month', enforced, comped };
+  // Checked before Firestore is even consulted, so an allowlisted account keeps working when
+  // the billing system does not. Nothing can be counted then, so the cap cannot apply either.
+  if (listed && !database) {
+    return { allowed: true, plan: 'max', used: 0, limit: null, window: 'month', enforced, comped: true };
   }
 
   if (!database) {
     if (enforced) {
-      return { allowed: false, reason: 'quota_unavailable', plan: 'unknown', used: 0, limit: 0, enforced, comped };
+      return { allowed: false, reason: 'quota_unavailable', plan: 'unknown', used: 0, limit: 0, enforced, comped: false };
     }
-    return { allowed: true, plan: 'free', used: 0, limit: limitsFor('free')[kind], window: 'lifetime', enforced, comped };
+    return { allowed: true, plan: 'free', used: 0, limit: limitsFor('free')[kind], window: 'lifetime', enforced, comped: false };
   }
 
   const ref = database.collection('users').doc(uid);
@@ -193,7 +213,8 @@ export async function consumeQuota(uid, kind, { email = null } = {}) {
     return await database.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const data = snap.exists ? snap.data() : {};
-      const storedPlan = planOf(data, false);
+      const user = { uid, email };
+      const comped = isCompedAccount(user, data);
       const plan = planOf(data, comped);
       const limits = limitsFor(plan);
       const limit = limits[kind] ?? null;
@@ -202,17 +223,16 @@ export async function consumeQuota(uid, kind, { email = null } = {}) {
       const counted = limits.window === 'lifetime' ? lifetime : usage;
       const used = Number(counted[kind] || 0);
 
-      // null means no ceiling, so comped and paid-unlimited never trip this.
+      // Max's fair-use cap applies to comped accounts too, so a shared friend account cannot
+      // run up a model bill.
       if (limit != null && used >= limit) {
         return { allowed: false, reason: 'quota_exceeded', plan, used, limit, window: limits.window, enforced, comped };
       }
 
-      // Mirror the env-based grant onto the document. firestore.rules cannot read env vars,
-      // so without this a comped account would still be held to the free profile cap, and the
-      // UI would still show upsells. Written by the server, denied to the client.
-      if (comped && storedPlan !== 'unlimited') {
-        tx.set(ref, { plan: 'unlimited', planSince: new Date().toISOString() }, { merge: true });
-        console.log('[firestore] stamped comped plan for uid=%s', uid);
+      const mirror = compMirrorUpdate(user, data);
+      if (mirror) {
+        tx.set(ref, mirror, { merge: true });
+        console.log('[firestore] comp mirror for uid=%s -> %s', uid, mirror.compedEnv);
       }
 
       // Counted even when enforcement is off, so the numbers are real on the day it is
@@ -225,14 +245,14 @@ export async function consumeQuota(uid, kind, { email = null } = {}) {
     });
   } catch (err) {
     console.error('[firestore] quota transaction failed for %s/%s: %s', uid, kind, err?.message || err);
-    // A comped account is never blocked by a billing-system failure.
-    if (comped) {
-      return { allowed: true, plan: 'unlimited', used: 0, limit: null, window: 'month', enforced, comped };
+    // An allowlisted account is never blocked by a billing-system failure.
+    if (listed) {
+      return { allowed: true, plan: 'max', used: 0, limit: null, window: 'month', enforced, comped: true };
     }
     if (enforced) {
-      return { allowed: false, reason: 'quota_unavailable', plan: 'unknown', used: 0, limit: 0, enforced, comped };
+      return { allowed: false, reason: 'quota_unavailable', plan: 'unknown', used: 0, limit: 0, enforced, comped: false };
     }
-    return { allowed: true, plan: 'free', used: 0, limit: limitsFor('free')[kind], window: 'lifetime', enforced, comped };
+    return { allowed: true, plan: 'free', used: 0, limit: limitsFor('free')[kind], window: 'lifetime', enforced, comped: false };
   }
 }
 
@@ -278,6 +298,44 @@ export async function updateUserDoc(uid, fields) {
   const database = db();
   if (!database) throw new Error('Firestore is not configured on the server');
   await database.collection('users').doc(uid).set(fields, { merge: true });
+}
+
+// Firebase Auth's record for an email, or null if nobody has signed in with it yet.
+export async function getAuthUserByEmail(email) {
+  const app = init();
+  if (!app) throw new Error('Firestore is not configured on the server');
+  try {
+    return await admin.auth(app).getUserByEmail(email);
+  } catch (err) {
+    if (err?.code === 'auth/user-not-found') return null;
+    throw err;
+  }
+}
+
+// Turn the admin-granted comp on or off. Off deletes the fields rather than writing false, so
+// the document carries no trace of a comp that was taken away.
+export async function setCompFlag(uid, on, { email = null } = {}) {
+  const database = db();
+  if (!database) throw new Error('Firestore is not configured on the server');
+  const del = admin.firestore.FieldValue.delete();
+  const fields = on
+    ? { comped: true, compedAt: new Date().toISOString(), compedEmail: email }
+    : { comped: del, compedAt: del, compedEmail: del };
+  await database.collection('users').doc(uid).set(fields, { merge: true });
+}
+
+// Accounts with an admin-granted comp, plus any still on the old plan: 'unlimited'.
+export async function listCompedDocs() {
+  const database = db();
+  if (!database) throw new Error('Firestore is not configured on the server');
+  const users = database.collection('users');
+  const [flagged, legacy] = await Promise.all([
+    users.where('comped', '==', true).get(),
+    users.where('plan', '==', 'unlimited').get(),
+  ]);
+  const byId = new Map();
+  for (const doc of [...flagged.docs, ...legacy.docs]) byId.set(doc.id, { uid: doc.id, ...doc.data() });
+  return [...byId.values()];
 }
 
 export async function findUidByStripeCustomer(customerId) {

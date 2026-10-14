@@ -189,7 +189,7 @@ await check('profile and history limits in the entitlement', async () => {
   const comped = getEntitlement({ uid: 'x', email: 'comped@example.com' }, {});
   assert.deepEqual([free.profileLimit, free.historyVisible], [1, 5]);
   assert.deepEqual([paid.profileLimit, paid.historyVisible], [3, null]);
-  assert.deepEqual([comped.profileLimit, comped.historyVisible, comped.limit], [100, null, null]);
+  assert.deepEqual([comped.plan, comped.profileLimit, comped.historyVisible, comped.limit], ['max', 100, null, 5000]);
   assert.equal(comped.unlimitedProfiles, true);
 });
 
@@ -395,6 +395,166 @@ await check('every plan runs on the same model', async () => {
     globalThis.__E2E_LAST_MODEL = null;
     assert.equal((await optimize(uid)).statusCode, 200);
     assert.equal(globalThis.__E2E_LAST_MODEL, 'test/default-model', uid);
+  }
+});
+
+out('\ncomplimentary Max');
+
+const { grantComp, revokeComp, listComps } = await import('../../server/core/comp.js');
+const auth = globalThis.__E2E_AUTH;
+const ent = async (uid) => (await status(uid)).body;
+const signUp = (uid) => auth.set(`${uid}@example.com`, uid);
+
+await check('allowlist (COMP_MAX_EMAILS, any case) grants Max and mirrors it for the rules', async () => {
+  process.env.COMP_MAX_EMAILS = ' Friend@Example.COM , other@example.com';
+  try {
+    const s = await ent('friend');
+    assert.equal(s.plan, 'max');
+    assert.equal(s.comped, true);
+    assert.equal(s.unlimitedProfiles, true);
+    assert.equal(s.profileLimit, 100);
+    assert.equal(fs.get('users/friend').compedEnv, true, 'mirrored for firestore.rules');
+    assert.equal(fs.get('users/friend').plan, undefined, 'plan is left to Stripe');
+  } finally {
+    delete process.env.COMP_MAX_EMAILS;
+  }
+});
+
+await check('taking an email off the allowlist takes Max and the mirror away', async () => {
+  const s = await ent('friend');
+  assert.equal(s.plan, 'free');
+  assert.equal(s.comped, false);
+  assert.equal(fs.get('users/friend').compedEnv, false);
+});
+
+await check('allowlisted account sees full history and cannot check out', async () => {
+  process.env.COMP_MAX_EMAILS = 'friend@example.com';
+  try {
+    for (let i = 0; i < 7; i += 1) await optimize('friend');
+    const h = await history('friend');
+    assert.equal(h.body.visibleLimit, null);
+    assert.equal(h.body.runs.length, 7);
+    const c = await checkout('friend', 'max');
+    assert.equal(c.statusCode, 409);
+    assert.notEqual(c.body.code, 'use_portal');
+  } finally {
+    delete process.env.COMP_MAX_EMAILS;
+  }
+});
+
+await check('script grant gives Max by email (case-insensitive)', async () => {
+  signUp('pal');
+  const r = await grantComp('  PAL@example.com ');
+  assert.equal(r.uid, 'pal');
+  const doc = fs.get('users/pal');
+  assert.equal(doc.comped, true);
+  assert.equal(doc.compedEmail, 'pal@example.com');
+  const s = await ent('pal');
+  assert.deepEqual([s.plan, s.comped, s.stripePlan], ['max', true, 'free']);
+});
+
+await check('script refuses bad emails and people who never signed in', async () => {
+  await assert.rejects(grantComp('not-an-email'), /Not an email/);
+  await assert.rejects(grantComp('stranger@example.com'), /has not signed in/);
+  await assert.rejects(revokeComp('stranger@example.com'), /has not signed in/);
+});
+
+await check('script list shows grants and the allowlist', async () => {
+  process.env.COMP_MAX_EMAILS = 'friend@example.com';
+  try {
+    const { granted, allowlist } = await listComps();
+    assert.ok(granted.some((g) => g.uid === 'pal' && g.email === 'pal@example.com'));
+    assert.deepEqual(allowlist, ['friend@example.com']);
+  } finally {
+    delete process.env.COMP_MAX_EMAILS;
+  }
+});
+
+await check('webhook leaves a comped account on Max whatever Stripe says', async () => {
+  assert.equal((await checkout('pal', 'pro')).statusCode, 409, 'comped cannot start a checkout');
+  // A friend who already paid before being comped: Stripe still has their Pro subscription.
+  fs.set('users/pal', { ...fs.get('users/pal'), stripeCustomerId: 'cus_pal' });
+  putSubscription('pal', 'sub_pal', 'price_pro');
+  await webhook('customer.subscription.updated', { id: 'sub_pal' });
+  assert.equal(fs.get('users/pal').plan, 'paid', 'plan records Stripe');
+  assert.equal(fs.get('users/pal').comped, true);
+  let s = await ent('pal');
+  assert.deepEqual([s.plan, s.comped, s.stripePlan], ['max', true, 'paid']);
+  putSubscription('pal', 'sub_pal', 'price_pro', 'canceled');
+  await webhook('customer.subscription.deleted', { id: 'sub_pal' });
+  s = await ent('pal');
+  assert.deepEqual([s.plan, s.comped, s.stripePlan], ['max', true, 'free'], 'cancelling Stripe does not end the comp');
+});
+
+await check('revoke falls back to the Stripe plan, and keeps all data', async () => {
+  putSubscription('pal', 'sub_pal', 'price_pro', 'active');
+  for (let i = 0; i < 2; i += 1) await optimize('pal');
+  const before = { runs: runIds('pal').length, usage: fs.get('users/pal').lifetimeUsage.optimizations };
+  const r = await revokeComp('pal@example.com');
+  assert.equal(r.plan, 'paid', 're-read from Stripe');
+  const doc = fs.get('users/pal');
+  assert.equal('comped' in doc, false, 'flag removed, not set false');
+  assert.equal(doc.plan, 'paid');
+  assert.equal((await ent('pal')).plan, 'paid');
+  assert.equal(runIds('pal').length, before.runs);
+  assert.equal(doc.lifetimeUsage.optimizations, before.usage);
+});
+
+await check('revoke with no subscription lands on free', async () => {
+  signUp('buddy');
+  await grantComp('buddy@example.com');
+  assert.equal((await ent('buddy')).plan, 'max');
+  const r = await revokeComp('buddy@example.com');
+  assert.equal(r.plan, 'free');
+  assert.equal((await ent('buddy')).plan, 'free');
+});
+
+await check('revoke warns when the email is still allowlisted', async () => {
+  signUp('friend');
+  process.env.COMP_MAX_EMAILS = 'friend@example.com';
+  try {
+    await grantComp('friend@example.com');
+    const r = await revokeComp('friend@example.com');
+    assert.equal(r.stillAllowlisted, true);
+    assert.equal((await ent('friend')).plan, 'max');
+  } finally {
+    delete process.env.COMP_MAX_EMAILS;
+  }
+});
+
+await check('old plan: unlimited still counts as comped; webhook converts it, revoke ends it', async () => {
+  signUp('legacy');
+  fs.set('users/legacy', { plan: 'unlimited', stripeCustomerId: 'cus_legacy' });
+  assert.deepEqual([(await ent('legacy')).plan, (await ent('legacy')).comped], ['max', true]);
+  putSubscription('legacy', 'sub_legacy', 'price_max');
+  await webhook('customer.subscription.created', { id: 'sub_legacy' });
+  assert.equal(fs.get('users/legacy').plan, 'max');
+  assert.equal(fs.get('users/legacy').comped, true, 'converted to the flag');
+  putSubscription('legacy', 'sub_legacy', 'price_max', 'canceled');
+  await webhook('customer.subscription.deleted', { id: 'sub_legacy' });
+  assert.equal((await ent('legacy')).plan, 'max', 'still comped after cancelling');
+  await revokeComp('legacy@example.com');
+  assert.equal((await ent('legacy')).plan, 'free');
+});
+
+await check('enforced: comped accounts hit the same fair-use cap as Max', async () => {
+  process.env.BILLING_ENFORCED = 'true';
+  process.env.MAX_MONTHLY_RUNS = '2';
+  process.env.COMP_MAX_EMAILS = 'capped@example.com';
+  signUp('scripted');
+  await grantComp('scripted@example.com');
+  try {
+    for (const uid of ['capped', 'scripted']) {
+      for (let i = 0; i < 2; i += 1) assert.equal((await optimize(uid)).statusCode, 200, uid);
+      const res = await optimize(uid);
+      assert.equal(res.statusCode, 402, uid);
+      assert.match(res.body.error, /fair-use limit of 2/);
+      assert.equal(res.body.quota.plan, 'max');
+    }
+  } finally {
+    delete process.env.BILLING_ENFORCED;
+    delete process.env.MAX_MONTHLY_RUNS;
+    delete process.env.COMP_MAX_EMAILS;
   }
 });
 

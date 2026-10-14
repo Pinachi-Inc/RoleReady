@@ -19,7 +19,8 @@
     "vercel:deploy": "vercel --prod",
     "vercel:setup": "node scripts/setup-vercel-env.js",
     "showcase": "vite --config vite.showcase.config.js",
-    "test:e2e": "node --import ./scripts/e2e/register.mjs scripts/e2e/history.test.mjs"
+    "test:e2e": "node --import ./scripts/e2e/register.mjs scripts/e2e/history.test.mjs",
+    "comp": "node scripts/comp.mjs"
   },
   "dependencies": {
     "@vercel/speed-insights": "^1.2.0",

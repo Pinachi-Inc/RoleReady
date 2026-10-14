@@ -5,6 +5,7 @@ import {
   updateUserDoc,
   findUidByStripeCustomer,
   getEntitlement,
+  compMirrorUpdate,
 } from './firestore.js';
 
 // Stripe billing: two monthly prices (Pro and Max), Checkout in subscription mode for a free
@@ -199,6 +200,10 @@ export async function handleBillingStatus(req, res) {
 
   try {
     const stored = await getUserDoc(user.uid);
+    // The app loads status on sign-in, so an allowlisted account's profile cap in
+    // firestore.rules is right before its first profile write, not after its first run.
+    const mirror = stored !== undefined ? compMirrorUpdate(user, stored) : null;
+    if (mirror) await updateUserDoc(user.uid, mirror);
     const entitlement = getEntitlement(user, stored || {});
     return res.json({
       ...entitlement,
@@ -290,17 +295,32 @@ async function syncSubscription(stripe, subscriptionId) {
     cancelAtPeriodEnd: Boolean(sub.cancel_at_period_end),
   };
 
-  // 'unlimited' is the comped grant and outranks anything Stripe says. Otherwise the price on
-  // the live subscription decides between Pro and Max, which is how a switch made in the
-  // Customer Portal (customer.subscription.updated) lands.
-  if (stored.plan !== 'unlimited') {
-    const plan = paid ? planForSubscription(sub) : 'free';
-    update.plan = plan;
-    if (stored.plan !== plan) update.planSince = new Date().toISOString();
-  }
+  // `plan` only ever records what Stripe says: the price on the live subscription decides
+  // between Pro and Max, which is how a switch made in the Customer Portal
+  // (customer.subscription.updated) lands. A comp lives in separate fields, so writing the
+  // Stripe plan here can never take Max away from a comped account. An account still on the
+  // old comp marker, plan: 'unlimited', is converted to the flag on the way.
+  const plan = paid ? planForSubscription(sub) : 'free';
+  update.plan = plan;
+  if (stored.plan !== plan) update.planSince = new Date().toISOString();
+  if (stored.plan === 'unlimited') update.comped = true;
 
   await updateUserDoc(uid, update);
-  console.log('[billing] uid=%s subscription=%s status=%s plan=%s', uid, sub.id, sub.status, update.plan || stored.plan);
+  console.log('[billing] uid=%s subscription=%s status=%s plan=%s comped=%s', uid, sub.id, sub.status, plan, Boolean(stored.comped || update.comped));
+}
+
+/**
+ * Re-read an account's subscription from Stripe and write its plan, for when something other
+ * than a webhook needs `plan` to be current (revoking a comp). Returns the plan now stored.
+ */
+export async function resyncPlanFromStripe(uid) {
+  const stored = (await getUserDoc(uid)) || {};
+  const stripe = getStripe();
+  if (stored.stripeSubscriptionId && stripe) {
+    await syncSubscription(stripe, stored.stripeSubscriptionId);
+    return ((await getUserDoc(uid)) || {}).plan || 'free';
+  }
+  return stored.plan === 'paid' || stored.plan === 'max' ? stored.plan : 'free';
 }
 
 /**
