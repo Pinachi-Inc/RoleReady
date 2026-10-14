@@ -1,4 +1,4 @@
-# encver / RoleReady — App Map & Dependency Map
+# RoleBerry — App Map & Dependency Map
 
 AI CV optimizer. React SPA (Vite) + a set of shared request handlers exposed through three
 runtimes: local Express, Vercel serverless functions, Firebase Functions.
@@ -55,7 +55,7 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 | `services/openai.js` | `optimizeCv`, `detectAiContent` | `POST /api/optimize`, `POST /api/detect-ai` |
 | `services/pdf.js` | `processPdf` | `POST /api/process-pdf` (multipart, field name `pdf`) |
 | `services/auth.js` | `signInWithGoogle`, `signOutUser`, `onAuthStateChange`, `saveUserData`, `getUserData` | Firebase Auth + Firestore |
-| `services/folderManager.js` | `isFolderApiSupported`, `getFolderHandle`, `pickNewFolder`, `getStoredFolderName`, `writePdfWithHandle`, `savePdfToFolder`, `clearFolderHandle`, `extractCompanyName` | File System Access API + IndexedDB (`roleready` / `settings` / `downloadFolderHandle`) |
+| `services/folderManager.js` | `isFolderApiSupported`, `getFolderHandle`, `pickNewFolder`, `getStoredFolderName`, `writePdfWithHandle`, `savePdfToFolder`, `clearFolderHandle`, `extractCompanyName` | File System Access API + IndexedDB (`roleberry` / `settings` / `downloadFolderHandle`) |
 | `src/firebase.js` | `auth`, `db`, `googleProvider` | Firebase SDK init from `VITE_FIREBASE_*` |
 
 ### Frontend render/util

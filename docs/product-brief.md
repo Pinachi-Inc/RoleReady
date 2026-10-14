@@ -4,7 +4,7 @@ Prepared as a handoff for marketing.
 
 Every claim in section 2 was read out of the source at commit `15ec25a` (branch `auth`) and
 independently re-checked by a second pass. Live-site claims were checked against
-https://rr.sibex.zip on 26 August 2026. Anything that could not be confirmed is in section 3,
+https://roleberry.app on 26 August 2026. Anything that could not be confirmed is in section 3,
 not section 2. File references are `path:line` so any claim here can be traced back to code.
 
 ---
@@ -50,7 +50,7 @@ itself when there is no user; there is no other way in and no email or password 
 token (RS256 signature against Google's certificates, plus expiry, audience and issuer checks)
 before doing any work. `server/core/firebaseAuth.js:29-101`, called at
 `optimizeHandler.js:150`, `pdfHandler.js:288`, `aiDetectHandler.js:5`.
-*Live: yes, verified by request. An unauthenticated POST to https://rr.sibex.zip/api/optimize
+*Live: yes, verified by request. An unauthenticated POST to https://roleberry.app/api/optimize
 returns `401 {"error":"Authentication required"}`.*
 
 **Profile is per account and is cleared on sign-out.** The profile loads from Firestore on
@@ -192,7 +192,7 @@ repository's own documentation, which is what makes them worth listing.
 
 ### The live site is behind the repository
 
-The last production deployment is 8 days old (`vercel ls roleready`). Deployments are made
+The last production deployment is 8 days old (`vercel ls roleberry`). Deployments are made
 from the working tree rather than from a git commit, so the exact contents of the live build
 cannot be read off the repository history. What can be checked, and was: browser OCR is not in
 the live bundle. Cover letters, the text-based PDF export, folder management and the
@@ -346,12 +346,12 @@ and page breaks will not match exactly. The preview should not be presented as a
 printed file. This now applies to the cover letter too, which moved onto the text renderer on
 26 August 2026.
 
-**Two internal identifiers still say `roleready`.** The IndexedDB database name and the
-directory-picker id in `services/folderManager.js:1,96` were left on the old string
-deliberately. Both are invisible to users, and changing either would discard every existing
-saved folder handle and reset the browser's memory of which directory the user picked, which
-is the exact failure the folder feature was debugged to eliminate. Rename them only alongside a
-migration.
+**Renaming the storage identifiers costs one folder re-pick.** The IndexedDB database name
+and the directory-picker id in `services/folderManager.js:1,96` were renamed to `roleberry` on
+14 October 2026. Both are invisible to users, but the change discards any saved folder handle
+and resets the browser's memory of which directory was picked, so anyone using folder
+management has to choose their folder once more. No migration was written; with the current
+user count that was judged cheaper than the code.
 
 **The iframes are not sandboxed.** No `sandbox` attribute is set on either preview iframe
 (verified: the word appears nowhere in the components, config or HTML). What protects the
@@ -410,7 +410,7 @@ Figures that can be stated with a source behind them.
 
 | Claim | Figure | Source |
 |---|---|---|
-| Authentication is enforced in production | Unauthenticated `POST /api/optimize` returns `401 {"error":"Authentication required"}` | Live request to https://rr.sibex.zip, 26 Aug 2026 |
+| Authentication is enforced in production | Unauthenticated `POST /api/optimize` returns `401 {"error":"Authentication required"}` | Live request to https://roleberry.app, 26 Aug 2026 |
 | Downloaded CVs and cover letters contain machine-readable text | Text drawn with PDF text primitives, not an image of the page; 560 characters extracted from a test letter, identical under poppler and mupdf | `src/cvPdf.js` |
 | OCR accuracy on a real CV | 2,747 characters at 92-93% confidence, about 1.2 s per page | Measured run against a scanned CV |
 | Scanned files stay on the device | OCR runs in the browser; only recognised text is sent | `services/browserOcr.js:84-131` |
@@ -470,9 +470,11 @@ Do not screenshot: the loading animations (not in the product), and any OCR prog
 These need answers from you before marketing copy is written. They are decisions, not gaps I
 can close by reading more code.
 
-1. **Is RoleBerry the final name?** Settled in the product on 26 August 2026: every screen, the
-   browser tab and the download filename now say RoleBerry. Flagging it only because the domain
-   in use is still `rr.sibex.zip` and nothing has been checked for trademark conflicts.
+1. **Is RoleBerry the final name?** Settled: every screen, the browser tab, the download
+   filename and the storage identifiers say RoleBerry, and the domain is `roleberry.app`.
+   Nothing has been checked for trademark conflicts. The Firebase project id is still
+   `roleready-d7295` and cannot be renamed without creating a new project and migrating every
+   user document.
 
 2. **Should the site be redeployed before this goes out?** The live build is 8 days old and
    does not include browser OCR. Everything else in section 2 is live. If OCR is part of the
