@@ -9,7 +9,7 @@ const Mail = () => <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a>;
 const TermsOfService = () => (
   <>
     <p>
-      These terms are the agreement between you and {LEGAL.company} ("we", "us") for your use of{' '}
+      These terms are the agreement between you and {LEGAL.seller}, a sole trader ("we", "us"), for your use of{' '}
       {LEGAL.product} at {LEGAL.site}. By signing in you accept them. If you do not agree, do not
       use {LEGAL.product}. How we handle personal data is described in our{' '}
       <a href="/privacy">Privacy Policy</a>.
@@ -165,14 +165,14 @@ const TermsOfService = () => (
 
     <h2>14. Governing law</h2>
     <p>
-      These terms are governed by the law of {LEGAL.governingLaw}, whose courts have
-      jurisdiction, except where consumer law gives you the right to bring a claim in the courts
-      of the place you live.
+      These terms are governed by the law of {LEGAL.governingLaw}, and disputes go to{' '}
+      {LEGAL.courts}. If you are a consumer, this does not take away the protection of the
+      consumer law where you live, or your right to bring a claim in the courts there.
     </p>
 
     <h2>15. Contact</h2>
     <p>
-      {LEGAL.company}, {LEGAL.address}. Email <Mail />.
+      {LEGAL.seller} (sole trader), {LEGAL.address}. Email <Mail />.
     </p>
   </>
 );

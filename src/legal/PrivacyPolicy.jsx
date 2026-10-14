@@ -10,8 +10,9 @@ const PrivacyPolicy = () => (
   <>
     <p>
       This policy explains what {LEGAL.product} collects when you use it, why, who else handles it,
-      how long it is kept, and what you can do about it. {LEGAL.product} is run by {LEGAL.company},{' '}
-      {LEGAL.address} ("we", "us"). We are the controller of your personal data. Questions and
+      how long it is kept, and what you can do about it. {LEGAL.product} is run by {LEGAL.seller},
+      a sole trader based at {LEGAL.address} ("we", "us"), who is the controller of your personal
+      data. Questions and
       requests go to <Mail />.
     </p>
 
@@ -139,7 +140,7 @@ const PrivacyPolicy = () => (
     </table>
     <p>
       We may also disclose data if the law requires it, to protect people's safety or our rights,
-      or as part of a merger or sale of the business, in which case this policy continues to apply.
+      or if {LEGAL.product} is transferred to a new owner, in which case this policy continues to apply.
     </p>
 
     <h2>International transfers</h2>
@@ -210,7 +211,7 @@ const PrivacyPolicy = () => (
 
     <h2>Contact</h2>
     <p>
-      {LEGAL.company}, {LEGAL.address}. Email <Mail />.
+      {LEGAL.seller} (sole trader), {LEGAL.address}. Email <Mail />.
     </p>
   </>
 );

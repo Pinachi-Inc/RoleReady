@@ -9,14 +9,16 @@
 export const LEGAL = {
   product: 'RoleBerry',
   site: 'https://roleberry.app',
-  // The legal entity that runs RoleBerry and is the data controller, e.g. "Pinachi Inc."
-  company: '[COMPANY LEGAL NAME]',
-  // Registered address, needed for GDPR and for consumer law in most places.
-  address: '[REGISTERED ADDRESS]',
+  // RoleBerry is sold by one person trading on their own account (a sole trader), not by a
+  // company. That person is the seller and the data controller.
+  seller: '[FULL LEGAL NAME]',
+  // Where the seller can be reached by post. GDPR and most consumer law require one.
+  address: '[CITY AND ADDRESS]',
   // One inbox for privacy requests, support and legal notices.
-  email: '[CONTACT EMAIL]',
-  // Courts and law that govern the Terms, e.g. "the State of Delaware, USA".
-  governingLaw: '[GOVERNING LAW AND COURTS]',
+  email: 'support@roleberry.app',
+  // The law that governs the Terms, and the courts that hear disputes.
+  governingLaw: 'the Republic of Armenia',
+  courts: 'the courts of Yerevan, Armenia',
   // Last time either document changed in substance.
   effectiveDate: '[EFFECTIVE DATE]',
   // How long after an account deletion request everything is gone, backups included.
