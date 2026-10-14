@@ -1,5 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { signInWithGoogle, signOutUser } from '../services/auth.js';
+import {
+  signInWithGoogle,
+  signInWithGithub,
+  signInWithEmail,
+  signUpWithEmail,
+  sendPasswordReset,
+  signOutUser,
+  friendlyAuthError,
+} from '../services/auth.js';
 import { Sun, Moon, FolderOpen } from 'lucide-react';
 import { isFolderApiSupported, getStoredFolderName, pickNewFolder } from '../services/folderManager.js';
 
@@ -52,21 +60,71 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
     }
   };
 
-  const handleSignIn = async () => {
+  // Signed-out form state
+  const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(null); // 'google' | 'github' | 'email' | 'reset'
+  const [authError, setAuthError] = useState('');
+  const [authNotice, setAuthNotice] = useState('');
+
+  const showError = (error) => {
+    console.warn('[auth] sign-in failed: %s', error?.code || error?.message);
+    const message = error?.friendly || friendlyAuthError(error);
+    if (message) setAuthError(message);
+  };
+
+  const runSignIn = async (kind, fn) => {
+    setAuthError('');
+    setAuthNotice('');
+    setBusy(kind);
     try {
-      console.log('🚀 Auth component: Starting sign-in process...');
-      const user = await signInWithGoogle();
-      console.log('✅ Auth component: Sign-in successful, updating state...');
-      onAuthChange(user);
+      const signedIn = await fn();
+      onAuthChange(signedIn);
     } catch (error) {
-      console.error('❌ Auth component: Sign in failed:', error);
-      console.error('📋 Error details:', {
-        code: error.code,
-        message: error.message,
-        stack: error.stack
-      });
-      alert(`Sign in failed: ${error.message || 'Unknown error'}. Please try again.`);
+      showError(error);
+    } finally {
+      setBusy(null);
     }
+  };
+
+  const handleEmailSubmit = (e) => {
+    e.preventDefault();
+    if (mode === 'signup') {
+      runSignIn('email', () => signUpWithEmail(email, password, name));
+    } else {
+      runSignIn('email', () => signInWithEmail(email, password));
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setAuthError('');
+    setAuthNotice('');
+    if (!email.trim()) {
+      setAuthError('Enter your email above, then click Forgot password again.');
+      return;
+    }
+    setBusy('reset');
+    try {
+      await sendPasswordReset(email);
+      setAuthNotice(`If ${email.trim()} has an account, a reset link is on its way.`);
+    } catch (error) {
+      // A missing account is reported the same as success, so this does not reveal who signed up.
+      if (error?.code === 'auth/user-not-found') {
+        setAuthNotice(`If ${email.trim()} has an account, a reset link is on its way.`);
+      } else {
+        showError(error);
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const switchMode = () => {
+    setMode((m) => (m === 'signin' ? 'signup' : 'signin'));
+    setAuthError('');
+    setAuthNotice('');
   };
 
   const handleSignOut = async () => {
@@ -95,8 +153,8 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
           className="w-10 h-10 rounded-full border-2 border-white/20 hover:border-white/40 transition-colors focus:outline-none focus:border-white/60"
         >
           <img 
-            src={user.photoURL || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.displayName || 'User') + '&background=0D8ABC&color=ffffff&size=128'} 
-            alt={user.displayName || 'User'}
+            src={user.photoURL || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.displayName || user.email || 'User') + '&background=0D8ABC&color=ffffff&size=128'}
+            alt={user.displayName || user.email || 'User'}
             className="w-full h-full rounded-full object-cover"
           />
         </button>
@@ -109,7 +167,7 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
             ></div>
             <div className="absolute top-12 right-0 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-2 min-w-48">
               <div className="px-4 py-2 border-b border-gray-100">
-                <p className="font-medium text-gray-900 text-sm">{user.displayName}</p>
+                <p className="font-medium text-gray-900 text-sm">{user.displayName || user.email}</p>
                 <p className="text-xs text-gray-600">{user.email}</p>
               </div>
               {onToggleFolderMgmt && (
@@ -166,31 +224,122 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
     );
   }
 
+  const providerButton = 'w-full flex items-center justify-center gap-3 px-6 py-4 bg-white hover:bg-gray-50 border border-gray-300 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 font-medium text-gray-700 disabled:opacity-60 disabled:cursor-not-allowed';
+  const inputClass = 'w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400';
+
   return (
-    <button
-      onClick={handleSignIn}
-      className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white hover:bg-gray-50 border border-gray-300 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 font-medium text-gray-700"
-    >
-      <svg className="w-5 h-5" viewBox="0 0 24 24">
-        <path
-          fill="#4285F4"
-          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={() => runSignIn('google', signInWithGoogle)}
+        disabled={!!busy}
+        className={providerButton}
+      >
+        <svg className="w-5 h-5" viewBox="0 0 24 24">
+          <path
+            fill="#4285F4"
+            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+          />
+          <path
+            fill="#34A853"
+            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+          />
+          <path
+            fill="#FBBC05"
+            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+          />
+          <path
+            fill="#EA4335"
+            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+          />
+        </svg>
+        <span>Continue with Google</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => runSignIn('github', signInWithGithub)}
+        disabled={!!busy}
+        className={providerButton}
+      >
+        <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="#181717"
+            d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.58.23 2.75.11 3.04.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"
+          />
+        </svg>
+        <span>Continue with GitHub</span>
+      </button>
+
+      <div className="flex items-center gap-3 py-1">
+        <div className="h-px flex-1 bg-gray-700" />
+        <span className="text-xs uppercase tracking-wide text-gray-500">or</span>
+        <div className="h-px flex-1 bg-gray-700" />
+      </div>
+
+      <form onSubmit={handleEmailSubmit} className="space-y-3">
+        {mode === 'signup' && (
+          <input
+            type="text"
+            autoComplete="name"
+            placeholder="Your name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className={inputClass}
+          />
+        )}
+        <input
+          type="email"
+          required
+          autoComplete="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className={inputClass}
         />
-        <path
-          fill="#34A853"
-          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+        <input
+          type="password"
+          required
+          minLength={mode === 'signup' ? 6 : undefined}
+          autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className={inputClass}
         />
-        <path
-          fill="#FBBC05"
-          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-        />
-        <path
-          fill="#EA4335"
-          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-        />
-      </svg>
-      <span>Continue with Google</span>
-    </button>
+        {mode === 'signin' && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              disabled={!!busy}
+              className="text-xs text-gray-400 hover:text-gray-200 underline disabled:opacity-60"
+            >
+              {busy === 'reset' ? 'Sending…' : 'Forgot password?'}
+            </button>
+          </div>
+        )}
+        <button
+          type="submit"
+          disabled={!!busy}
+          className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {busy === 'email'
+            ? (mode === 'signup' ? 'Creating account…' : 'Signing in…')
+            : (mode === 'signup' ? 'Create account' : 'Sign in')}
+        </button>
+      </form>
+
+      {authError && <p className="text-sm text-red-400" role="alert">{authError}</p>}
+      {authNotice && <p className="text-sm text-green-400" role="status">{authNotice}</p>}
+
+      <p className="text-center text-sm text-gray-400">
+        {mode === 'signin' ? 'New to RoleBerry?' : 'Already have an account?'}{' '}
+        <button type="button" onClick={switchMode} className="text-blue-400 hover:text-blue-300 underline">
+          {mode === 'signin' ? 'Create an account' : 'Sign in'}
+        </button>
+      </p>
+    </div>
   );
 };
 

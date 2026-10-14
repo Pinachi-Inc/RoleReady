@@ -36,16 +36,20 @@ const fs = globalThis.__E2E_FS;
 const stripe = globalThis.__E2E_STRIPE;
 
 const b64url = (v) => Buffer.from(typeof v === 'string' ? v : JSON.stringify(v)).toString('base64url');
-function token(uid, email) {
+// Defaults to a Google sign-in with a verified email, like most real users.
+function token(uid, email, { verified = true, provider = 'google.com' } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const head = b64url({ alg: 'RS256', kid: 'k1', typ: 'JWT' });
-  const body = b64url({ sub: uid, email, aud: PROJECT, iss: `https://securetoken.google.com/${PROJECT}`, iat: now, exp: now + 3600 });
+  const body = b64url({
+    sub: uid, email, email_verified: verified, firebase: { sign_in_provider: provider },
+    aud: PROJECT, iss: `https://securetoken.google.com/${PROJECT}`, iat: now, exp: now + 3600,
+  });
   const sig = crypto.createSign('RSA-SHA256').update(`${head}.${body}`).sign(privateKey).toString('base64url');
   return `${head}.${body}.${sig}`;
 }
 
-async function call(handler, uid, body = {}, { auth = true } = {}) {
-  const req = { headers: auth ? { authorization: `Bearer ${token(uid, `${uid}@example.com`)}` } : {}, body };
+async function call(handler, uid, body = {}, { auth = true, email = `${uid}@example.com`, verified, provider } = {}) {
+  const req = { headers: auth ? { authorization: `Bearer ${token(uid, email, { verified, provider })}` } : {}, body };
   const res = {
     statusCode: 200,
     body: undefined,
@@ -554,6 +558,36 @@ await check('enforced: comped accounts hit the same fair-use cap as Max', async 
   } finally {
     delete process.env.BILLING_ENFORCED;
     delete process.env.MAX_MONTHLY_RUNS;
+    delete process.env.COMP_MAX_EMAILS;
+  }
+});
+
+out('\nunverified emails');
+
+await check('password account with an unverified email is refused with 403', async () => {
+  const res = await call(handleHistory, 'unverified1', {}, { verified: false, provider: 'password' });
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.code, 'email_unverified');
+  const run = await call(handleOptimizeRequest, 'unverified1', { jobDescription: 'Platform role', aiUserInfo: '{"experienceSource":[]}' }, { verified: false, provider: 'password' });
+  assert.equal(run.statusCode, 403);
+});
+
+await check('password account works once its email is verified', async () => {
+  const res = await call(handleHistory, 'verified1', {}, { verified: true, provider: 'password' });
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+});
+
+await check('unverified email does not inherit a comp granted to that address', async () => {
+  process.env.COMP_MAX_EMAILS = 'vip@example.com';
+  try {
+    // Someone else's GitHub account claiming the comped address, not verified.
+    const squatter = await call(handleBillingStatus, 'squatter', {}, { email: 'vip@example.com', verified: false, provider: 'github.com' });
+    assert.equal(squatter.statusCode, 200, JSON.stringify(squatter.body));
+    assert.equal(squatter.body.plan, 'free');
+    // The real owner, verified, still gets Max.
+    const owner = await call(handleBillingStatus, 'vip', {}, { email: 'vip@example.com' });
+    assert.equal(owner.body.plan, 'max');
+  } finally {
     delete process.env.COMP_MAX_EMAILS;
   }
 });
