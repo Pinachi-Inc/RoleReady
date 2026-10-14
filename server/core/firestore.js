@@ -50,11 +50,13 @@ function db() {
 //
 // `window` says what the counters count over. Free is a one-off trial, so its allowance is
 // lifetime: 5 optimizations ever, not 5 a month. Paid resets each calendar month.
-// Saved profiles and run history are paid features, so free gets none of either.
+// Every account's runs are recorded. `historyVisible` is how many of the newest a plan can open
+// and download; older ones stay stored and come back as locked stubs. Free also keeps one saved
+// profile, paid three.
 export const PLAN_LIMITS = {
-  free: { window: 'lifetime', optimizations: 5, pdfImports: 10, profiles: 0, historyVisible: 0, historyGreyed: 0 },
-  paid: { window: 'month', optimizations: 1000, pdfImports: null, profiles: 3, historyVisible: null, historyGreyed: 0 },
-  unlimited: { window: 'month', optimizations: null, pdfImports: null, profiles: 10, historyVisible: null, historyGreyed: 0 },
+  free: { window: 'lifetime', optimizations: 5, pdfImports: 10, profiles: 1, historyVisible: 5 },
+  paid: { window: 'month', optimizations: 1000, pdfImports: null, profiles: 3, historyVisible: null },
+  unlimited: { window: 'month', optimizations: null, pdfImports: null, profiles: 10, historyVisible: null },
 };
 
 export function limitsFor(plan) {
@@ -135,6 +137,7 @@ export function getEntitlement(user, data, kind = 'optimizations') {
     remaining: limit == null ? null : Math.max(0, limit - used),
     // Mirrors profileCap() in firestore.rules, which is what actually enforces it.
     profileLimit: limits.profiles,
+    historyVisible: limits.historyVisible,
     enforced: enforcementOn(),
   };
 }
@@ -325,6 +328,14 @@ export async function listRuns(uid, limit = 50) {
       hasCoverLetter: Boolean(d.hasCoverLetter),
     };
   });
+}
+
+// How many runs are stored, or null when the server has no Firestore access.
+export async function countRuns(uid) {
+  const database = db();
+  if (!database) return null;
+  const snap = await database.collection('users').doc(uid).collection('history').count().get();
+  return Number(snap.data().count || 0);
 }
 
 // One full run, or null if it does not exist (or Firestore is unavailable).

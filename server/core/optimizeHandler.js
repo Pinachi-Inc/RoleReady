@@ -281,9 +281,10 @@ export async function handleOptimizeRequest(req, res) {
     if (consumed && res.statusCode >= 400) await refundQuota(user.uid, 'optimizations');
   }
 
-  // Saved history is a paid feature. Recorded after the response has gone out, and recordRun
-  // never throws, so it cannot cost the user the CV they just got.
-  if (result && quota.plan !== 'free') {
+  // Every plan's runs are recorded; /api/history decides how many of them a plan can open.
+  // Recorded after the response has gone out, and recordRun never throws, so it cannot cost
+  // the user the CV they just got.
+  if (result) {
     // The profile the run was made from, as the browser reports it. Display-only metadata,
     // so it is length-capped rather than trusted.
     const { profileId, profileName } = req.body || {};

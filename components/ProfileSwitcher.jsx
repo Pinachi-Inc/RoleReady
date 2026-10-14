@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Users, Lock, Check, Pencil, Trash2, Plus } from 'lucide-react';
 
-// Toolbar dropdown for saved profiles (paid). Free accounts see the same button with a lock;
-// clicking it opens the paywall instead of the menu.
+// Toolbar dropdown for saved profiles. Free keeps one and sees a locked second slot that opens
+// the paywall (`upsell`); paid keeps up to `limit`. `locked` is for while the plan is unknown:
+// the button opens the paywall instead of the menu.
 //
 // Profiles are snapshots of the working profile; see services/profiles.js.
-const ProfileSwitcher = ({ locked, profiles, activeProfileId, limit, busy, onLocked, onSwitch, onSaveAs, onRename, onDelete }) => {
+const ProfileSwitcher = ({ locked, upsell, profiles, activeProfileId, limit, busy, onLocked, onSwitch, onSaveAs, onRename, onDelete }) => {
   const [open, setOpen] = useState(false);
   const entries = Object.entries(profiles || {}).sort(([, a], [, b]) => String(a.name || '').localeCompare(String(b.name || '')));
   const active = activeProfileId && profiles?.[activeProfileId];
@@ -79,7 +80,19 @@ const ProfileSwitcher = ({ locked, profiles, activeProfileId, limit, busy, onLoc
                 </button>
               </div>
             ))}
-            <div className="border-t border-gray-100 mt-1 pt-1">
+            {upsell && (
+              <button
+                type="button"
+                onClick={() => { setOpen(false); onLocked(); }}
+                className="w-full px-4 py-2 flex items-center gap-2 text-left text-sm text-gray-400 hover:bg-amber-50"
+                title="More saved profiles are part of RoleBerry Pro"
+              >
+                <Lock className="h-4 w-4 shrink-0" />
+                <span className="flex-1 truncate">Second profile</span>
+                <span className="text-xs font-medium text-amber-600">Pro</span>
+              </button>
+            )}
+            <div className={`border-t border-gray-100 mt-1 pt-1 ${upsell && atCap ? 'hidden' : ''}`}>
               <button
                 type="button"
                 disabled={atCap}

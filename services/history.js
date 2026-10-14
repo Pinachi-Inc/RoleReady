@@ -17,8 +17,9 @@ async function postHistory(body) {
   return data;
 }
 
-// Paid: { locked: false, runs: [{ id, createdAt, companyName, jobTitle, profileName, hasCoverLetter }] }
-// Free: { locked: true, lockedCount, runs: [] }
+// { runs: [{ id, createdAt, companyName, jobTitle, profileName, hasCoverLetter }],
+//   visibleLimit, lockedCount, lockedRuns: [{ createdAt }] }
+// Paid: visibleLimit null, nothing locked. Free: the newest runs in full, older ones as stubs.
 export const listHistory = () => postHistory({});
 
 // { id, createdAt, companyName, jobTitle, profileName, cv, cvContent, coverLetter }

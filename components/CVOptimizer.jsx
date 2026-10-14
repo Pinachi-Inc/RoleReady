@@ -195,7 +195,7 @@ const CVOptimizer = () => {
   const [showPaywall, setShowPaywall] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingNotice, setBillingNotice] = useState('');
-  const [profiles, setProfiles] = useState({}); // saved profiles (paid), see services/profiles.js
+  const [profiles, setProfiles] = useState({}); // saved profiles (free 1, paid 3), see services/profiles.js
   const [activeProfileId, setActiveProfileId] = useState(null);
   const [profileBusy, setProfileBusy] = useState(false);
   // Read once: Stripe sends people back to /?checkout=success|cancelled.
@@ -534,9 +534,10 @@ const CVOptimizer = () => {
     }
   };
 
-  // Saved profiles and history are paid. A missing billing status counts as locked: the paywall
-  // is the safe thing to show, and the server and firestore.rules enforce it regardless.
-  const profilesUnlocked = Boolean(billing && billing.plan !== 'free');
+  // Free keeps one saved profile, paid more. Until the billing status loads the switcher stays
+  // locked: the paywall is the safe thing to show, and firestore.rules enforce the cap regardless.
+  const profilesUnlocked = Boolean(billing);
+  const profileLimit = billing?.profileLimit ?? null;
 
   const runProfileOp = async (fn, failure) => {
     setProfileBusy(true);
@@ -545,7 +546,7 @@ const CVOptimizer = () => {
     } catch (err) {
       console.error('[profiles] %s', err?.message || err);
       alert(err?.code === 'permission-denied'
-        ? 'Your plan does not allow that. Saved profiles are part of RoleBerry Pro (up to 3).'
+        ? 'Your plan does not allow that. Free keeps 1 saved profile; RoleBerry Pro keeps up to 3.'
         : failure);
     } finally {
       setProfileBusy(false);
@@ -622,9 +623,11 @@ const CVOptimizer = () => {
       
       const aiStr = JSON.stringify(aiJson, null, 2);
       const fixedStr = JSON.stringify(fixedJson, null, 2);
-      // Editing while a saved profile is active updates that profile too. Free accounts are
-      // skipped: firestore.rules refuses profile writes there and would fail the whole save.
-      const syncProfile = profilesUnlocked && activeProfileId && profiles[activeProfileId];
+      // Editing while a saved profile is active updates that profile too, unless the account
+      // holds more profiles than its plan allows (e.g. it cancelled Pro): firestore.rules would
+      // refuse the profile write and fail the whole save.
+      const withinProfileCap = profileLimit == null || Object.keys(profiles).length <= profileLimit;
+      const syncProfile = profilesUnlocked && withinProfileCap && activeProfileId && profiles[activeProfileId];
       const now = new Date().toISOString();
       await saveUserData(user.uid, {
         aiUserInfo: aiStr,
@@ -1819,9 +1822,10 @@ const CVOptimizer = () => {
                   {user && (
                     <ProfileSwitcher
                       locked={!profilesUnlocked}
+                      upsell={billing?.plan === 'free'}
                       profiles={profiles}
                       activeProfileId={activeProfileId}
-                      limit={billing?.profileLimit ?? null}
+                      limit={profileLimit}
                       busy={profileBusy}
                       onLocked={() => setShowPaywall(true)}
                       onSwitch={handleSwitchProfile}
