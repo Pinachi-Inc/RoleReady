@@ -23,7 +23,7 @@ server/core/*Handler.js   <-- SINGLE SOURCE OF TRUTH for all 3 runtimes
   +-- pdfjs-dist (text extraction, in-process)
 
 Firebase (client SDK, direct from browser)
-  +-- Firebase Auth (Google popup)
+  +-- Firebase Auth (Google / GitHub popup, email + password with verification)
   +-- Firestore  collection `users/{uid}`  -> { aiUserInfo, fixedUserInfo, lastUpdated }
 ```
 
@@ -50,7 +50,8 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 | `components/LegalPage.jsx` | `/privacy` and `/terms`, chosen by pathname in `src/main.jsx` (no router; no sign-in needed). Text lives in `src/legal/PrivacyPolicy.jsx` and `src/legal/TermsOfService.jsx`; seller (a sole trader), address, contact email, governing law, courts and dates in `src/legal/config.js`. Shows a draft notice while any `[placeholder]` remains. Linked from the sign-in screen and the pricing modal. |
 | `components/PricingModal.jsx` | The paywall: Free / Pro ("Most popular", middle) / Max columns. Free upgrades via Checkout with `plan`; subscribers see Current plan and go to the Customer Portal for any change. Perks are edited in its `PLANS` list; `soon: true` marks unbuilt ones (Max's extra CV templates). |
 | `components/HistoryPage.jsx` | Past runs newest first, open into the result view or download CV/letter PDFs. Free opens its newest 5; older runs show as greyed, blurred rows with an Unlock history button (paywall). |
-| `components/Auth.jsx` (164 L) | Header widget: Google sign-in button / avatar dropdown, theme toggle, folder-management toggle + folder picker |
+| `components/Auth.jsx` | Signed out: Google and GitHub buttons, then an email/password form (Sign in / Create account, Forgot password), inline errors. Signed in: avatar dropdown, theme toggle, folder-management toggle + folder picker |
+| `components/VerifyEmail.jsx` | "Check your inbox" panel shown instead of the app to a password account whose email is unverified: Resend, I've verified (reload + fresh token), Sign out |
 | `components/LoadingShowcase.jsx` (1071 L) | Standalone demo of loading animations. Only reachable via `npm run showcase` (`showcase-index.html` -> `showcase.jsx`). Not in the app bundle. |
 
 ### Frontend services (browser-side)
@@ -61,9 +62,9 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 | `services/profiles.js` | `newProfileId`, `saveProfile`, `renameProfile`, `deleteProfile`, `activateProfile` | Firestore `users/{uid}.profiles.{id}` (free 1, paid 3, comped 10). Cap enforced by firestore.rules. |
 | `services/history.js` | `listHistory`, `getHistoryRun` | `POST /api/history` |
 | `services/billing.js` | `getBillingStatus`, `startCheckout(plan)`, `openBillingPortal` | `POST /api/billing/{status,checkout,portal}`; the last two redirect the tab to Stripe. Checkout takes `pro` or `max`. |
-| `services/auth.js` | `signInWithGoogle`, `signOutUser`, `onAuthStateChange`, `saveUserData`, `getUserData` | Firebase Auth + Firestore |
+| `services/auth.js` | `signInWithGoogle`, `signInWithGithub`, `signInWithEmail`, `signUpWithEmail`, `sendPasswordReset`, `resendVerification`, `refreshEmailVerified`, `needsEmailVerification`, `friendlyAuthError`, `signOutUser`, `onAuthStateChange`, `saveUserData`, `getUserData` | Firebase Auth + Firestore. A popup that hits account-exists-with-different-credential holds the credential and links it after the person signs in the original way. |
 | `services/folderManager.js` | `isFolderApiSupported`, `getFolderHandle`, `pickNewFolder`, `getStoredFolderName`, `writePdfWithHandle`, `savePdfToFolder`, `clearFolderHandle`, `extractCompanyName` | File System Access API + IndexedDB (`roleberry` / `settings` / `downloadFolderHandle`) |
-| `src/firebase.js` | `auth`, `db`, `googleProvider` | Firebase SDK init from `VITE_FIREBASE_*` |
+| `src/firebase.js` | `auth`, `db`, `googleProvider`, `githubProvider` | Firebase SDK init from `VITE_FIREBASE_*` |
 
 ### Frontend render/util
 | File | Role |
