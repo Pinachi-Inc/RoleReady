@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "roleready",
+      "name": "roleberry",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start"],
       "port": 5173

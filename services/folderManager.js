@@ -1,4 +1,4 @@
-const DB_NAME = 'roleready';
+const DB_NAME = 'roleberry';
 const STORE_NAME = 'settings';
 const HANDLE_KEY = 'downloadFolderHandle';
 
@@ -93,7 +93,7 @@ async function openDirectoryPicker() {
     // poisoned default. `startIn` supplies a known-good location the first time that
     // id is used. Docs: developer.chrome.com/docs/capabilities/web-apis/file-system-access
     handle = await withTimeout(
-      window.showDirectoryPicker({ mode: 'readwrite', id: 'roleready-cv', startIn: 'documents' }),
+      window.showDirectoryPicker({ mode: 'readwrite', id: 'roleberry-cv', startIn: 'documents' }),
       12000
     );
   } catch (err) {
