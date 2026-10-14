@@ -47,6 +47,7 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 |---|---|
 | `components/CVOptimizer.jsx` (~1390 L) | **The entire app.** All state, 3 screens, both modals, download logic. |
 | `components/ProfileSwitcher.jsx` | Toolbar dropdown for saved profiles: save current as new, switch, rename, delete. Free keeps 1 and sees a locked second slot that opens the paywall. Pro shows "n of 3"; Max and comped show no count (unlimited, hidden cap 100). |
+| `components/LegalPage.jsx` | `/privacy` and `/terms`, chosen by pathname in `src/main.jsx` (no router; no sign-in needed). Text lives in `src/legal/PrivacyPolicy.jsx` and `src/legal/TermsOfService.jsx`; company name, address, contact email, governing law and dates in `src/legal/config.js`. Shows a draft notice while any `[placeholder]` remains. Linked from the sign-in screen and the pricing modal. |
 | `components/PricingModal.jsx` | The paywall: Free / Pro ("Most popular", middle) / Max columns. Free upgrades via Checkout with `plan`; subscribers see Current plan and go to the Customer Portal for any change. Perks are edited in its `PLANS` list; `soon: true` marks unbuilt ones (Max's extra CV templates). |
 | `components/HistoryPage.jsx` | Past runs newest first, open into the result view or download CV/letter PDFs. Free opens its newest 5; older runs show as greyed, blurred rows with an Unlock history button (paywall). |
 | `components/Auth.jsx` (164 L) | Header widget: Google sign-in button / avatar dropdown, theme toggle, folder-management toggle + folder picker |

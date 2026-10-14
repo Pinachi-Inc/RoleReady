@@ -168,6 +168,12 @@ const PricingModal = ({ billing, busy, onClose, onCheckout, onManage }) => {
           {subscriber && (
             <p className="text-xs text-gray-500">Switching plans happens in Stripe's billing page, which prorates the difference.</p>
           )}
+          <p className="text-xs text-gray-500">
+            Subscriptions renew monthly until cancelled. See the{' '}
+            <a href="/terms" target="_blank" rel="noopener" className="underline hover:text-gray-700">Terms of Service</a>
+            {' '}and{' '}
+            <a href="/privacy" target="_blank" rel="noopener" className="underline hover:text-gray-700">Privacy Policy</a>.
+          </p>
         </div>
       </div>
     </div>

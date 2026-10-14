@@ -1708,6 +1708,13 @@ const CVOptimizer = () => {
             
             <Auth user={user} onAuthChange={setUser} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
 
+            <p className="mt-4 text-center text-xs text-gray-500">
+              By continuing you agree to the{' '}
+              <a href="/terms" className="underline hover:text-gray-300">Terms of Service</a>
+              {' '}and acknowledge the{' '}
+              <a href="/privacy" className="underline hover:text-gray-300">Privacy Policy</a>.
+            </p>
+
             <div className="mt-8 pt-6 border-t border-gray-700">
               <div className="grid grid-cols-2 gap-4 text-center text-sm text-gray-400">
                 <div>
