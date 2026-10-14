@@ -46,6 +46,8 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 | File | Role |
 |---|---|
 | `components/CVOptimizer.jsx` (~1390 L) | **The entire app.** All state, 3 screens, both modals, download logic. |
+| `components/ProfileSwitcher.jsx` | Toolbar dropdown for saved profiles: save current as new, switch, rename, delete. Locked (opens paywall) on free. |
+| `components/HistoryPage.jsx` | Past runs newest first, open into the result view or download CV/letter PDFs. Free sees a blurred placeholder with the real count. |
 | `components/Auth.jsx` (164 L) | Header widget: Google sign-in button / avatar dropdown, theme toggle, folder-management toggle + folder picker |
 | `components/LoadingShowcase.jsx` (1071 L) | Standalone demo of loading animations. Only reachable via `npm run showcase` (`showcase-index.html` -> `showcase.jsx`). Not in the app bundle. |
 
@@ -54,6 +56,8 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 |---|---|---|
 | `services/openai.js` | `optimizeCv`, `detectAiContent` | `POST /api/optimize`, `POST /api/detect-ai` |
 | `services/pdf.js` | `processPdf` | `POST /api/process-pdf` (multipart, field name `pdf`) |
+| `services/profiles.js` | `newProfileId`, `saveProfile`, `renameProfile`, `deleteProfile`, `activateProfile` | Firestore `users/{uid}.profiles.{id}` (paid). Cap enforced by firestore.rules. |
+| `services/history.js` | `listHistory`, `getHistoryRun` | `POST /api/history` |
 | `services/billing.js` | `getBillingStatus`, `startCheckout`, `openBillingPortal` | `POST /api/billing/{status,checkout,portal}`; the last two redirect the tab to Stripe |
 | `services/auth.js` | `signInWithGoogle`, `signOutUser`, `onAuthStateChange`, `saveUserData`, `getUserData` | Firebase Auth + Firestore |
 | `services/folderManager.js` | `isFolderApiSupported`, `getFolderHandle`, `pickNewFolder`, `getStoredFolderName`, `writePdfWithHandle`, `savePdfToFolder`, `clearFolderHandle`, `extractCompanyName` | File System Access API + IndexedDB (`roleberry` / `settings` / `downloadFolderHandle`) |
@@ -74,6 +78,7 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 | `server/core/pdfHandler.js` (300 L) | `handlePdfProcessing`, `uploadMiddleware` | multer memory storage, 10MB, PDF-only. Extract -> GPT -> two JSON blobs. Also `calculateYearsOfExperience`. |
 | `server/core/aiDetectHandler.js` (33 L) | `handleAiDetect` | Sapling `/api/v1/aidetect`, returns `{ score }` 0–1 |
 | `server/core/firestore.js` | `PLAN_LIMITS`, `consumeQuota`, `refundQuota`, `getEntitlement`, `recordRun`, user-doc helpers | Admin SDK. Free = 5 optimizations lifetime, paid = 1,000/calendar month. `BILLING_ENFORCED=true` turns limits into refusals. |
+| `server/core/historyHandler.js` | `handleHistory` | `POST /api/history` lists runs (paid) or returns `{ locked, lockedCount }` (free); `{ id }` returns one run with re-rendered `cvContent`. History is server-read only. |
 | `server/core/billing.js` | `handleCreateCheckout`, `handleCustomerPortal`, `handleBillingStatus`, `handleStripeWebhook` | Stripe. The signed webhook is the only thing that sets `plan`; it re-reads the subscription from Stripe on every event. |
 | `server/core/PDFTextExtractor.js` (150 L) | `PDFTextExtractor` (default) | pdfjs-dist legacy, worker disabled. `isTextBased` samples N pages; **OCR path throws `IMAGE_BASED_PDF_NOT_SUPPORTED` — deliberately disabled.** |
 | `server/cvValidation.js` | `validateAndFixSkills`, `reorderSkills` | dedupe, clamp 3–9 items / max 9 categories, compute `jdShare`, sort by hardcoded `categoryOrder` |
@@ -82,10 +87,10 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 ### Backend — adapters (thin, keep thin)
 | File | Runtime |
 |---|---|
-| `server/index.js` | Express, port `PORT` or 8787. Routes: `/api/optimize`, `/api/process-pdf`, `/api/detect-ai`, `/api/billing/{checkout,portal,status}`, `/api/stripe-webhook` (raw body, registered before `express.json`) |
-| `api/optimize.js`, `api/process-pdf.js`, `api/detect-ai.js`, `api/billing/*.js` | Vercel. CORS `*`, OPTIONS, POST-only, delegate to core |
+| `server/index.js` | Express, port `PORT` or 8787. Routes: `/api/optimize`, `/api/process-pdf`, `/api/detect-ai`, `/api/billing/{checkout,portal,status}`, `/api/history`, `/api/stripe-webhook` (raw body, registered before `express.json`) |
+| `api/optimize.js`, `api/process-pdf.js`, `api/detect-ai.js`, `api/billing/*.js`, `api/history.js` | Vercel. CORS `*`, OPTIONS, POST-only, delegate to core |
 | `api/stripe-webhook.js` | Vercel. No CORS; must not touch `req.body` (signature is over the raw stream) |
-| `functions/index.js` | Firebase. Express-in-function, CJS with dynamic `import()` of the ESM core. Routes `/optimize`, `/process-pdf`, `/health`, `/billing/*`, `/stripe-webhook`. **No `/detect-ai`.** |
+| `functions/index.js` | Firebase. Express-in-function, CJS with dynamic `import()` of the ESM core. Routes `/optimize`, `/process-pdf`, `/health`, `/billing/*`, `/history`, `/stripe-webhook`. **No `/detect-ai`.** |
 
 ### Build / ops
 | File | Role |

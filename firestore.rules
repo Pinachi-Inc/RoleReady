@@ -45,11 +45,14 @@ service cloud.firestore {
     }
 
     // Checked only when the write touches profiles. Someone who cancels keeps profiles they
-    // can no longer add to, and must still be able to save the rest of their document.
+    // can no longer add to, must still be able to save the rest of their document, and may
+    // always shrink the list.
     function profilesWithinCap() {
       return !request.resource.data.keys().hasAny(['profiles'])
         || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['profiles'])
-        || request.resource.data.profiles.size() <= profileCap();
+        || request.resource.data.profiles.size() <= profileCap()
+        || (resource.data.keys().hasAny(['profiles'])
+            && request.resource.data.profiles.size() < resource.data.profiles.size());
     }
 
     match /users/{uid} {
@@ -68,12 +71,12 @@ service cloud.firestore {
       // Account deletion runs server-side so billing state is torn down with it.
       allow delete: if false;
 
-      // Written by the server when a run succeeds. The client reads its own history and
-      // never writes it, so records cannot be forged, back-dated or quietly removed to
-      // dodge the free-tier window.
+      // Written by the server when a paid run succeeds, and read back through /api/history,
+      // which is where the paid-only check lives. The client touches it in neither direction,
+      // so records cannot be forged, back-dated or removed, and a free account cannot read
+      // history it no longer pays for.
       match /history/{runId} {
-        allow read: if isOwner(uid);
-        allow write: if false;
+        allow read, write: if false;
       }
     }
 

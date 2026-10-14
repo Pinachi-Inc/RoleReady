@@ -83,6 +83,7 @@ app.post('/billing/checkout', async (req, res) => (await billingHandlers()).hand
 app.post('/billing/portal', async (req, res) => (await billingHandlers()).handleCustomerPortal(req, res));
 app.post('/billing/status', async (req, res) => (await billingHandlers()).handleBillingStatus(req, res));
 app.post('/stripe-webhook', async (req, res) => (await billingHandlers()).handleStripeWebhook(req, res));
+app.post('/history', async (req, res) => (await import('../server/core/historyHandler.js')).handleHistory(req, res));
 
 // Export the Express app as a Firebase Function
 exports.api = functions.https.onRequest(app);
