@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, FileText, Target, Zap, AlertCircle, Save, Info, Copy, Check, Bot, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, ArrowLeft, Link2, Award, GraduationCap, Briefcase, Sparkles } from 'lucide-react';
+import { Download, FileText, Target, Zap, AlertCircle, Save, Info, Copy, Check, Bot, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, ArrowLeft, Link2, Award, GraduationCap, Briefcase, Sparkles, Clock } from 'lucide-react';
 import { convertMarkdownToHtml } from '../utils/markdown.js';
 import { generateDownloadHtml, downloadHtml } from '../utils/download.js';
 import html2pdf from 'html2pdf.js';
@@ -17,6 +17,9 @@ import { buildCvPdf, buildCoverLetterPdf } from '../src/cvPdf.js';
 import { prefetchOcrAssets, ocrPdfInBrowser, isOcrSupported } from '../services/browserOcr.js';
 import { optimizeCv as optimizeCvService, detectAiContent } from '../services/openai.js';
 import { getBillingStatus, startCheckout, openBillingPortal } from '../services/billing.js';
+import { newProfileId, saveProfile, renameProfile, deleteProfile, activateProfile } from '../services/profiles.js';
+import ProfileSwitcher from './ProfileSwitcher.jsx';
+import HistoryPage from './HistoryPage.jsx';
 import { processPdf, processPdfText } from '../services/pdf.js';
 import { onAuthStateChange, saveUserData, getUserData } from '../services/auth.js';
 import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
@@ -192,6 +195,9 @@ const CVOptimizer = () => {
   const [showPaywall, setShowPaywall] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingNotice, setBillingNotice] = useState('');
+  const [profiles, setProfiles] = useState({}); // saved profiles (paid), see services/profiles.js
+  const [activeProfileId, setActiveProfileId] = useState(null);
+  const [profileBusy, setProfileBusy] = useState(false);
   // Read once: Stripe sends people back to /?checkout=success|cancelled.
   const checkoutReturnRef = useRef(new URLSearchParams(window.location.search).get('checkout'));
   const downloadingRef = useRef(false);
@@ -419,6 +425,8 @@ const CVOptimizer = () => {
     setJdCollapsed(false);
     setPdfError('');
     setDownloadNotice('');
+    setProfiles({});
+    setActiveProfileId(null);
     setCurrentPage('main');
   };
 
@@ -439,6 +447,8 @@ const CVOptimizer = () => {
 
             // Populate form data from existing JSON
             jsonToFormData(userData.fixedUserInfo || '', storedAi);
+            setProfiles(userData.profiles && typeof userData.profiles === 'object' ? userData.profiles : {});
+            setActiveProfileId(userData.activeProfileId || null);
           } else {
             // Fresh account with nothing stored — start from a blank profile
             // rather than inheriting whoever was signed in before.
@@ -524,6 +534,82 @@ const CVOptimizer = () => {
     }
   };
 
+  // Saved profiles and history are paid. A missing billing status counts as locked: the paywall
+  // is the safe thing to show, and the server and firestore.rules enforce it regardless.
+  const profilesUnlocked = Boolean(billing && billing.plan !== 'free');
+
+  const runProfileOp = async (fn, failure) => {
+    setProfileBusy(true);
+    try {
+      await fn();
+    } catch (err) {
+      console.error('[profiles] %s', err?.message || err);
+      alert(err?.code === 'permission-denied'
+        ? 'Your plan does not allow that. Saved profiles are part of RoleBerry Pro (up to 3).'
+        : failure);
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
+  const handleSaveProfileAs = (name) => runProfileOp(async () => {
+    if (!aiUserInfo.trim()) {
+      alert('Set up your info first, then save it as a profile.');
+      return;
+    }
+    const id = newProfileId();
+    const entry = { name, aiUserInfo, fixedUserInfo, updatedAt: new Date().toISOString() };
+    await saveProfile(user.uid, id, entry);
+    setProfiles((prev) => ({ ...prev, [id]: entry }));
+    setActiveProfileId(id);
+  }, 'Could not save the profile. Please try again.');
+
+  const handleSwitchProfile = (id) => runProfileOp(async () => {
+    const p = profiles[id];
+    if (!p) return;
+    const ai = withUniqueRoleIds(p.aiUserInfo || '');
+    await activateProfile(user.uid, id, { aiUserInfo: ai, fixedUserInfo: p.fixedUserInfo || '' });
+    setAiUserInfo(ai);
+    setFixedUserInfo(p.fixedUserInfo || '');
+    jsonToFormData(p.fixedUserInfo || '', ai);
+    setActiveProfileId(id);
+  }, 'Could not switch profile. Please try again.');
+
+  const handleRenameProfile = (id, name) => runProfileOp(async () => {
+    await renameProfile(user.uid, id, name);
+    setProfiles((prev) => ({ ...prev, [id]: { ...prev[id], name } }));
+  }, 'Could not rename the profile. Please try again.');
+
+  const handleDeleteProfile = (id) => runProfileOp(async () => {
+    const wasActive = id === activeProfileId;
+    await deleteProfile(user.uid, id, { wasActive });
+    setProfiles((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (wasActive) setActiveProfileId(null);
+  }, 'Could not delete the profile. Please try again.');
+
+  // Loads a past run from history into the result view, where the usual download works.
+  const handleOpenRun = (run) => {
+    detectRunRef.current++;
+    setAiScore(null);
+    setAiScoreLoading(false);
+    setOptimizedCv(run.cvContent || '');
+    setStructuredCv(run.cv || null);
+    setCoverLetter(run.coverLetter || '');
+    setCompanyName(run.companyName || '');
+    setKeywords([]);
+    setStats(null);
+    setNeedsFix(false);
+    setOverlapSkills([]);
+    setDownloadNotice('');
+    setActiveDoc('cv');
+    setJdCollapsed(true);
+    setCurrentPage('main');
+  };
+
   const saveUserInfo = async () => {
     if (!user) {
       alert('Please sign in to save your information.');
@@ -534,11 +620,21 @@ const CVOptimizer = () => {
     try {
       const { fixedUserInfo: fixedJson, aiUserInfo: aiJson } = formDataToJson();
       
+      const aiStr = JSON.stringify(aiJson, null, 2);
+      const fixedStr = JSON.stringify(fixedJson, null, 2);
+      // Editing while a saved profile is active updates that profile too. Free accounts are
+      // skipped: firestore.rules refuses profile writes there and would fail the whole save.
+      const syncProfile = profilesUnlocked && activeProfileId && profiles[activeProfileId];
+      const now = new Date().toISOString();
       await saveUserData(user.uid, {
-        aiUserInfo: JSON.stringify(aiJson, null, 2),
-        fixedUserInfo: JSON.stringify(fixedJson, null, 2),
-        lastUpdated: new Date().toISOString()
+        aiUserInfo: aiStr,
+        fixedUserInfo: fixedStr,
+        lastUpdated: now,
+        ...(syncProfile ? { profiles: { [activeProfileId]: { aiUserInfo: aiStr, fixedUserInfo: fixedStr, updatedAt: now } } } : {})
       });
+      if (syncProfile) {
+        setProfiles((prev) => ({ ...prev, [activeProfileId]: { ...prev[activeProfileId], aiUserInfo: aiStr, fixedUserInfo: fixedStr, updatedAt: now } }));
+      }
       
       // Also update the JSON state for backward compatibility
       setAiUserInfo(JSON.stringify(aiJson, null, 2));
@@ -925,7 +1021,9 @@ const CVOptimizer = () => {
         jobDescription,
         aiUserInfo,
         fixedUserInfo,
-        includeCoverLetter: wantsCoverLetter
+        includeCoverLetter: wantsCoverLetter,
+        profileId: activeProfileId && profiles[activeProfileId] ? activeProfileId : null,
+        profileName: activeProfileId && profiles[activeProfileId] ? profiles[activeProfileId].name : null
       });
       if (quota) setBilling((prev) => (prev ? { ...prev, ...quota } : prev));
       setOptimizedCv(cvContent);
@@ -985,6 +1083,91 @@ const CVOptimizer = () => {
       setIsProcessing(false);
     }
   };
+
+  const paywallModal = showPaywall && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center">
+                <div className="absolute inset-0 bg-black/50" onClick={() => setShowPaywall(false)}></div>
+                <div className="relative bg-white w-full max-w-md mx-4 rounded-lg shadow-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-6 py-4 border-b">
+                    <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 text-amber-500" />
+                      RoleBerry Pro
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setShowPaywall(false)}
+                      className="text-gray-500 hover:text-gray-800"
+                      aria-label="Close"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    {billing?.plan === 'free' && billing.remaining === 0 && (
+                      <p className="text-sm text-gray-700">You have used all {billing.limit} free optimizations.</p>
+                    )}
+                    <div>
+                      <span className="text-3xl font-bold text-gray-900">$12</span>
+                      <span className="text-gray-600"> / month</span>
+                    </div>
+                    <ul className="text-sm text-gray-700 space-y-2">
+                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />1,000 optimizations every month</li>
+                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Saved profiles</li>
+                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Saved history of every CV and cover letter</li>
+                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Cancel any time</li>
+                    </ul>
+                    {billing && !billing.billingAvailable && (
+                      <p className="text-xs text-red-600">Upgrades are not available right now. Please try again later.</p>
+                    )}
+                  </div>
+                  <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPaywall(false)}
+                      className="px-4 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      Not now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleUpgrade}
+                      disabled={billingBusy || (billing && !billing.billingAvailable)}
+                      className="px-4 py-2 rounded-md bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-medium hover:from-amber-600 hover:to-orange-600 disabled:opacity-50"
+                    >
+                      {billingBusy ? 'Opening checkout…' : 'Upgrade for $12/month'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+
+  if (user && currentPage === 'history') {
+    return (
+      <div className="min-h-screen p-6 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-lg overflow-hidden relative">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 sm:p-8 dark:from-gray-800 dark:to-gray-700">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <Target className="h-8 w-8" />
+                  <h1 className="text-3xl font-bold">RoleBerry</h1>
+                </div>
+                <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v=>!v)} isDark={isDark} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
+              </div>
+            </div>
+            <div className="p-4 sm:p-8 text-gray-900 dark:text-gray-100">
+              <HistoryPage
+                onBack={() => setCurrentPage('main')}
+                onOpenRun={handleOpenRun}
+                onUpgrade={() => setShowPaywall(true)}
+              />
+            </div>
+            {paywallModal}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Show setup page
   if (currentPage === 'setup') {
@@ -1633,6 +1816,28 @@ const CVOptimizer = () => {
                       Upgrade
                     </button>
                   )}
+                  {user && (
+                    <ProfileSwitcher
+                      locked={!profilesUnlocked}
+                      profiles={profiles}
+                      activeProfileId={activeProfileId}
+                      limit={billing?.profileLimit ?? null}
+                      busy={profileBusy}
+                      onLocked={() => setShowPaywall(true)}
+                      onSwitch={handleSwitchProfile}
+                      onSaveAs={handleSaveProfileAs}
+                      onRename={handleRenameProfile}
+                      onDelete={handleDeleteProfile}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage('history')}
+                    className="px-3 py-1.5 rounded-md text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 flex items-center gap-1"
+                  >
+                    <Clock className="h-3 w-3" />
+                    History
+                  </button>
                   {billing?.plan === 'paid' && billing.hasCustomer && (
                     <button
                       type="button"
@@ -1989,62 +2194,7 @@ const CVOptimizer = () => {
               </div>
             )}
 
-            {showPaywall && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center">
-                <div className="absolute inset-0 bg-black/50" onClick={() => setShowPaywall(false)}></div>
-                <div className="relative bg-white w-full max-w-md mx-4 rounded-lg shadow-xl overflow-hidden">
-                  <div className="flex items-center justify-between px-6 py-4 border-b">
-                    <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-                      <Sparkles className="h-5 w-5 text-amber-500" />
-                      RoleBerry Pro
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => setShowPaywall(false)}
-                      className="text-gray-500 hover:text-gray-800"
-                      aria-label="Close"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    {billing?.plan === 'free' && billing.remaining === 0 && (
-                      <p className="text-sm text-gray-700">You have used all {billing.limit} free optimizations.</p>
-                    )}
-                    <div>
-                      <span className="text-3xl font-bold text-gray-900">$12</span>
-                      <span className="text-gray-600"> / month</span>
-                    </div>
-                    <ul className="text-sm text-gray-700 space-y-2">
-                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />1,000 optimizations every month</li>
-                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Saved profiles</li>
-                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Saved history of every CV and cover letter</li>
-                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Cancel any time</li>
-                    </ul>
-                    {billing && !billing.billingAvailable && (
-                      <p className="text-xs text-red-600">Upgrades are not available right now. Please try again later.</p>
-                    )}
-                  </div>
-                  <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowPaywall(false)}
-                      className="px-4 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100"
-                    >
-                      Not now
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleUpgrade}
-                      disabled={billingBusy || (billing && !billing.billingAvailable)}
-                      className="px-4 py-2 rounded-md bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-medium hover:from-amber-600 hover:to-orange-600 disabled:opacity-50"
-                    >
-                      {billingBusy ? 'Opening checkout…' : 'Upgrade for $12/month'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            {paywallModal}
 
             {showTips && (
               <div className="fixed inset-0 z-50 flex items-center justify-center">

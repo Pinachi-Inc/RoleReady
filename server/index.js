@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { handleOptimizeRequest } from './core/optimizeHandler.js';
 import { handlePdfProcessing, uploadMiddleware } from './core/pdfHandler.js';
 import { handleAiDetect } from './core/aiDetectHandler.js';
+import { handleHistory } from './core/historyHandler.js';
 import { handleCreateCheckout, handleCustomerPortal, handleBillingStatus, handleStripeWebhook } from './core/billing.js';
 
 dotenv.config();
@@ -58,6 +59,9 @@ app.post('/api/detect-ai', handleAiDetect);
 app.post('/api/billing/checkout', handleCreateCheckout);
 app.post('/api/billing/portal', handleCustomerPortal);
 app.post('/api/billing/status', handleBillingStatus);
+
+// Saved run history (paid)
+app.post('/api/history', handleHistory);
 
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);

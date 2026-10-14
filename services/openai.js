@@ -16,11 +16,11 @@ export const detectAiContent = async (text) => {
   return data.score; // 0.0–1.0
 };
 
-export const optimizeCv = async ({ jobDescription, aiUserInfo, fixedUserInfo, maxTokens = 4000, temperature = 0.45, includeCoverLetter = false }) => {
+export const optimizeCv = async ({ jobDescription, aiUserInfo, fixedUserInfo, maxTokens = 4000, temperature = 0.45, includeCoverLetter = false, profileId = null, profileName = null }) => {
   const response = await fetch('/api/optimize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
-    body: JSON.stringify({ jobDescription, aiUserInfo, fixedUserInfo, max_tokens: maxTokens, temperature, includeCoverLetter })
+    body: JSON.stringify({ jobDescription, aiUserInfo, fixedUserInfo, max_tokens: maxTokens, temperature, includeCoverLetter, profileId, profileName })
   });
 
   // Out of optimizations. Surfaced as a typed error so the UI can show the paywall

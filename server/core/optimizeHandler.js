@@ -173,7 +173,8 @@ export function buildCvInstruction() {
     ],
     "keywordsUsed": ["string"],
     "overlapSkills": ["string"],
-    "companyName": "string"
+    "companyName": "string",
+    "jobTitle": "string"
   }`;
 
   const instruction = `You rewrite one candidate's real CV data to fit one job description. Your output is parsed by a program, not read by a person.
@@ -232,6 +233,7 @@ Use the JD's literal wording inside bullets wherever it fits the real work.
 Only real experience. Naming a task the described work necessarily included is fine, and so is calling Docker work container orchestration. Stating a role, employer, domain or technology the candidate has not touched is not, and a JD priority with no counterpart in their history is left out rather than filled in.
 Organisation names from the JD stay out of the summary, the skills and the bullets: the hiring company, its customers, partners, parent, competitors, plus req numbers, posting ids and URLs. Technologies are not organisations, so AWS, Kubernetes, Terraform, React and PostgreSQL are used verbatim wherever the JD uses them. The candidate's own employers are rendered separately from saved data, so bullets do not repeat them.
 companyName holds the hiring company's name. It is metadata, never rendered into the CV; empty string if the JD does not say.
+jobTitle holds the title of the advertised role as the JD states it. Also metadata, never rendered; empty string if the JD does not say.
 keywordsUsed: JD terms that actually appear in the text you wrote.
 Reply with the JSON object only.
 </hard_limits>`;
@@ -282,8 +284,14 @@ export async function handleOptimizeRequest(req, res) {
   // Saved history is a paid feature. Recorded after the response has gone out, and recordRun
   // never throws, so it cannot cost the user the CV they just got.
   if (result && quota.plan !== 'free') {
+    // The profile the run was made from, as the browser reports it. Display-only metadata,
+    // so it is length-capped rather than trusted.
+    const { profileId, profileName } = req.body || {};
     await recordRun(user.uid, {
+      profileId: typeof profileId === 'string' ? profileId.slice(0, 64) : null,
+      profileName: typeof profileName === 'string' ? profileName.slice(0, 80) : null,
       companyName: result.companyName,
+      jobTitle: result.jobTitle,
       cv: result.cv,
       coverLetter: result.coverLetter,
     });
@@ -435,7 +443,7 @@ async function runOptimize(req, res, quota) {
 
       // Structural validation to explain why JSON may be considered invalid
       const structureIssues = [];
-      const allowedKeys = new Set(['summary', 'coreSkills', 'experience', 'keywordsUsed', 'overlapSkills', 'companyName']);
+      const allowedKeys = new Set(['summary', 'coreSkills', 'experience', 'keywordsUsed', 'overlapSkills', 'companyName', 'jobTitle']);
       for (const k of Object.keys(parsed || {})) {
         if (!allowedKeys.has(k)) structureIssues.push(`Unexpected key: ${k}`);
       }
@@ -534,10 +542,10 @@ async function runOptimize(req, res, quota) {
         experience: enrichedExperience,
         education: Array.isArray(parsed.education) ? parsed.education : []
       };
-      return { cv: prepared, jdShare, dropped, keywords: Array.isArray(parsed.keywordsUsed) ? parsed.keywordsUsed : [], overlapSkills: Array.isArray(parsed.overlapSkills) ? parsed.overlapSkills : [], structureIssues, companyName: typeof parsed.companyName === 'string' ? parsed.companyName.trim() : '' };
+      return { cv: prepared, jdShare, dropped, keywords: Array.isArray(parsed.keywordsUsed) ? parsed.keywordsUsed : [], overlapSkills: Array.isArray(parsed.overlapSkills) ? parsed.overlapSkills : [], structureIssues, companyName: typeof parsed.companyName === 'string' ? parsed.companyName.trim() : '', jobTitle: typeof parsed.jobTitle === 'string' ? parsed.jobTitle.trim() : '' };
     };
 
-    let { cv, jdShare, dropped, keywords, overlapSkills, structureIssues, companyName } = parseAndPrepare(content);
+    let { cv, jdShare, dropped, keywords, overlapSkills, structureIssues, companyName, jobTitle } = parseAndPrepare(content);
 
     let totals = 0;
     let categoryCount = 0;
@@ -641,6 +649,7 @@ async function runOptimize(req, res, quota) {
       stats,
       overlapSkills: Array.isArray(overlapSkills) ? overlapSkills : [],
       companyName: companyName || '',
+      jobTitle: jobTitle || '',
       quota
     };
     res.json(payload);

@@ -133,6 +133,8 @@ export function getEntitlement(user, data, kind = 'optimizations') {
     used,
     limit,
     remaining: limit == null ? null : Math.max(0, limit - used),
+    // Mirrors profileCap() in firestore.rules, which is what actually enforces it.
+    profileLimit: limits.profiles,
     enforced: enforcementOn(),
   };
 }
@@ -292,4 +294,45 @@ export async function recordRun(uid, run) {
     console.error('[firestore] could not record run for %s: %s', uid, err?.message || err);
     return null;
   }
+}
+
+function isoTime(value) {
+  if (!value) return null;
+  if (typeof value.toDate === 'function') return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  return typeof value === 'string' ? value : null;
+}
+
+/**
+ * Newest-first run metadata, without the CV bodies, so a history list stays small.
+ * Returns null when the server has no Firestore access.
+ */
+export async function listRuns(uid, limit = 50) {
+  const database = db();
+  if (!database) return null;
+  const snap = await database.collection('users').doc(uid).collection('history')
+    .orderBy('createdAt', 'desc')
+    .limit(limit)
+    .get();
+  return snap.docs.map((doc) => {
+    const d = doc.data();
+    return {
+      id: doc.id,
+      createdAt: isoTime(d.createdAt),
+      companyName: d.companyName || null,
+      jobTitle: d.jobTitle || null,
+      profileName: d.profileName || null,
+      hasCoverLetter: Boolean(d.hasCoverLetter),
+    };
+  });
+}
+
+// One full run, or null if it does not exist (or Firestore is unavailable).
+export async function getRun(uid, runId) {
+  const database = db();
+  if (!database) return null;
+  const snap = await database.collection('users').doc(uid).collection('history').doc(runId).get();
+  if (!snap.exists) return null;
+  const d = snap.data();
+  return { id: runId, ...d, createdAt: isoTime(d.createdAt) };
 }
