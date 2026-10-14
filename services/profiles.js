@@ -3,7 +3,7 @@ import { db } from '../src/firebase.js';
 
 // Saved profiles live on the user document as a map, `profiles.{id}`, next to the single
 // working profile (aiUserInfo / fixedUserInfo) that every account has. Saving a profile
-// snapshots the working profile; switching copies a snapshot back into it. The cap (free 0,
+// snapshots the working profile; switching copies a snapshot back into it. The cap (free 1,
 // paid 3) is enforced by firestore.rules, so a write over it is rejected there, not here.
 
 const userRef = (uid) => doc(db, 'users', uid);

@@ -46,8 +46,8 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 | File | Role |
 |---|---|
 | `components/CVOptimizer.jsx` (~1390 L) | **The entire app.** All state, 3 screens, both modals, download logic. |
-| `components/ProfileSwitcher.jsx` | Toolbar dropdown for saved profiles: save current as new, switch, rename, delete. Locked (opens paywall) on free. |
-| `components/HistoryPage.jsx` | Past runs newest first, open into the result view or download CV/letter PDFs. Free sees a blurred placeholder with the real count. |
+| `components/ProfileSwitcher.jsx` | Toolbar dropdown for saved profiles: save current as new, switch, rename, delete. Free keeps 1 and sees a locked second slot that opens the paywall. |
+| `components/HistoryPage.jsx` | Past runs newest first, open into the result view or download CV/letter PDFs. Free opens its newest 5; older runs show as greyed, blurred rows with an Unlock history button (paywall). |
 | `components/Auth.jsx` (164 L) | Header widget: Google sign-in button / avatar dropdown, theme toggle, folder-management toggle + folder picker |
 | `components/LoadingShowcase.jsx` (1071 L) | Standalone demo of loading animations. Only reachable via `npm run showcase` (`showcase-index.html` -> `showcase.jsx`). Not in the app bundle. |
 
@@ -56,7 +56,7 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 |---|---|---|
 | `services/openai.js` | `optimizeCv`, `detectAiContent` | `POST /api/optimize`, `POST /api/detect-ai` |
 | `services/pdf.js` | `processPdf` | `POST /api/process-pdf` (multipart, field name `pdf`) |
-| `services/profiles.js` | `newProfileId`, `saveProfile`, `renameProfile`, `deleteProfile`, `activateProfile` | Firestore `users/{uid}.profiles.{id}` (paid). Cap enforced by firestore.rules. |
+| `services/profiles.js` | `newProfileId`, `saveProfile`, `renameProfile`, `deleteProfile`, `activateProfile` | Firestore `users/{uid}.profiles.{id}` (free 1, paid 3, comped 10). Cap enforced by firestore.rules. |
 | `services/history.js` | `listHistory`, `getHistoryRun` | `POST /api/history` |
 | `services/billing.js` | `getBillingStatus`, `startCheckout`, `openBillingPortal` | `POST /api/billing/{status,checkout,portal}`; the last two redirect the tab to Stripe |
 | `services/auth.js` | `signInWithGoogle`, `signOutUser`, `onAuthStateChange`, `saveUserData`, `getUserData` | Firebase Auth + Firestore |
@@ -77,8 +77,8 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 | `server/core/optimizeHandler.js` (422 L) | `handleOptimizeRequest` | The big one. Holds the giant prompt, JSON schema, code-fence stripping, structural validation, role-metadata merge from `aiUserInfo.experienceSource`, keyword filtering, stats. |
 | `server/core/pdfHandler.js` (300 L) | `handlePdfProcessing`, `uploadMiddleware` | multer memory storage, 10MB, PDF-only. Extract -> GPT -> two JSON blobs. Also `calculateYearsOfExperience`. |
 | `server/core/aiDetectHandler.js` (33 L) | `handleAiDetect` | Sapling `/api/v1/aidetect`, returns `{ score }` 0–1 |
-| `server/core/firestore.js` | `PLAN_LIMITS`, `consumeQuota`, `refundQuota`, `getEntitlement`, `recordRun`, user-doc helpers | Admin SDK. Free = 5 optimizations lifetime, paid = 1,000/calendar month. `BILLING_ENFORCED=true` turns limits into refusals. |
-| `server/core/historyHandler.js` | `handleHistory` | `POST /api/history` lists runs (paid) or returns `{ locked, lockedCount }` (free); `{ id }` returns one run with re-rendered `cvContent`. History is server-read only. |
+| `server/core/firestore.js` | `PLAN_LIMITS`, `consumeQuota`, `refundQuota`, `getEntitlement`, `recordRun`, `listRuns`, `countRuns`, user-doc helpers | Admin SDK. Free = 5 optimizations lifetime, 1 saved profile, newest 5 runs visible; paid = 1,000/calendar month, 3 profiles, full history. Every run is recorded. `BILLING_ENFORCED=true` turns limits into refusals. |
+| `server/core/historyHandler.js` | `handleHistory` | `POST /api/history` -> `{ runs, visibleLimit, lockedCount, lockedRuns }`. Every plan's runs are saved; free gets its newest 5 in full and older ones as date-only stubs, paid/comped get all (`visibleLimit` null). `{ id }` returns one run with re-rendered `cvContent`, 402 for a free run outside the newest 5. History is server-read only. |
 | `server/core/billing.js` | `handleCreateCheckout`, `handleCustomerPortal`, `handleBillingStatus`, `handleStripeWebhook` | Stripe. The signed webhook is the only thing that sets `plan`; it re-reads the subscription from Stripe on every event. |
 | `server/core/PDFTextExtractor.js` (150 L) | `PDFTextExtractor` (default) | pdfjs-dist legacy, worker disabled. `isTextBased` samples N pages; **OCR path throws `IMAGE_BASED_PDF_NOT_SUPPORTED` — deliberately disabled.** |
 | `server/cvValidation.js` | `validateAndFixSkills`, `reorderSkills` | dedupe, clamp 3–9 items / max 9 categories, compute `jdShare`, sort by hardcoded `categoryOrder` |
@@ -99,6 +99,7 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 | `vite.showcase.config.js` | separate showcase build, port 5174 |
 | `vercel.json` | build -> `dist`, `maxDuration` 300s/1536MB for optimize, 30s/512MB for detect-ai, SPA rewrite. **`api/process-pdf.js` has no function config** (default 10s/1024MB). |
 | `firebase.json` | hosting from `dist`, `/api/**` -> `api` function, node18 |
+| `scripts/e2e/` | `npm run test:e2e`. Runs the real optimize/history handlers against an in-memory Firestore, locally signed Firebase tokens and a stubbed model, via a module hook (`register.mjs` / `loader.mjs`) that swaps `firebase-admin` and `axios` for fakes inside `server/`. |
 | `scripts/patch-pdfjs.cjs` | postinstall + vercel-build: rewrites pdfjs worker path to `__dirname`-based so it works in serverless |
 | `scripts/setup-vercel-env.js` | pushes `.env` into Vercel env |
 | `docker-compose.yml` / `Dockerfile.dev` | node:20 dev container running `npm start` |

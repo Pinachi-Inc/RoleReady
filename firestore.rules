@@ -30,9 +30,9 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOwned());
     }
 
-    // Saved profiles are a paid feature: free gets none, paid three, comped accounts ten.
-    // (The single working profile, aiUserInfo / fixedUserInfo, is not a saved profile and
-    // stays available to everyone.) The plan is read from the
+    // Saved profiles: free gets one, paid three, comped accounts ten. (The working profile,
+    // aiUserInfo / fixedUserInfo, is not a saved profile and stays available to everyone.)
+    // Mirrors PLAN_LIMITS in server/core/firestore.js. The plan is read from the
     // STORED document, never from the incoming write, so a client cannot raise its own cap
     // in the same request that adds a profile.
     //
@@ -41,7 +41,7 @@ service cloud.firestore {
     // the server mirrors the grant here; see server/core/firestore.js.
     function profileCap() {
       let plan = resource.data.get('plan', 'free');
-      return plan == 'unlimited' ? 10 : (plan == 'paid' ? 3 : 0);
+      return plan == 'unlimited' ? 10 : (plan == 'paid' ? 3 : 1);
     }
 
     // Checked only when the write touches profiles. Someone who cancels keeps profiles they
@@ -58,11 +58,11 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isOwner(uid);
 
-      // A brand new document is free by definition, so it may not carry saved profiles.
+      // A brand new document is free by definition, so it may carry at most free's one profile.
       allow create: if isOwner(uid)
         && noServerFields()
         && (!request.resource.data.keys().hasAny(['profiles'])
-            || request.resource.data.profiles.size() == 0);
+            || request.resource.data.profiles.size() <= 1);
 
       allow update: if isOwner(uid)
         && serverFieldsUnchanged()
@@ -71,10 +71,10 @@ service cloud.firestore {
       // Account deletion runs server-side so billing state is torn down with it.
       allow delete: if false;
 
-      // Written by the server when a paid run succeeds, and read back through /api/history,
-      // which is where the paid-only check lives. The client touches it in neither direction,
-      // so records cannot be forged, back-dated or removed, and a free account cannot read
-      // history it no longer pays for.
+      // Written by the server for every successful run, and read back through /api/history,
+      // which decides how much of it a plan can open (free: the newest five). The client
+      // touches it in neither direction, so records cannot be forged, back-dated or removed,
+      // and a free account cannot read past the runs its plan shows.
       match /history/{runId} {
         allow read, write: if false;
       }
