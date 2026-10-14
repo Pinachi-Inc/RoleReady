@@ -30,7 +30,8 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(serverOwned());
     }
 
-    // Saved profiles: free gets one, paid three, comped accounts ten. (The working profile,
+    // Saved profiles: free gets one, Pro ('paid') three. Max and comped accounts are sold as
+    // unlimited; 100 is a hidden safety cap that keeps the document small. (The working profile,
     // aiUserInfo / fixedUserInfo, is not a saved profile and stays available to everyone.)
     // Mirrors PLAN_LIMITS in server/core/firestore.js. The plan is read from the
     // STORED document, never from the incoming write, so a client cannot raise its own cap
@@ -41,7 +42,7 @@ service cloud.firestore {
     // the server mirrors the grant here; see server/core/firestore.js.
     function profileCap() {
       let plan = resource.data.get('plan', 'free');
-      return plan == 'unlimited' ? 10 : (plan == 'paid' ? 3 : 1);
+      return plan == 'unlimited' || plan == 'max' ? 100 : (plan == 'paid' ? 3 : 1);
     }
 
     // Checked only when the write touches profiles. Someone who cancels keeps profiles they

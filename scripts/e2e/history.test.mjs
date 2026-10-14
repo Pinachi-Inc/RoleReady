@@ -1,10 +1,11 @@
-// End-to-end checks for saved history and plan limits, run against the real handlers with an
-// in-memory Firestore, locally signed Firebase tokens and a stubbed model (see loader.mjs).
+// End-to-end checks for saved history, plan limits and Stripe billing, run against the real
+// handlers with an in-memory Firestore, locally signed Firebase tokens, a stubbed model and a
+// stubbed Stripe SDK (see loader.mjs).
 //
 //   node --import ./scripts/e2e/register.mjs scripts/e2e/history.test.mjs
 //
-// Stripe is not involved: plan changes are written to the user document directly, which is
-// what the signed webhook does (its own checks live with the billing work).
+// The history checks write plans to the user document directly; the billing checks go through
+// Checkout and the signed webhook the way production does.
 
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -14,8 +15,15 @@ process.env.FIREBASE_PROJECT_ID = PROJECT;
 process.env.FIREBASE_SERVICE_ACCOUNT = JSON.stringify({ project_id: PROJECT });
 process.env.OPENAI_API_KEY = 'test';
 process.env.OPENAI_BASE_URL = 'https://model.invalid/v1';
+process.env.OPENAI_MODEL = 'test/default-model';
 process.env.UNLIMITED_EMAILS = 'comped@example.com';
+process.env.STRIPE_SECRET_KEY = 'sk_test_e2e';
+process.env.STRIPE_WEBHOOK_SECRET = 'whsec_e2e';
+process.env.STRIPE_PRICE_ID = 'price_pro';
+process.env.STRIPE_PRICE_ID_MAX = 'price_max';
+process.env.APP_URL = 'https://roleberry.test';
 delete process.env.BILLING_ENFORCED;
+delete process.env.MAX_MONTHLY_RUNS;
 
 const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 globalThis.__E2E_CERTS = { k1: publicKey.export({ type: 'spki', format: 'pem' }) };
@@ -23,7 +31,9 @@ globalThis.__E2E_CERTS = { k1: publicKey.export({ type: 'spki', format: 'pem' })
 const { handleOptimizeRequest } = await import('../../server/core/optimizeHandler.js');
 const { handleHistory } = await import('../../server/core/historyHandler.js');
 const { getEntitlement, getUserDoc } = await import('../../server/core/firestore.js');
+const { handleCreateCheckout, handleBillingStatus, handleStripeWebhook } = await import('../../server/core/billing.js');
 const fs = globalThis.__E2E_FS;
+const stripe = globalThis.__E2E_STRIPE;
 
 const b64url = (v) => Buffer.from(typeof v === 'string' ? v : JSON.stringify(v)).toString('base64url');
 function token(uid, email) {
@@ -179,7 +189,8 @@ await check('profile and history limits in the entitlement', async () => {
   const comped = getEntitlement({ uid: 'x', email: 'comped@example.com' }, {});
   assert.deepEqual([free.profileLimit, free.historyVisible], [1, 5]);
   assert.deepEqual([paid.profileLimit, paid.historyVisible], [3, null]);
-  assert.deepEqual([comped.profileLimit, comped.historyVisible], [10, null]);
+  assert.deepEqual([comped.profileLimit, comped.historyVisible, comped.limit], [100, null, null]);
+  assert.equal(comped.unlimitedProfiles, true);
 });
 
 await check('enforced: a refused free run is not saved', async () => {
@@ -192,6 +203,198 @@ await check('enforced: a refused free run is not saved', async () => {
     assert.equal((await getUserDoc('free3')).lifetimeUsage.optimizations, 5);
   } finally {
     delete process.env.BILLING_ENFORCED;
+  }
+});
+
+out('\nmax plan and billing');
+
+const checkout = (uid, plan) => call(handleCreateCheckout, uid, plan === undefined ? {} : { plan });
+const status = (uid) => call(handleBillingStatus, uid);
+const lastSession = () => stripe.sessions[stripe.sessions.length - 1];
+const planOf = (uid) => fs.get(`users/${uid}`)?.plan;
+
+async function webhook(type, object, signature = 'valid') {
+  const event = { id: `evt_${type}_${Date.now()}`, type, data: { object } };
+  const req = { headers: { 'stripe-signature': signature }, rawBody: Buffer.from(JSON.stringify(event)) };
+  const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
+  await handleStripeWebhook(req, res);
+  return res;
+}
+
+// What Stripe holds after a checkout or a portal change: one subscription with one price.
+function putSubscription(uid, subId, priceId, statusValue = 'active') {
+  const customer = fs.get(`users/${uid}`)?.stripeCustomerId || 'cus_unknown';
+  stripe.subs.set(subId, {
+    id: subId,
+    customer,
+    status: statusValue,
+    cancel_at_period_end: false,
+    metadata: { firebaseUid: uid },
+    items: { data: [{ price: { id: priceId }, current_period_end: 1893456000 }] },
+  });
+}
+
+await check('status reports both prices as available', async () => {
+  const res = await status('buyer');
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.billingAvailable, true);
+  assert.equal(res.body.maxAvailable, true);
+});
+
+await check('checkout only accepts plan pro or max', async () => {
+  for (const bad of [undefined, '', 'gold', 'paid', 'unlimited', '__proto__', 'toString', 42]) {
+    const res = await checkout('buyer', bad);
+    assert.equal(res.statusCode, 400, `plan=${String(bad)}`);
+  }
+  assert.equal(stripe.sessions.length, 0, 'no session created for a bad plan');
+});
+
+await check('max checkout uses the Max price', async () => {
+  const res = await checkout('buyer', 'max');
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.ok(res.body.url);
+  const s = lastSession();
+  assert.deepEqual(s.line_items, [{ price: 'price_max', quantity: 1 }]);
+  assert.equal(s.mode, 'subscription');
+  assert.equal(s.metadata.plan, 'max');
+  assert.equal(s.subscription_data.metadata.firebaseUid, 'buyer');
+  assert.equal(planOf('buyer'), undefined, 'checkout itself grants nothing');
+});
+
+await check('pro checkout uses the Pro price', async () => {
+  const res = await checkout('buyer', 'pro');
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(lastSession().line_items, [{ price: 'price_pro', quantity: 1 }]);
+});
+
+await check('max checkout is unavailable without STRIPE_PRICE_ID_MAX', async () => {
+  const saved = process.env.STRIPE_PRICE_ID_MAX;
+  delete process.env.STRIPE_PRICE_ID_MAX;
+  try {
+    assert.equal((await checkout('buyer', 'max')).statusCode, 503);
+    assert.equal((await status('buyer')).body.maxAvailable, false);
+    assert.equal((await checkout('buyer', 'pro')).statusCode, 200, 'pro still works');
+  } finally {
+    process.env.STRIPE_PRICE_ID_MAX = saved;
+  }
+});
+
+await check('webhook with a bad signature is rejected and changes nothing', async () => {
+  putSubscription('buyer', 'sub_buyer', 'price_max');
+  const res = await webhook('customer.subscription.created', { id: 'sub_buyer' }, 'forged');
+  assert.equal(res.statusCode, 400);
+  assert.equal(planOf('buyer'), undefined);
+});
+
+await check('webhook maps the Max price to plan max', async () => {
+  const res = await webhook('checkout.session.completed', { mode: 'subscription', subscription: 'sub_buyer' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(planOf('buyer'), 'max');
+  assert.equal(fs.get('users/buyer').stripeSubscriptionId, 'sub_buyer');
+});
+
+await check('webhook maps the Pro price to Pro (stored as paid)', async () => {
+  await checkout('probuyer', 'pro');
+  putSubscription('probuyer', 'sub_pro', 'price_pro');
+  await webhook('customer.subscription.created', { id: 'sub_pro' });
+  assert.equal(planOf('probuyer'), 'paid');
+});
+
+await check('a subscriber is sent to the portal instead of a second checkout', async () => {
+  const before = stripe.sessions.length;
+  for (const plan of ['max', 'pro']) {
+    const res = await checkout('probuyer', plan);
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.code, 'use_portal');
+  }
+  const comped = await checkout('comped', 'max');
+  assert.equal(comped.statusCode, 409);
+  assert.notEqual(comped.body.code, 'use_portal', 'comped has nothing to manage');
+  assert.equal(stripe.sessions.length, before);
+});
+
+await check('Pro to Max in the portal: subscription.updated moves the plan to max', async () => {
+  putSubscription('probuyer', 'sub_pro', 'price_max');
+  const res = await webhook('customer.subscription.updated', { id: 'sub_pro' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(planOf('probuyer'), 'max');
+  assert.equal((await status('probuyer')).body.plan, 'max');
+});
+
+await check('Max to Pro in the portal moves it back', async () => {
+  putSubscription('probuyer', 'sub_pro', 'price_pro');
+  await webhook('customer.subscription.updated', { id: 'sub_pro' });
+  assert.equal(planOf('probuyer'), 'paid');
+});
+
+await check('the event payload is not trusted: the live price decides', async () => {
+  putSubscription('probuyer', 'sub_pro', 'price_pro');
+  await webhook('customer.subscription.updated', { id: 'sub_pro', items: { data: [{ price: { id: 'price_max' } }] } });
+  assert.equal(planOf('probuyer'), 'paid');
+});
+
+await check('an unknown price on a live subscription counts as Pro', async () => {
+  putSubscription('probuyer', 'sub_pro', 'price_legacy');
+  await webhook('customer.subscription.updated', { id: 'sub_pro' });
+  assert.equal(planOf('probuyer'), 'paid');
+});
+
+await check('cancelling Max drops to free', async () => {
+  putSubscription('buyer', 'sub_buyer', 'price_max', 'canceled');
+  await webhook('customer.subscription.deleted', { id: 'sub_buyer' });
+  assert.equal(planOf('buyer'), 'free');
+});
+
+await check('Max limits: unlimited profiles (100 hidden), full history, fair-use runs', async () => {
+  const max = getEntitlement({ uid: 'x' }, { plan: 'max' });
+  assert.equal(max.profileLimit, 100);
+  assert.equal(max.unlimitedProfiles, true);
+  assert.equal(max.historyVisible, null);
+  assert.equal(max.fairUse, true);
+  assert.equal(max.limit, 5000, 'default fair-use cap');
+  assert.equal(max.window, 'month');
+  process.env.MAX_MONTHLY_RUNS = '250';
+  try {
+    assert.equal(getEntitlement({ uid: 'x' }, { plan: 'max' }).limit, 250);
+  } finally {
+    delete process.env.MAX_MONTHLY_RUNS;
+  }
+  const pro = getEntitlement({ uid: 'x' }, { plan: 'paid' });
+  assert.equal(pro.unlimitedProfiles, false);
+  assert.equal(pro.fairUse, false);
+});
+
+await check('Max sees its full history', async () => {
+  setPlan('free1', 'max');
+  const res = await history('free1');
+  assert.equal(res.body.visibleLimit, null);
+  assert.equal(res.body.lockedCount, 0);
+  assert.equal(res.body.runs.length, runIds('free1').length);
+});
+
+await check('enforced: Max is refused past its fair-use cap, with a fair-use message', async () => {
+  process.env.BILLING_ENFORCED = 'true';
+  process.env.MAX_MONTHLY_RUNS = '3';
+  try {
+    setPlan('maxuser', 'max');
+    for (let i = 0; i < 3; i += 1) assert.equal((await optimize('maxuser')).statusCode, 200);
+    const res = await optimize('maxuser');
+    assert.equal(res.statusCode, 402);
+    assert.equal(res.body.code, 'upgrade_required');
+    assert.match(res.body.error, /fair-use limit of 3/);
+    assert.equal(runIds('maxuser').length, 3);
+  } finally {
+    delete process.env.BILLING_ENFORCED;
+    delete process.env.MAX_MONTHLY_RUNS;
+  }
+});
+
+await check('every plan runs on the same model', async () => {
+  for (const uid of ['free2', 'probuyer', 'maxmodel', 'comped']) {
+    if (uid === 'maxmodel') setPlan(uid, 'max');
+    globalThis.__E2E_LAST_MODEL = null;
+    assert.equal((await optimize(uid)).statusCode, 200);
+    assert.equal(globalThis.__E2E_LAST_MODEL, 'test/default-model', uid);
   }
 });
 

@@ -7,20 +7,44 @@ import {
   getEntitlement,
 } from './firestore.js';
 
-// Stripe billing: one product, one monthly price, Checkout in subscription mode, the Customer
-// Portal for cancel / card changes, and a webhook that is the ONLY thing allowed to move a user
-// between free and paid. The checkout success redirect deliberately grants nothing: a redirect
-// is a URL anyone can type, a signed webhook is not.
+// Stripe billing: two monthly prices (Pro and Max), Checkout in subscription mode for a free
+// account's first subscription, the Customer Portal for everything after (switching between Pro
+// and Max, cancel, card changes), and a webhook that is the ONLY thing allowed to change a
+// user's plan. The checkout success redirect deliberately grants nothing: a redirect is a URL
+// anyone can type, a signed webhook is not.
 //
 // Env:
 //   STRIPE_SECRET_KEY       sk_test_... / sk_live_...
 //   STRIPE_WEBHOOK_SECRET   whsec_... for the endpoint pointing at /api/stripe-webhook
-//   STRIPE_PRICE_ID         price_... of the $12/month recurring price
+//   STRIPE_PRICE_ID         price_... of the $12/month Pro price
+//   STRIPE_PRICE_ID_MAX     price_... of the $49/month Max price
 //   APP_URL                 optional, e.g. https://roleberry.app. Where Stripe sends people back.
 
 function sanitizeEnv(value) {
   if (typeof value !== 'string') return '';
   return value.trim().replace(/^['"]|['"]$/g, '');
+}
+
+// Checkout's `plan` param -> the env var holding its price, and the plan stored on the user.
+const CHECKOUT_PLANS = {
+  pro: { priceEnv: 'STRIPE_PRICE_ID', plan: 'paid' },
+  max: { priceEnv: 'STRIPE_PRICE_ID_MAX', plan: 'max' },
+};
+
+const priceFor = (key) => sanitizeEnv(process.env[CHECKOUT_PLANS[key].priceEnv]);
+
+/**
+ * The plan a live subscription pays for, from its price. A price that matches neither env var
+ * (an old or hand-made one) is treated as Pro and logged, rather than locking out someone who
+ * is paying.
+ */
+export function planForSubscription(sub) {
+  const priceId = sub.items?.data?.[0]?.price?.id || null;
+  for (const key of Object.keys(CHECKOUT_PLANS)) {
+    if (priceId && priceId === priceFor(key)) return CHECKOUT_PLANS[key].plan;
+  }
+  console.warn('[billing] subscription %s has unknown price %s; treating it as Pro', sub.id, priceId);
+  return 'paid';
 }
 
 let cachedStripe = null;
@@ -78,17 +102,24 @@ async function ensureCustomer(stripe, user, stored) {
 }
 
 /**
- * POST /api/billing/checkout -> { url }
- * Starts a Stripe Checkout session for the $12/month plan. The browser follows `url`.
+ * POST /api/billing/checkout { plan: 'pro' | 'max' } -> { url }
+ * Starts a Stripe Checkout session for a free account. The browser follows `url`. Accounts that
+ * already subscribe get 409 use_portal: switching plans happens in the Customer Portal, which
+ * changes the existing subscription instead of starting a second one.
  */
 export async function handleCreateCheckout(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
+  const key = req.body?.plan;
+  if (typeof key !== 'string' || !Object.hasOwn(CHECKOUT_PLANS, key)) {
+    return res.status(400).json({ error: 'Choose a plan: pro or max.' });
+  }
+
   const stripe = getStripe();
   if (!stripe) return notConfigured(res, 'STRIPE_SECRET_KEY');
-  const price = sanitizeEnv(process.env.STRIPE_PRICE_ID);
-  if (!price) return notConfigured(res, 'STRIPE_PRICE_ID');
+  const price = priceFor(key);
+  if (!price) return notConfigured(res, CHECKOUT_PLANS[key].priceEnv);
 
   try {
     const stored = await getUserDoc(user.uid);
@@ -97,7 +128,9 @@ export async function handleCreateCheckout(req, res) {
     // Paying twice for the same thing is the one billing bug customers never forgive.
     const entitlement = getEntitlement(user, stored);
     if (entitlement.plan !== 'free') {
-      return res.status(409).json({ error: 'You already have full access.', plan: entitlement.plan });
+      return entitlement.comped
+        ? res.status(409).json({ error: 'You already have full access.', plan: entitlement.plan })
+        : res.status(409).json({ error: 'You already subscribe. Change plans from Manage subscription.', code: 'use_portal', plan: entitlement.plan });
     }
 
     const customer = await ensureCustomer(stripe, user, stored);
@@ -110,13 +143,13 @@ export async function handleCreateCheckout(req, res) {
       line_items: [{ price, quantity: 1 }],
       // On the subscription itself, so every later subscription event carries the uid.
       subscription_data: { metadata: { firebaseUid: user.uid } },
-      metadata: { firebaseUid: user.uid },
+      metadata: { firebaseUid: user.uid, plan: key },
       allow_promotion_codes: true,
       success_url: `${base}/?checkout=success`,
       cancel_url: `${base}/?checkout=cancelled`,
     });
 
-    console.log('[billing] checkout session %s for uid=%s', session.id, user.uid);
+    console.log('[billing] checkout session %s (%s) for uid=%s', session.id, key, user.uid);
     return res.json({ url: session.url });
   } catch (err) {
     console.error('[billing] checkout failed for uid=%s: %s', user.uid, err?.message || err);
@@ -154,7 +187,8 @@ export async function handleCustomerPortal(req, res) {
 }
 
 /**
- * POST /api/billing/status -> { plan, used, limit, window, subscriptionStatus, renewsAt, cancelAtPeriodEnd }
+ * POST /api/billing/status -> { plan, used, limit, window, fairUse, billingAvailable, maxAvailable,
+ *                               subscriptionStatus, renewsAt, cancelAtPeriodEnd }
  * What the UI needs to decide between an Upgrade button and a Manage button. The client could
  * read most of this from its own user document, but comped accounts live in env vars the
  * browser cannot see, and the limits live here.
@@ -168,7 +202,8 @@ export async function handleBillingStatus(req, res) {
     const entitlement = getEntitlement(user, stored || {});
     return res.json({
       ...entitlement,
-      billingAvailable: Boolean(getStripe() && sanitizeEnv(process.env.STRIPE_PRICE_ID)),
+      billingAvailable: Boolean(getStripe() && priceFor('pro')),
+      maxAvailable: Boolean(getStripe() && priceFor('max')),
       hasCustomer: Boolean(stored?.stripeCustomerId),
       subscriptionStatus: stored?.subscriptionStatus || null,
       renewsAt: stored?.planRenewsAt || null,
@@ -255,9 +290,11 @@ async function syncSubscription(stripe, subscriptionId) {
     cancelAtPeriodEnd: Boolean(sub.cancel_at_period_end),
   };
 
-  // 'unlimited' is the comped grant and outranks anything Stripe says.
+  // 'unlimited' is the comped grant and outranks anything Stripe says. Otherwise the price on
+  // the live subscription decides between Pro and Max, which is how a switch made in the
+  // Customer Portal (customer.subscription.updated) lands.
   if (stored.plan !== 'unlimited') {
-    const plan = paid ? 'paid' : 'free';
+    const plan = paid ? planForSubscription(sub) : 'free';
     update.plan = plan;
     if (stored.plan !== plan) update.planSince = new Date().toISOString();
   }
