@@ -51,15 +51,32 @@ function db() {
 // `window` says what the counters count over. Free is a one-off trial, so its allowance is
 // lifetime: 5 optimizations ever, not 5 a month. Paid resets each calendar month.
 // Every account's runs are recorded. `historyVisible` is how many of the newest a plan can open
-// and download; older ones stay stored and come back as locked stubs. Free also keeps one saved
-// profile, paid three.
+// and download; older ones stay stored and come back as locked stubs.
+//
+// Plans as stored on the user document: 'free', 'paid' (sold as Pro, $12), 'max' ($49) and
+// 'unlimited' (comped). Pro keeps the stored name 'paid' so existing subscribers need no
+// migration.
+//
+// Max is sold as unlimited runs and unlimited profiles. Both carry a hidden ceiling: runs a
+// fair-use cap per calendar month (MAX_MONTHLY_RUNS), so one runaway script cannot run up a
+// model bill, and profiles 100, mirrored in firestore.rules, so the user document stays well
+// inside Firestore's 1 MiB limit. `fairUse` / `unlimitedProfiles` tell the UI to say
+// "Unlimited" rather than show either number. Comped accounts get Max's profile treatment and
+// keep their uncapped runs.
 export const PLAN_LIMITS = {
   free: { window: 'lifetime', optimizations: 5, pdfImports: 10, profiles: 1, historyVisible: 5 },
   paid: { window: 'month', optimizations: 1000, pdfImports: null, profiles: 3, historyVisible: null },
-  unlimited: { window: 'month', optimizations: null, pdfImports: null, profiles: 10, historyVisible: null },
+  max: { window: 'month', optimizations: 5000, pdfImports: null, profiles: 100, historyVisible: null, fairUse: true, unlimitedProfiles: true },
+  unlimited: { window: 'month', optimizations: null, pdfImports: null, profiles: 100, historyVisible: null, unlimitedProfiles: true },
 };
 
+export function maxMonthlyRuns() {
+  const n = Number.parseInt(String(process.env.MAX_MONTHLY_RUNS || '').trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : PLAN_LIMITS.max.optimizations;
+}
+
 export function limitsFor(plan) {
+  if (plan === 'max') return { ...PLAN_LIMITS.max, optimizations: maxMonthlyRuns() };
   return PLAN_LIMITS[plan] || PLAN_LIMITS.free;
 }
 
@@ -105,7 +122,7 @@ export const enforcementOn = () => String(process.env.BILLING_ENFORCED || '').to
 
 function planOf(data, comped) {
   if (comped) return 'unlimited';
-  return data?.plan === 'paid' || data?.plan === 'unlimited' ? data.plan : 'free';
+  return ['paid', 'max', 'unlimited'].includes(data?.plan) ? data.plan : 'free';
 }
 
 // Two counters are kept side by side: `usage` resets every calendar month, `lifetimeUsage`
@@ -138,6 +155,8 @@ export function getEntitlement(user, data, kind = 'optimizations') {
     // Mirrors profileCap() in firestore.rules, which is what actually enforces it.
     profileLimit: limits.profiles,
     historyVisible: limits.historyVisible,
+    fairUse: Boolean(limits.fairUse),
+    unlimitedProfiles: Boolean(limits.unlimitedProfiles),
     enforced: enforcementOn(),
   };
 }

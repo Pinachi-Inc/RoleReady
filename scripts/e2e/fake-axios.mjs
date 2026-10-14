@@ -24,8 +24,9 @@ const axios = {
     if (url === CERT_URL) return { data: globalThis.__E2E_CERTS, headers: { 'cache-control': 'max-age=3600' } };
     throw new Error(`fake axios: unexpected GET ${url}`);
   },
-  async post(url) {
+  async post(url, body) {
     if (url.endsWith('/chat/completions')) {
+      globalThis.__E2E_LAST_MODEL = body?.model;
       return { data: { choices: [{ message: { content: cvJson() }, finish_reason: 'stop' }], usage: {} } };
     }
     throw new Error(`fake axios: unexpected POST ${url}`);

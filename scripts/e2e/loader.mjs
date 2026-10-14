@@ -3,6 +3,7 @@
 const FAKES = {
   'firebase-admin': new URL('./fake-firebase-admin.mjs', import.meta.url).href,
   axios: new URL('./fake-axios.mjs', import.meta.url).href,
+  stripe: new URL('./fake-stripe.mjs', import.meta.url).href,
 };
 
 export async function resolve(specifier, context, next) {

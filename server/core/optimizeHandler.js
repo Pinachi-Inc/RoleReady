@@ -264,7 +264,9 @@ export async function handleOptimizeRequest(req, res) {
           ? 'Usage tracking is temporarily unavailable. Please try again shortly.'
           : quota.plan === 'free'
             ? `You have used all ${quota.limit} free optimizations. Upgrade to keep going.`
-            : `You have used all ${quota.limit} optimizations for this month. Your allowance resets on the 1st.`,
+            : quota.plan === 'max'
+              ? `You have reached the fair-use limit of ${quota.limit.toLocaleString('en-US')} optimizations this month. It resets on the 1st.`
+              : `You have used all ${quota.limit} optimizations for this month. Your allowance resets on the 1st.`,
         code: unavailable ? 'quota_unavailable' : 'upgrade_required',
         quota: publicQuota(quota),
       });

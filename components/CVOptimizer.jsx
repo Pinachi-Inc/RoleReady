@@ -20,6 +20,7 @@ import { getBillingStatus, startCheckout, openBillingPortal } from '../services/
 import { newProfileId, saveProfile, renameProfile, deleteProfile, activateProfile } from '../services/profiles.js';
 import ProfileSwitcher from './ProfileSwitcher.jsx';
 import HistoryPage from './HistoryPage.jsx';
+import PricingModal from './PricingModal.jsx';
 import { processPdf, processPdfText } from '../services/pdf.js';
 import { onAuthStateChange, saveUserData, getUserData } from '../services/auth.js';
 import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
@@ -500,7 +501,7 @@ const CVOptimizer = () => {
         }
         if (cancelled) return;
         setBillingNotice(status && status.plan !== 'free'
-          ? 'You are on RoleBerry Pro. Thanks for subscribing!'
+          ? `You are on RoleBerry ${status.plan === 'max' ? 'Max' : 'Pro'}. Thanks for subscribing!`
           : 'Payment received. Your plan will update in a moment; refresh the page if it does not.');
       }
     };
@@ -508,13 +509,17 @@ const CVOptimizer = () => {
     return () => { cancelled = true; };
   }, [user?.uid]);
 
-  const handleUpgrade = async () => {
+  // plan: 'pro' | 'max'. Checkout is for a first subscription; the server answers use_portal
+  // for an existing subscriber, whose plan changes go through the Customer Portal.
+  const handleUpgrade = async (plan) => {
     setBillingBusy(true);
     try {
-      await startCheckout();
+      await startCheckout(plan);
     } catch (err) {
       setBillingBusy(false);
-      if (err.status === 409) {
+      if (err.code === 'use_portal') {
+        handleManageBilling();
+      } else if (err.status === 409) {
         refreshBilling();
         setShowPaywall(false);
         setBillingNotice('Your account already has full access.');
@@ -546,7 +551,7 @@ const CVOptimizer = () => {
     } catch (err) {
       console.error('[profiles] %s', err?.message || err);
       alert(err?.code === 'permission-denied'
-        ? 'Your plan does not allow that. Free keeps 1 saved profile; RoleBerry Pro keeps up to 3.'
+        ? 'Your plan does not allow that. Free keeps 1 saved profile, Pro up to 3, Max unlimited.'
         : failure);
     } finally {
       setProfileBusy(false);
@@ -1088,61 +1093,14 @@ const CVOptimizer = () => {
   };
 
   const paywallModal = showPaywall && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center">
-                <div className="absolute inset-0 bg-black/50" onClick={() => setShowPaywall(false)}></div>
-                <div className="relative bg-white w-full max-w-md mx-4 rounded-lg shadow-xl overflow-hidden">
-                  <div className="flex items-center justify-between px-6 py-4 border-b">
-                    <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-                      <Sparkles className="h-5 w-5 text-amber-500" />
-                      RoleBerry Pro
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => setShowPaywall(false)}
-                      className="text-gray-500 hover:text-gray-800"
-                      aria-label="Close"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    {billing?.plan === 'free' && billing.remaining === 0 && (
-                      <p className="text-sm text-gray-700">You have used all {billing.limit} free optimizations.</p>
-                    )}
-                    <div>
-                      <span className="text-3xl font-bold text-gray-900">$12</span>
-                      <span className="text-gray-600"> / month</span>
-                    </div>
-                    <ul className="text-sm text-gray-700 space-y-2">
-                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />1,000 optimizations every month</li>
-                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Saved profiles</li>
-                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Saved history of every CV and cover letter</li>
-                      <li className="flex items-start gap-2"><Check className="h-4 w-4 mt-0.5 text-green-600" />Cancel any time</li>
-                    </ul>
-                    {billing && !billing.billingAvailable && (
-                      <p className="text-xs text-red-600">Upgrades are not available right now. Please try again later.</p>
-                    )}
-                  </div>
-                  <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowPaywall(false)}
-                      className="px-4 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100"
-                    >
-                      Not now
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleUpgrade}
-                      disabled={billingBusy || (billing && !billing.billingAvailable)}
-                      className="px-4 py-2 rounded-md bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-medium hover:from-amber-600 hover:to-orange-600 disabled:opacity-50"
-                    >
-                      {billingBusy ? 'Opening checkout…' : 'Upgrade for $12/month'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
+    <PricingModal
+      billing={billing}
+      busy={billingBusy}
+      onClose={() => setShowPaywall(false)}
+      onCheckout={handleUpgrade}
+      onManage={handleManageBilling}
+    />
+  );
 
   if (user && currentPage === 'history') {
     return (
@@ -1804,6 +1762,12 @@ const CVOptimizer = () => {
                     {billing.cancelAtPeriodEnd && billing.renewsAt ? ` · ends ${new Date(billing.renewsAt).toLocaleDateString()}` : ''}
                   </span>
                 )}
+                {billing && billing.plan === 'max' && (
+                  <span>
+                    Max · unlimited optimizations
+                    {billing.cancelAtPeriodEnd && billing.renewsAt ? ` · ends ${new Date(billing.renewsAt).toLocaleDateString()}` : ''}
+                  </span>
+                )}
                 {billingNotice && (
                   <span className="ml-2 text-green-700 dark:text-green-400">{billingNotice}</span>
                 )}
@@ -1825,7 +1789,7 @@ const CVOptimizer = () => {
                       upsell={billing?.plan === 'free'}
                       profiles={profiles}
                       activeProfileId={activeProfileId}
-                      limit={profileLimit}
+                      limit={billing?.unlimitedProfiles ? null : profileLimit}
                       busy={profileBusy}
                       onLocked={() => setShowPaywall(true)}
                       onSwitch={handleSwitchProfile}
@@ -1842,7 +1806,17 @@ const CVOptimizer = () => {
                     <Clock className="h-3 w-3" />
                     History
                   </button>
-                  {billing?.plan === 'paid' && billing.hasCustomer && (
+                  {(billing?.plan === 'paid' || billing?.plan === 'max') && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPaywall(true)}
+                      className="px-3 py-1.5 rounded-md text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 flex items-center gap-1"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      Plans
+                    </button>
+                  )}
+                  {(billing?.plan === 'paid' || billing?.plan === 'max') && billing.hasCustomer && (
                     <button
                       type="button"
                       onClick={handleManageBilling}
