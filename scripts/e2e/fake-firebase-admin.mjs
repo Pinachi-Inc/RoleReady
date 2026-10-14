@@ -1,10 +1,15 @@
-// Just enough of the Admin SDK's Firestore for server/core/firestore.js, held in memory.
-// The store is exposed as globalThis.__E2E_FS (path -> data) so tests can seed and inspect it.
+// Just enough of the Admin SDK's Firestore and Auth for server/core, held in memory. The store
+// is globalThis.__E2E_FS (path -> data) and the Auth users globalThis.__E2E_AUTH (email -> uid),
+// so tests can seed and inspect both.
 
 const store = new Map();
 globalThis.__E2E_FS = store;
 
+const authUsers = new Map();
+globalThis.__E2E_AUTH = authUsers;
+
 const SERVER_TIMESTAMP = Symbol('serverTimestamp');
+const DELETE_FIELD = Symbol('deleteField');
 let clock = Date.parse('2026-01-01T00:00:00Z');
 const timestamp = () => {
   clock += 1000;
@@ -12,7 +17,7 @@ const timestamp = () => {
   return { toDate: () => date, toMillis: () => date.getTime() };
 };
 
-const isPlain = (v) => v && typeof v === 'object' && !Array.isArray(v) && v !== SERVER_TIMESTAMP && typeof v.toDate !== 'function';
+const isPlain = (v) => v && typeof v === 'object' && !Array.isArray(v) && typeof v.toDate !== 'function';
 
 function resolveSentinels(value) {
   if (value === SERVER_TIMESTAMP) return timestamp();
@@ -22,7 +27,10 @@ function resolveSentinels(value) {
 
 function deepMerge(base, patch) {
   const out = { ...base };
-  for (const [k, v] of Object.entries(patch)) out[k] = isPlain(v) && isPlain(out[k]) ? deepMerge(out[k], v) : v;
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === DELETE_FIELD) delete out[k];
+    else out[k] = isPlain(v) && isPlain(out[k]) ? deepMerge(out[k], v) : v;
+  }
   return out;
 }
 
@@ -47,7 +55,7 @@ class DocRef {
   async get() { return snapshot(this.path, this.id); }
   async set(data, { merge = false } = {}) {
     const next = resolveSentinels(data);
-    store.set(this.path, merge && store.has(this.path) ? deepMerge(store.get(this.path), next) : next);
+    store.set(this.path, merge ? deepMerge(store.get(this.path) || {}, next) : next);
   }
 }
 
@@ -89,12 +97,21 @@ const db = {
 };
 
 const firestore = () => db;
-firestore.FieldValue = { serverTimestamp: () => SERVER_TIMESTAMP };
+firestore.FieldValue = { serverTimestamp: () => SERVER_TIMESTAMP, delete: () => DELETE_FIELD };
+
+const auth = () => ({
+  async getUserByEmail(email) {
+    const uid = authUsers.get(String(email).toLowerCase());
+    if (!uid) throw Object.assign(new Error('no user record'), { code: 'auth/user-not-found' });
+    return { uid, email };
+  },
+});
 
 const admin = {
   initializeApp: () => ({}),
   credential: { cert: (c) => c },
   firestore,
+  auth,
 };
 
 export default admin;

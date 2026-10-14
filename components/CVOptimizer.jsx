@@ -1771,7 +1771,7 @@ const CVOptimizer = () => {
                 )}
                 {billing && billing.plan === 'max' && (
                   <span>
-                    Max · unlimited optimizations
+                    {billing.comped ? 'Max (complimentary)' : 'Max'} · unlimited optimizations
                     {billing.cancelAtPeriodEnd && billing.renewsAt ? ` · ends ${new Date(billing.renewsAt).toLocaleDateString()}` : ''}
                   </span>
                 )}
@@ -1823,7 +1823,9 @@ const CVOptimizer = () => {
                       Plans
                     </button>
                   )}
-                  {(billing?.plan === 'paid' || billing?.plan === 'max') && billing.hasCustomer && (
+                  {/* Comped accounts have nothing to manage, unless they also still pay for a subscription they may want to cancel. */}
+                  {(billing?.plan === 'paid' || billing?.plan === 'max') && billing.hasCustomer
+                    && (!billing.comped || (billing.stripePlan && billing.stripePlan !== 'free')) && (
                     <button
                       type="button"
                       onClick={handleManageBilling}

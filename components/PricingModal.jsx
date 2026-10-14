@@ -55,8 +55,9 @@ const COLUMN_FOR_PLAN = { free: 'free', paid: 'pro', max: 'max' };
 const PricingModal = ({ billing, busy, onClose, onCheckout, onManage }) => {
   const plan = billing?.plan || 'free';
   const current = COLUMN_FOR_PLAN[plan] || null;
-  const comped = plan === 'unlimited';
-  const subscriber = plan === 'paid' || plan === 'max';
+  // Complimentary Max: the Max column is current and nothing is for sale.
+  const comped = Boolean(billing?.comped);
+  const subscriber = !comped && (plan === 'paid' || plan === 'max');
 
   const action = (key) => {
     if (comped || key === 'free') return null;
@@ -101,7 +102,7 @@ const PricingModal = ({ billing, busy, onClose, onCheckout, onManage }) => {
             <p className="text-sm text-gray-700">You have used all {billing.limit} free optimizations.</p>
           )}
           {comped && (
-            <p className="text-sm text-gray-700">Your account has full access, so there is nothing to buy.</p>
+            <p className="text-sm text-gray-700">You have complimentary Max, so there is nothing to buy.</p>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:items-stretch">
@@ -123,7 +124,7 @@ const PricingModal = ({ billing, busy, onClose, onCheckout, onManage }) => {
                   <div className="flex items-center justify-between">
                     <span className="text-lg font-semibold text-gray-900">{p.name}</span>
                     {isCurrent && (
-                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">Current plan</span>
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{comped ? 'Complimentary' : 'Current plan'}</span>
                     )}
                   </div>
                   <div className="mt-2">
@@ -169,7 +170,8 @@ const PricingModal = ({ billing, busy, onClose, onCheckout, onManage }) => {
             <p className="text-xs text-gray-500">Switching plans happens in Stripe's billing page, which prorates the difference.</p>
           )}
           <p className="text-xs text-gray-500">
-            Subscriptions renew monthly until cancelled. See the{' '}
+            Subscriptions renew monthly until cancelled. Full refund within 7 days of your first
+            payment on a plan; renewals are not refunded. See the{' '}
             <a href="/terms" target="_blank" rel="noopener" className="underline hover:text-gray-700">Terms of Service</a>
             {' '}and{' '}
             <a href="/privacy" target="_blank" rel="noopener" className="underline hover:text-gray-700">Privacy Policy</a>.
