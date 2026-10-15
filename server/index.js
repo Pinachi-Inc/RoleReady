@@ -5,6 +5,7 @@ import { handleOptimizeRequest } from './core/optimizeHandler.js';
 import { handlePdfProcessing, uploadMiddleware } from './core/pdfHandler.js';
 import { handleAiDetect } from './core/aiDetectHandler.js';
 import { handleHistory } from './core/historyHandler.js';
+import { handleFeedback } from './core/feedbackHandler.js';
 import { handleCreateCheckout, handleCustomerPortal, handleBillingStatus, handleBillingWebhook } from './core/billing.js';
 
 dotenv.config();
@@ -62,6 +63,9 @@ app.post('/api/billing/status', handleBillingStatus);
 
 // Saved run history (paid)
 app.post('/api/history', handleHistory);
+
+// Feedback and problem reports, signed in or not
+app.post('/api/feedback', handleFeedback);
 
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
