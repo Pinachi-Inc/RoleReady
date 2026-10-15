@@ -37,10 +37,16 @@ const TermsOfService = () => (
       <li><strong>Max:</strong> $49 per month. Unlimited optimizations and unlimited saved profiles, subject to fair use (section 4), and full history.</li>
     </ul>
     <p>
-      Prices are in US dollars and exclude any taxes that apply where you live. Payments are
-      handled by Stripe. Subscriptions renew automatically each month on the date you subscribed
-      and are charged to your payment method until you cancel. Unused optimizations do not
-      carry over to the next month.
+      Prices are in US dollars and exclude any taxes that apply where you live, which are shown
+      at checkout. Subscriptions renew automatically each month on the date you subscribed and
+      are charged to your payment method until you cancel. Unused optimizations do not carry
+      over to the next month.
+    </p>
+    <p>
+      <strong>Who you pay.</strong> Subscriptions are sold through Lemon Squeezy, which acts as
+      our reseller and merchant of record. When you subscribe, you buy from Lemon Squeezy: it
+      takes the payment, charges and pays any sales tax or VAT, issues your receipt, and its own
+      terms apply to the purchase. We provide {LEGAL.product} itself under these terms.
     </p>
     <p>
       <strong>Cancelling.</strong> Cancel any time from Manage subscription. You keep your plan
@@ -49,11 +55,11 @@ const TermsOfService = () => (
       subscribe again.
     </p>
     <p>
-      <strong>Switching plans.</strong> You can move between Pro and Max from Manage subscription.
-      Stripe adjusts the charge for the rest of the current period.
+      <strong>Switching plans.</strong> You can move between Pro and Max from the plans page in
+      the app. The charge for the rest of the current period is prorated.
     </p>
     <p>
-      <strong>Failed payments.</strong> If a renewal fails, Stripe retries for a short period and
+      <strong>Failed payments.</strong> If a renewal fails, Lemon Squeezy retries for a short period and
       you keep access meanwhile. If payment still fails, the subscription ends and the account
       moves to Free.
     </p>
@@ -62,7 +68,8 @@ const TermsOfService = () => (
       days of your first payment on a plan by writing to <Mail />. We do not refund renewals or
       partly used months. We do refund charges caused by a billing error on our side, and we
       refund or credit you for a long outage on our side. Switching between Pro and Max is not a
-      refund: Stripe prorates the difference instead. If you are a consumer in the EU or UK, you
+      refund: the difference is prorated instead. Approved refunds are issued through Lemon
+      Squeezy to the payment method you used. If you are a consumer in the EU or UK, you
       also have 14 days from subscribing to withdraw. By using a paid feature during that time
       you ask us to start straight away, and any refund is reduced in proportion to the period
       you used. None of this limits other rights you have under consumer law.
@@ -120,7 +127,7 @@ const TermsOfService = () => (
       standing. They do not transfer any of our intellectual property to you.
     </p>
     <p>
-      {LEGAL.product} relies on third parties, including Google, Vercel, Stripe and AI model
+      {LEGAL.product} relies on third parties, including Google, Vercel, Lemon Squeezy and AI model
       providers. Their outages or changes can affect the service, and we are not responsible for
       their services.
     </p>

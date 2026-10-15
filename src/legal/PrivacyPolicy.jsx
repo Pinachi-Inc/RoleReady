@@ -21,7 +21,7 @@ const PrivacyPolicy = () => (
       <li>We collect what you give us to build your CV, plus your Google sign-in details and, if you pay, your subscription status.</li>
       <li>Your CV content is sent to third-party AI models to produce your results. That is how the product works.</li>
       <li>We do not sell your data, show ads, or use your content to train our own models.</li>
-      <li>Card details go straight to Stripe. We never see them.</li>
+      <li>Payments are handled by Lemon Squeezy, our merchant of record. We never see your card details.</li>
       <li>You can ask us for a copy of your data, or to delete it, at any time.</li>
     </ul>
 
@@ -68,9 +68,9 @@ const PrivacyPolicy = () => (
     <ul>
       <li>How many optimizations and imports you have used, to apply your plan's limits.</li>
       <li>
-        If you subscribe: your plan, a Stripe customer and subscription identifier, the
-        subscription's status and renewal date. Payment details are collected and stored by
-        Stripe, not by us.
+        If you subscribe: your plan, a Lemon Squeezy customer and subscription identifier, the
+        subscription's status and renewal date. Payment details, billing address and tax details
+        are collected by Lemon Squeezy, not by us.
       </li>
     </ul>
 
@@ -134,10 +134,15 @@ const PrivacyPolicy = () => (
         <tr><td>Vercel</td><td>Hosting and servers</td><td>All requests passing through the app, server logs, IP address</td></tr>
         <tr><td>OpenRouter and the AI model providers it routes to</td><td>Generating CVs, cover letters and profile imports</td><td>Profile content, job postings, imported CV text</td></tr>
         <tr><td>Sapling AI</td><td>AI-writing estimate</td><td>Generated CV text</td></tr>
-        <tr><td>Stripe</td><td>Payments and subscriptions</td><td>Email, payment details, billing address, subscription</td></tr>
+        <tr><td>Lemon Squeezy (merchant of record) and its payment processors</td><td>Selling the subscription: payment, sales tax / VAT, receipts, refunds</td><td>Email, name, payment details, billing address, subscription</td></tr>
         <tr><td>jsDelivr (CDN)</td><td>Loading the in-browser text reader for scanned PDFs</td><td>IP address and browser details only; your file stays on your device</td></tr>
       </tbody>
     </table>
+    <p>
+      Lemon Squeezy sells the subscription to you as merchant of record, so for payment, tax and
+      receipt data it acts as an independent controller under its own privacy policy, not only on
+      our behalf.
+    </p>
     <p>
       We may also disclose data if the law requires it, to protect people's safety or our rights,
       or if {LEGAL.product} is transferred to a new owner, in which case this policy continues to apply.
@@ -157,7 +162,7 @@ const PrivacyPolicy = () => (
       <li><strong>After you ask us to delete your account:</strong> removed within {LEGAL.deletionDays} days, including from backups.</li>
       <li><strong>Uploaded PDF files:</strong> not stored. They are discarded as soon as the import finishes.</li>
       <li><strong>Server logs:</strong> a limited period set by our hosting provider.</li>
-      <li><strong>Billing records:</strong> as long as tax and accounting law requires, held by Stripe and in our records.</li>
+      <li><strong>Billing records:</strong> as long as tax and accounting law requires, held by Lemon Squeezy and in our records.</li>
     </ul>
 
     <h2>Your rights</h2>

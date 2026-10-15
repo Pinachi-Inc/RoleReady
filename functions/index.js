@@ -82,7 +82,7 @@ async function billingHandlers() {
 app.post('/billing/checkout', async (req, res) => (await billingHandlers()).handleCreateCheckout(req, res));
 app.post('/billing/portal', async (req, res) => (await billingHandlers()).handleCustomerPortal(req, res));
 app.post('/billing/status', async (req, res) => (await billingHandlers()).handleBillingStatus(req, res));
-app.post('/stripe-webhook', async (req, res) => (await billingHandlers()).handleStripeWebhook(req, res));
+app.post('/lemonsqueezy-webhook', async (req, res) => (await billingHandlers()).handleBillingWebhook(req, res));
 app.post('/history', async (req, res) => (await import('../server/core/historyHandler.js')).handleHistory(req, res));
 app.post('/auth/github-verify', async (req, res) => (await import('../server/core/githubVerifyHandler.js')).handleGithubVerify(req, res));
 

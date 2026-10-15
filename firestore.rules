@@ -18,7 +18,7 @@ service cloud.firestore {
 
     // Fields the client may never create or modify.
     function serverOwned() {
-      return ['plan', 'planSince', 'planRenewsAt', 'stripeCustomerId', 'stripeSubscriptionId',
+      return ['plan', 'planSince', 'planRenewsAt', 'billingCustomerId', 'billingSubscriptionId',
               'subscriptionStatus', 'cancelAtPeriodEnd', 'usage', 'lifetimeUsage',
               'comped', 'compedAt', 'compedEmail', 'compedEnv'];
     }
