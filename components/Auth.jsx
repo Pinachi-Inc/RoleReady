@@ -73,6 +73,11 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
     console.warn('[auth] sign-in failed: %s', error?.code || error?.message);
     const message = error?.friendly || friendlyAuthError(error);
     if (message) setAuthError(message);
+    // Account exists under another method: prefill the email so signing in that way is one step.
+    if (error?.email) {
+      setEmail(error.email);
+      setMode('signin');
+    }
   };
 
   const runSignIn = async (kind, fn) => {

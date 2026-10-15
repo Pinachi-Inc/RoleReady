@@ -2,6 +2,7 @@ import {
   signInWithPopup,
   signOut,
   onAuthStateChanged,
+  onIdTokenChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
@@ -33,7 +34,7 @@ export const friendlyAuthError = (error) => {
     case 'auth/invalid-credential':
     case 'auth/invalid-login-credentials':
     case 'auth/user-not-found':
-      return 'Wrong email or password.';
+      return 'Wrong email or password. Signed up with Google or GitHub? Use Forgot password to set one.';
     case 'auth/invalid-email':
       return 'That email address does not look right.';
     case 'auth/missing-password':
@@ -85,11 +86,13 @@ const linkPendingCredential = async (user) => {
 };
 
 // Builds the error thrown for account-exists-with-different-credential: holds the credential
-// for linking and names the method the email already uses where Firebase will say.
+// for linking and names the method the email already uses where Firebase will say. The error
+// carries `email` so the form can prefill it; Google's popup is pointed at the same address.
 const accountExistsError = async (providerId, error) => {
   const email = error?.customData?.email || null;
   const credential = credentialFromError(providerId, error);
   if (credential) pendingLink = { credential, email, providerId };
+  if (email) googleProvider.setCustomParameters({ login_hint: email });
 
   let methods = [];
   if (email) {
@@ -100,21 +103,49 @@ const accountExistsError = async (providerId, error) => {
       methods = [];
     }
   }
-  const existing = methods.map((m) => METHOD_LABELS[m]).filter(Boolean);
-  const via = existing.length ? existing.join(' or ') : 'the method you used before';
+  // With email enumeration protection on, Firebase will not say which method; suggest the others.
+  const known = methods.map((m) => METHOD_LABELS[m]).filter(Boolean);
+  const others = Object.keys(METHOD_LABELS).filter((m) => m !== providerId).map((m) => METHOD_LABELS[m]);
+  const via = (known.length ? known : others).join(' or ');
   const linked = METHOD_LABELS[providerId] || 'this method';
   const err = new Error(
     `${email || 'This email'} already has a RoleBerry account. Sign in with ${via} and we will link ${linked} to it.`
   );
   err.code = error.code;
   err.friendly = err.message;
+  err.email = email;
   return err;
+};
+
+// Firebase treats GitHub emails as unverified. Ask our server to confirm the address with
+// GitHub itself, then refresh so the new token says email_verified. Never blocks sign-in.
+const verifyEmailWithGithub = async (result) => {
+  const user = result?.user;
+  if (!user || user.emailVerified) return;
+  const accessToken = GithubAuthProvider.credentialFromResult(result)?.accessToken;
+  if (!accessToken) return;
+  try {
+    const response = await fetch('/api/auth/github-verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` },
+      body: JSON.stringify({ accessToken }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok && data.verified) {
+      await user.reload();
+      await user.getIdToken(true);
+    }
+  } catch (error) {
+    console.warn('[auth] could not confirm the email with GitHub: %s', error?.message || error);
+  }
 };
 
 const popupSignIn = async (provider, providerId) => {
   try {
     const result = await signInWithPopup(auth, provider);
+    if (provider === googleProvider) googleProvider.setCustomParameters({});
     await linkPendingCredential(result.user);
+    if (providerId === 'github.com') await verifyEmailWithGithub(result);
     return result.user;
   } catch (error) {
     if (error?.code === 'auth/account-exists-with-different-credential') {
@@ -185,6 +216,9 @@ export const signOutUser = async () => {
 export const onAuthStateChange = (callback) => {
   return onAuthStateChanged(auth, callback);
 };
+
+// Fires when the ID token is refreshed, e.g. after an email is verified.
+export const onIdTokenChange = (callback) => onIdTokenChanged(auth, callback);
 
 // Firebase ID token for the current user, used as the API bearer token.
 // Returns null when nobody is signed in.

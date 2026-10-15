@@ -22,7 +22,7 @@ import ProfileSwitcher from './ProfileSwitcher.jsx';
 import HistoryPage from './HistoryPage.jsx';
 import PricingModal from './PricingModal.jsx';
 import { processPdf, processPdfText } from '../services/pdf.js';
-import { onAuthStateChange, saveUserData, getUserData, needsEmailVerification } from '../services/auth.js';
+import { onAuthStateChange, onIdTokenChange, saveUserData, getUserData, needsEmailVerification } from '../services/auth.js';
 import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
 import Auth from './Auth.jsx';
 import VerifyEmail from './VerifyEmail.jsx';
@@ -435,6 +435,10 @@ const CVOptimizer = () => {
     setCurrentPage('main');
   };
 
+  // A refreshed token can carry a newly verified email (GitHub check, inbox link). The user
+  // object changes in place, so re-render to pick it up.
+  useEffect(() => onIdTokenChange(() => setAuthTick((n) => n + 1)), []);
+
   // Auth state management
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (user) => {
@@ -511,7 +515,7 @@ const CVOptimizer = () => {
     };
     run();
     return () => { cancelled = true; };
-  }, [user?.uid, awaitingVerification]);
+  }, [user?.uid, awaitingVerification, user?.emailVerified]);
 
   // plan: 'pro' | 'max'. Checkout is for a first subscription; the server answers use_portal
   // for an existing subscriber, whose plan changes go through the Customer Portal.

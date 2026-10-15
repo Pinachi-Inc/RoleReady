@@ -5,6 +5,7 @@ import { handleOptimizeRequest } from './core/optimizeHandler.js';
 import { handlePdfProcessing, uploadMiddleware } from './core/pdfHandler.js';
 import { handleAiDetect } from './core/aiDetectHandler.js';
 import { handleHistory } from './core/historyHandler.js';
+import { handleGithubVerify } from './core/githubVerifyHandler.js';
 import { handleCreateCheckout, handleCustomerPortal, handleBillingStatus, handleStripeWebhook } from './core/billing.js';
 
 dotenv.config();
@@ -62,6 +63,9 @@ app.post('/api/billing/status', handleBillingStatus);
 
 // Saved run history (paid)
 app.post('/api/history', handleHistory);
+
+// Confirms a GitHub user's email with GitHub after sign-in
+app.post('/api/auth/github-verify', handleGithubVerify);
 
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
