@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { LEGAL, isDraft } from '../src/legal/config.js';
+import { openFeedback } from '../services/feedback.js';
 import PrivacyPolicy from '../src/legal/PrivacyPolicy.jsx';
 import TermsOfService from '../src/legal/TermsOfService.jsx';
 
@@ -59,6 +60,9 @@ const LegalPage = ({ path }) => {
         <footer className="mt-12 pt-6 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400 flex flex-wrap gap-4">
           <a href={other[0]} className="hover:text-gray-900 dark:hover:text-gray-100">{other[1]}</a>
           <a href={`mailto:${LEGAL.email}`} className="hover:text-gray-900 dark:hover:text-gray-100">Contact</a>
+          <button type="button" onClick={() => openFeedback({ type: 'bug' })} className="hover:text-gray-900 dark:hover:text-gray-100">
+            Report a problem
+          </button>
         </footer>
       </div>
     </div>

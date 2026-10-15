@@ -427,3 +427,86 @@ export async function getRun(uid, runId) {
   const d = snap.data();
   return { id: runId, ...d, createdAt: isoTime(d.createdAt) };
 }
+
+/**
+ * Store one feedback report (and its screenshot, if any) under feedback/{autoId}. The public
+ * reference is derived from the document id so a reporter quoting it leads straight to the
+ * document. Returns { id, ref }, or null when the server has no Firestore access.
+ */
+export async function saveFeedback(record, screenshot = null) {
+  const database = db();
+  if (!database) return null;
+
+  const docRef = database.collection('feedback').doc();
+  const ref = `RB-${docRef.id.slice(0, 6).toUpperCase()}`;
+  await docRef.set({ ...record, ref, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+  if (screenshot) {
+    await docRef.collection('attachments').doc('screenshot').set({
+      ...screenshot,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+  return { id: docRef.id, ref };
+}
+
+// Record whether the report reached the support inbox. Never throws: the report is stored
+// either way, and the reporter has already been given its reference.
+export async function markFeedbackEmailed(id, fields) {
+  const database = db();
+  if (!database || !id) return;
+  try {
+    await database.collection('feedback').doc(id).set(fields, { merge: true });
+  } catch (err) {
+    console.error('[firestore] could not update feedback %s: %s', id, err?.message || err);
+  }
+}
+
+function utcDay(now) {
+  return new Date(now).toISOString().slice(0, 10);
+}
+
+/**
+ * Fixed-window rate limits for /api/feedback, in feedbackLimits/{key}. Every key must have room
+ * for the request to pass, and the counters only move when it does, so a refused request never
+ * pushes the window further out. Each key is { key, windowMs, windowLimit, dayLimit }; a null
+ * limit means no limit on that counter.
+ *
+ * Returns { allowed, key? } (key = the one that refused), or null when the server has no
+ * Firestore access, in which case nothing is limited.
+ */
+export async function takeFeedbackQuota(keys) {
+  const database = db();
+  if (!database) return null;
+
+  const now = Date.now();
+  const day = utcDay(now);
+  const refs = keys.map((k) => database.collection('feedbackLimits').doc(k.key));
+
+  try {
+    return await database.runTransaction(async (tx) => {
+      // All reads before any write, as Firestore transactions require.
+      const snaps = await Promise.all(refs.map((ref) => tx.get(ref)));
+      const next = [];
+
+      for (let i = 0; i < keys.length; i += 1) {
+        const { key, windowMs, windowLimit, dayLimit } = keys[i];
+        const data = snaps[i].exists ? snaps[i].data() : {};
+        const inWindow = windowMs != null && Number(data.windowStart) > now - windowMs;
+        const windowStart = inWindow ? Number(data.windowStart) : now;
+        const windowCount = inWindow ? Number(data.windowCount || 0) : 0;
+        const dayCount = data.day === day ? Number(data.dayCount || 0) : 0;
+
+        if (windowLimit != null && windowCount >= windowLimit) return { allowed: false, key };
+        if (dayLimit != null && dayCount >= dayLimit) return { allowed: false, key };
+        next.push({ windowStart, windowCount: windowCount + 1, day, dayCount: dayCount + 1 });
+      }
+
+      refs.forEach((ref, i) => tx.set(ref, next[i]));
+      return { allowed: true };
+    });
+  } catch (err) {
+    // A broken counter must not cost someone the report they were trying to send.
+    console.error('[firestore] feedback rate limit check failed: %s', err?.message || err);
+    return { allowed: true };
+  }
+}

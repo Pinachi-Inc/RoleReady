@@ -99,3 +99,30 @@ export async function requireAuth(req, res) {
     return null;
   }
 }
+
+// For routes that also serve signed-out visitors (feedback). A missing, expired or invalid token
+// means anonymous rather than a 401, so a report is never lost to a stale session. Unlike
+// requireAuth it also lets unverified password accounts through, since "my verification email
+// never arrived" is exactly the kind of report we want.
+export async function optionalAuth(req) {
+  const projectId = getProjectId();
+  if (!projectId) return null;
+
+  const headerValue = req.headers?.authorization || req.headers?.Authorization || '';
+  const bearer = /^Bearer\s+(.+)$/i.exec(String(headerValue).trim());
+  if (!bearer) return null;
+
+  try {
+    const claims = await verifyFirebaseIdToken(bearer[1], projectId);
+    const emailVerified = claims.email_verified === true;
+    return {
+      uid: claims.sub,
+      email: emailVerified ? claims.email || null : null,
+      emailVerified,
+      provider: claims.firebase?.sign_in_provider || null,
+    };
+  } catch (err) {
+    console.warn('[auth] optional token ignored: %s', err.message);
+    return null;
+  }
+}
