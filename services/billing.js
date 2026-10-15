@@ -18,17 +18,22 @@ async function postBilling(path, body = {}) {
   return data;
 }
 
-// { plan: 'free'|'paid'|'max'|'unlimited', used, limit, remaining, window, fairUse, profileLimit,
-//   historyVisible, billingAvailable, maxAvailable, hasCustomer, subscriptionStatus, renewsAt, cancelAtPeriodEnd }
+// { plan: 'free'|'paid'|'max', comped, billingPlan, used, limit, remaining, window, fairUse,
+//   profileLimit, unlimitedProfiles, historyVisible, billingAvailable, maxAvailable, hasCustomer,
+//   subscriptionStatus, renewsAt, cancelAtPeriodEnd }
 // 'paid' is Pro.
 export const getBillingStatus = () => postBilling('status');
 
-// Both redirect the whole tab to Stripe; Stripe sends the user back to /?checkout=... or /.
-// plan: 'pro' | 'max'. Only for free accounts; subscribers switch in the portal.
+// plan: 'pro' | 'max'. For a free account this redirects the tab to Lemon Squeezy's checkout,
+// which sends the user back to /?checkout=success. For a subscriber switching between Pro and
+// Max the server changes the subscription in place and this resolves to { switched: plan }.
 export const startCheckout = async (plan) => {
-  const { url } = await postBilling('checkout', { plan });
-  window.location.assign(url);
+  const data = await postBilling('checkout', { plan });
+  if (data.url) window.location.assign(data.url);
+  return data;
 };
+
+// Lemon Squeezy's customer portal: cancel, card, invoices. Redirects the tab.
 
 export const openBillingPortal = async () => {
   const { url } = await postBilling('portal');
