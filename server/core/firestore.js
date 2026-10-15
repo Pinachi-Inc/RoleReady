@@ -55,8 +55,9 @@ function db() {
 //
 // Plans as stored on the user document: 'free', 'paid' (sold as Pro, $12) and 'max' ($49).
 // Pro keeps the stored name 'paid' so existing subscribers need no migration. `plan` always
-// reflects Stripe; complimentary access is kept apart from it (see isCompedAccount), so a
-// webhook can never downgrade a comped account and revoking a comp falls back to what Stripe
+// reflects the billing provider (Lemon Squeezy); complimentary access is kept apart from it
+// (see isCompedAccount), so a webhook can never downgrade a comped account and revoking a comp
+// falls back to what the billing provider
 // says.
 //
 // Max is sold as unlimited runs and unlimited profiles. Both carry a hidden ceiling: runs a
@@ -111,13 +112,13 @@ export function isCompedAccount(user, data) {
   return isComped(user?.uid, user?.email) || data?.comped === true || data?.plan === 'unlimited';
 }
 
-// The plan Stripe says the account pays for, ignoring any comp.
-export function stripePlanOf(data) {
+// The plan the billing provider says the account pays for, ignoring any comp.
+export function billingPlanOf(data) {
   return data?.plan === 'paid' || data?.plan === 'max' ? data.plan : 'free';
 }
 
 function planOf(data, comped) {
-  return comped ? 'max' : stripePlanOf(data);
+  return comped ? 'max' : billingPlanOf(data);
 }
 
 // Calendar month. "1,000 optimizations/month" reads as a calendar month to a customer, and a
@@ -166,8 +167,8 @@ export function getEntitlement(user, data, kind = 'optimizations') {
   return {
     plan,
     comped,
-    // What Stripe bills for, so a comped account that also pays can still reach its subscription.
-    stripePlan: stripePlanOf(data),
+    // What the account is billed for, so a comped account that also pays can still reach its subscription.
+    billingPlan: billingPlanOf(data),
     window: limits.window,
     used,
     limit,
@@ -357,10 +358,12 @@ export async function listCompedDocs() {
   return [...byId.values()];
 }
 
-export async function findUidByStripeCustomer(customerId) {
+// The account a billing-provider id belongs to, by a field the server wrote earlier
+// (billingSubscriptionId or billingCustomerId). Null if none.
+export async function findUidByBillingField(field, value) {
   const database = db();
-  if (!database || !customerId) return null;
-  const snap = await database.collection('users').where('stripeCustomerId', '==', customerId).limit(1).get();
+  if (!database || !value) return null;
+  const snap = await database.collection('users').where(field, '==', String(value)).limit(1).get();
   return snap.empty ? null : snap.docs[0].id;
 }
 

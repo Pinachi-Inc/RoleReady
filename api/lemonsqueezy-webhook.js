@@ -1,9 +1,9 @@
-// Vercel API route for /api/stripe-webhook
+// Vercel API route for /api/lemonsqueezy-webhook
 // Uses the same shared handler as Express and Firebase Functions
 
-import { handleStripeWebhook } from '../server/core/billing.js';
+import { handleBillingWebhook } from '../server/core/billing.js';
 
-// Called by Stripe, not the browser, so no CORS. Authenticated by the Stripe-Signature header,
+// Called by Lemon Squeezy, not the browser, so no CORS. Authenticated by the X-Signature header,
 // which the shared handler verifies against the raw body. That body must be left unread here:
 // touching req.body would make Vercel parse it, and the signature is over the original bytes.
 export default async function handler(req, res) {
@@ -12,5 +12,5 @@ export default async function handler(req, res) {
     return;
   }
 
-  return handleStripeWebhook(req, res);
+  return handleBillingWebhook(req, res);
 }
