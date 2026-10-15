@@ -6,13 +6,14 @@ import {
   listCompedDocs,
   isComped,
 } from './firestore.js';
-import { resyncPlanFromStripe } from './billing.js';
+import { resyncPlanFromBilling } from './billing.js';
 
 // Complimentary Max, granted by email. Used by scripts/comp.mjs (npm run comp); kept here so
 // the e2e harness can run it against the in-memory Firestore.
 //
 // A comp is the `comped` flag on the user document, next to `plan`, which only ever records
-// what Stripe says. Granting sets the flag. Revoking clears it and re-reads Stripe, so the
+// what Lemon Squeezy says. Granting sets the flag. Revoking clears it and re-reads the
+// subscription from Lemon Squeezy, so the
 // account lands on whatever it actually pays for, free if nothing. Neither touches profiles,
 // history or usage.
 
@@ -46,7 +47,7 @@ export async function revokeComp(rawEmail) {
   await setCompFlag(uid, false);
   // The old way of storing a comp overwrote plan itself; put back the truth before re-syncing.
   if (stored.plan === 'unlimited') await updateUserDoc(uid, { plan: 'free' });
-  const plan = await resyncPlanFromStripe(uid);
+  const plan = await resyncPlanFromBilling(uid);
   return {
     email,
     uid,
@@ -62,7 +63,7 @@ export async function listComps() {
     uid: d.uid,
     email: d.compedEmail || null,
     since: d.compedAt || null,
-    stripePlan: d.plan === 'paid' || d.plan === 'max' ? d.plan : 'free',
+    billingPlan: d.plan === 'paid' || d.plan === 'max' ? d.plan : 'free',
     legacy: d.plan === 'unlimited',
   }));
   const allowlist = String(process.env.COMP_MAX_EMAILS || '')

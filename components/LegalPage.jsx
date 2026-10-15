@@ -4,7 +4,7 @@ import { LEGAL, isDraft } from '../src/legal/config.js';
 import PrivacyPolicy from '../src/legal/PrivacyPolicy.jsx';
 import TermsOfService from '../src/legal/TermsOfService.jsx';
 
-// /privacy and /terms. Rendered outside the app (no sign-in needed) because Stripe, Google's
+// /privacy and /terms. Rendered outside the app (no sign-in needed) because Lemon Squeezy, Google's
 // OAuth consent screen and anyone deciding whether to sign up all need to read them first.
 
 export const LEGAL_PAGES = {

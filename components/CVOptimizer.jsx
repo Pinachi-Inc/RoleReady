@@ -199,7 +199,7 @@ const CVOptimizer = () => {
   const [profiles, setProfiles] = useState({}); // saved profiles (free 1, paid 3), see services/profiles.js
   const [activeProfileId, setActiveProfileId] = useState(null);
   const [profileBusy, setProfileBusy] = useState(false);
-  // Read once: Stripe sends people back to /?checkout=success|cancelled.
+  // Read once: Lemon Squeezy's checkout sends people back to /?checkout=success.
   const checkoutReturnRef = useRef(new URLSearchParams(window.location.search).get('checkout'));
   const downloadingRef = useRef(false);
 
@@ -477,7 +477,7 @@ const CVOptimizer = () => {
     }
   };
 
-  // Load the plan whenever the signed-in account changes. After a Stripe Checkout return the
+  // Load the plan whenever the signed-in account changes. After a checkout return the
   // webhook can land a few seconds after the redirect, so poll briefly until it does. The
   // redirect itself grants nothing; only the webhook does.
   useEffect(() => {
@@ -509,12 +509,18 @@ const CVOptimizer = () => {
     return () => { cancelled = true; };
   }, [user?.uid]);
 
-  // plan: 'pro' | 'max'. Checkout is for a first subscription; the server answers use_portal
-  // for an existing subscriber, whose plan changes go through the Customer Portal.
+  // plan: 'pro' | 'max'. A free account is sent to checkout. A subscriber asking for the other
+  // plan is switched in place by the server (prorated), and the new plan shows on refresh.
   const handleUpgrade = async (plan) => {
     setBillingBusy(true);
     try {
-      await startCheckout(plan);
+      const result = await startCheckout(plan);
+      if (result?.switched) {
+        setBillingBusy(false);
+        setShowPaywall(false);
+        await refreshBilling();
+        setBillingNotice(`You are now on RoleBerry ${result.switched === 'max' ? 'Max' : 'Pro'}.`);
+      }
     } catch (err) {
       setBillingBusy(false);
       if (err.code === 'use_portal') {
@@ -1825,7 +1831,7 @@ const CVOptimizer = () => {
                   )}
                   {/* Comped accounts have nothing to manage, unless they also still pay for a subscription they may want to cancel. */}
                   {(billing?.plan === 'paid' || billing?.plan === 'max') && billing.hasCustomer
-                    && (!billing.comped || (billing.stripePlan && billing.stripePlan !== 'free')) && (
+                    && (!billing.comped || (billing.billingPlan && billing.billingPlan !== 'free')) && (
                     <button
                       type="button"
                       onClick={handleManageBilling}

@@ -2,9 +2,10 @@ import React from 'react';
 import { Check, Clock, Sparkles } from 'lucide-react';
 
 // The paywall: Free, Pro and Max side by side, Pro in the middle as the recommended plan.
-// A free account upgrades through Checkout (onCheckout('pro' | 'max')). A subscriber sees its
-// current plan, and every other change, Pro to Max and back included, goes through the Stripe
-// Customer Portal (onManage), which switches the existing subscription rather than adding one.
+// A free account upgrades through checkout (onCheckout('pro' | 'max')). A subscriber switches
+// between Pro and Max with the same call, which the server turns into a prorated change of the
+// existing subscription, after a confirm. Cancelling and card changes go through Lemon
+// Squeezy's customer portal (onManage).
 //
 // `soon: true` marks a perk that is sold but not built yet. It renders greyed with a clock and
 // "coming soon", so it never reads as something already delivered.
@@ -67,7 +68,15 @@ const PricingModal = ({ billing, busy, onClose, onCheckout, onManage }) => {
         : null;
     }
     if (subscriber) {
-      return { label: `Switch to ${key === 'max' ? 'Max' : 'Pro'}`, onClick: onManage, primary: key === 'max' };
+      const name = key === 'max' ? 'Max' : 'Pro';
+      const price = key === 'max' ? '$49' : '$12';
+      return {
+        label: `Switch to ${name}`,
+        onClick: () => {
+          if (window.confirm(`Switch to ${name} for ${price}/month? The difference for the rest of this month is prorated.`)) onCheckout(key);
+        },
+        primary: key === 'max',
+      };
     }
     const available = key === 'max' ? billing?.maxAvailable : billing?.billingAvailable;
     return {
@@ -167,7 +176,7 @@ const PricingModal = ({ billing, busy, onClose, onCheckout, onManage }) => {
             <p className="text-xs text-red-600">Upgrades are not available right now. Please try again later.</p>
           )}
           {subscriber && (
-            <p className="text-xs text-gray-500">Switching plans happens in Stripe's billing page, which prorates the difference.</p>
+            <p className="text-xs text-gray-500">Switching plans is prorated. Cancel or change your card from Manage subscription.</p>
           )}
           <p className="text-xs text-gray-500">
             Subscriptions renew monthly until cancelled. Full refund within 7 days of your first
