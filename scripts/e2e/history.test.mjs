@@ -592,5 +592,55 @@ await check('unverified email does not inherit a comp granted to that address', 
   }
 });
 
+out('\nGitHub email check');
+
+const { handleGithubVerify } = await import('../../server/core/githubVerifyHandler.js');
+const authRecords = globalThis.__E2E_AUTH_RECORDS;
+globalThis.__E2E_GITHUB = {
+  gho_owner: { id: 101, emails: [{ email: 'Gh@Example.com', verified: true }] },
+  gho_unverified: { id: 202, emails: [{ email: 'ghu@example.com', verified: false }] },
+  gho_stranger: { id: 999, emails: [{ email: 'gh@example.com', verified: true }] },
+};
+const githubUser = (uid, email, githubId) => authRecords.set(uid, {
+  uid, email, emailVerified: false, providerData: [{ providerId: 'github.com', uid: String(githubId) }],
+});
+const ghVerify = (uid, email, accessToken) => call(handleGithubVerify, uid, { accessToken }, { email, verified: false, provider: 'github.com' });
+
+await check('GitHub-verified email is marked verified in Firebase', async () => {
+  githubUser('gh', 'gh@example.com', 101);
+  const res = await ghVerify('gh', 'gh@example.com', 'gho_owner');
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.verified, true);
+  assert.equal(authRecords.get('gh').emailVerified, true);
+});
+
+await check('address GitHub has not verified stays unverified', async () => {
+  githubUser('ghu', 'ghu@example.com', 202);
+  const res = await ghVerify('ghu', 'ghu@example.com', 'gho_unverified');
+  assert.equal(res.body.verified, false);
+  assert.equal(authRecords.get('ghu').emailVerified, false);
+});
+
+await check('a token from a different GitHub account is refused', async () => {
+  githubUser('gh2', 'gh@example.com', 101);
+  const res = await ghVerify('gh2', 'gh@example.com', 'gho_stranger');
+  assert.equal(res.statusCode, 403);
+  assert.equal(authRecords.get('gh2').emailVerified, false);
+});
+
+await check('bad GitHub token and missing token are refused', async () => {
+  githubUser('gh3', 'gh3@example.com', 303);
+  assert.equal((await ghVerify('gh3', 'gh3@example.com', 'gho_nope')).statusCode, 401);
+  assert.equal((await ghVerify('gh3', 'gh3@example.com', '')).statusCode, 400);
+  assert.equal(authRecords.get('gh3').emailVerified, false);
+});
+
+await check('account without GitHub linked is refused', async () => {
+  authRecords.set('pw', { uid: 'pw', email: 'pw@example.com', emailVerified: false, providerData: [{ providerId: 'password', uid: 'pw@example.com' }] });
+  const res = await call(handleGithubVerify, 'pw', { accessToken: 'gho_owner' }, { email: 'pw@example.com', verified: false, provider: 'google.com' });
+  assert.equal(res.statusCode, 400);
+  assert.equal(authRecords.get('pw').emailVerified, false);
+});
+
 out(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

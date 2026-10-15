@@ -1,5 +1,6 @@
 // Stands in for axios in server code: serves the harness's signing key as Google's token
-// certs, and answers every model call with a fixed, structurally valid CV.
+// certs, answers every model call with a fixed, structurally valid CV, and plays GitHub's API
+// from globalThis.__E2E_GITHUB.
 
 const CERT_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 
@@ -20,8 +21,16 @@ function cvJson() {
 }
 
 const axios = {
-  async get(url) {
+  async get(url, { headers = {} } = {}) {
     if (url === CERT_URL) return { data: globalThis.__E2E_CERTS, headers: { 'cache-control': 'max-age=3600' } };
+    if (url.startsWith('https://api.github.com/')) {
+      // globalThis.__E2E_GITHUB: access token -> { id, emails: [{ email, verified }] }
+      const token = String(headers.Authorization || '').replace(/^Bearer\s+/, '');
+      const account = globalThis.__E2E_GITHUB?.[token];
+      if (!account) throw Object.assign(new Error('Bad credentials'), { response: { status: 401 } });
+      if (url.endsWith('/user')) return { data: { id: account.id } };
+      if (url.endsWith('/user/emails')) return { data: account.emails };
+    }
     throw new Error(`fake axios: unexpected GET ${url}`);
   },
   async post(url, body) {
