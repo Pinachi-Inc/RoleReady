@@ -362,7 +362,7 @@ const FeedbackWidget = () => {
                     <p className="text-sm text-gray-600 dark:text-gray-300">We'll reply to {verifiedEmail}.</p>
                   ) : (
                     <>
-                      <label htmlFor="feedback-email" className="block text-sm font-medium">Your email (so we can reply)</label>
+                      <label htmlFor="feedback-email" className="block text-sm font-medium">Your email (optional, so we can reply)</label>
                       <input
                         id="feedback-email"
                         type="email"
@@ -370,8 +370,15 @@ const FeedbackWidget = () => {
                         value={email}
                         onChange={(event) => setEmail(event.target.value)}
                         placeholder="you@example.com"
+                        aria-describedby={email.trim() ? undefined : 'feedback-email-note'}
                         className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
+                      {/* Sending without an email is fine; this just says what the reporter gives up. */}
+                      {!email.trim() && (
+                        <p id="feedback-email-note" className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          No email? No problem. We'll still look into it and fix it, but we won't be able to reply to you.
+                        </p>
+                      )}
                     </>
                   )}
                 </div>
