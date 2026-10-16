@@ -11,17 +11,10 @@ const INK = '#24131C';
 const BERRY = '#B8174F';
 const LEAF = '#2F8F5B';
 
-// TODO(logo): temporary stand-in for the F1 wordmark (Manrope Bold "roleberry", the o drawn as
-// a berry ring under a green check stem). Swap for the real SVG once it is in the repo.
+// The F1 wordmark. The -dark file has a light fill for the ink hero; roleberry-logo.svg is the
+// ink-coloured version for light backgrounds.
 const Wordmark = ({ className = '' }) => (
-  <span className={`inline-flex items-baseline font-extrabold tracking-tight text-white ${className}`} aria-label="roleberry">
-    <span aria-hidden="true">r</span>
-    <svg aria-hidden="true" viewBox="0 0 24 30" className="mx-[1px] h-[1em] w-[0.8em]">
-      <path d="M9 7 L12 10 L18 2" fill="none" stroke={LEAF} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="12" cy="20" r="7.5" fill="none" stroke={BERRY} strokeWidth="4" />
-    </svg>
-    <span aria-hidden="true">leberry</span>
-  </span>
+  <img src="/roleberry-logo-dark.svg" alt="Roleberry" className={className} />
 );
 
 // The hero visual: the same person's CV, fanned out, one per job.
@@ -173,7 +166,7 @@ const Landing = ({ signIn }) => (
   <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: '#FBF7F8' }}>
     <section className="px-4 pt-6 pb-10 sm:px-6 md:pt-12 md:pb-16" style={{ backgroundColor: INK }}>
       <div className="mx-auto max-w-5xl">
-        <Wordmark className="text-2xl" />
+        <Wordmark className="h-8 w-auto" />
         <div className="mt-6 grid items-center gap-8 md:mt-10 md:grid-cols-2 md:gap-12">
           <div className="text-center md:text-left">
             <h1 className="text-4xl font-bold leading-tight text-white md:text-5xl">20 jobs. 20 CVs. Same&nbsp;you.</h1>
