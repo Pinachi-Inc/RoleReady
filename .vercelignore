@@ -1,0 +1,7 @@
+# Keep local env files out of CLI deploys. Production values live in the Vercel project.
+.env
+.env.*
+!.env.example
+
+# Local git worktrees: other branches' code and their own .env files.
+.worktrees

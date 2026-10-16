@@ -21,6 +21,7 @@ import { newProfileId, saveProfile, renameProfile, deleteProfile, activateProfil
 import ProfileSwitcher from './ProfileSwitcher.jsx';
 import HistoryPage from './HistoryPage.jsx';
 import PricingModal from './PricingModal.jsx';
+import Landing from './Landing.jsx';
 import { processPdf, processPdfText } from '../services/pdf.js';
 import { onAuthStateChange, onIdTokenChange, saveUserData, getUserData, needsEmailVerification } from '../services/auth.js';
 import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
@@ -1732,58 +1733,22 @@ const CVOptimizer = () => {
     );
   }
 
-  // Show sign-in page for anonymous users
+  // Signed-out home: what RoleBerry is, an example and pricing, with sign-in above the fold
   if (!user) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-6">
-        <div className="max-w-md w-full">
-          <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-3 mb-6">
-              <Target className="h-12 w-12 text-blue-400" />
-              <h1 className="text-4xl font-bold text-white">RoleBerry</h1>
-            </div>
-            <p className="text-gray-300 text-lg mb-2">AI-Powered CV Optimization</p>
-            <p className="text-gray-400">Transform your CV to match any job description with precision and professionalism</p>
-          </div>
-          
-          <div className="bg-gray-800 rounded-xl shadow-2xl p-8 border border-gray-700">
-            <div className="text-center mb-6">
-              <h2 className="text-2xl font-semibold text-white mb-2">Get Started</h2>
-              <p className="text-gray-400">Sign in to save your templates and optimize your CV</p>
-            </div>
-            
+      <Landing
+        signIn={
+          <>
             <Auth user={user} onAuthChange={setUser} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
-
             <p className="mt-4 text-center text-xs text-gray-500">
               By continuing you agree to the{' '}
               <a href="/terms" className="underline hover:text-gray-300">Terms of Service</a>
               {' '}and acknowledge the{' '}
               <a href="/privacy" className="underline hover:text-gray-300">Privacy Policy</a>.
             </p>
-
-            <div className="mt-8 pt-6 border-t border-gray-700">
-              <div className="grid grid-cols-2 gap-4 text-center text-sm text-gray-400">
-                <div>
-                  <div className="text-blue-400 font-semibold">✨ Smart Keywords</div>
-                  <div>ATS-optimized content</div>
-                </div>
-                <div>
-                  <div className="text-green-400 font-semibold">🎯 Job Matching</div>
-                  <div>Tailored to descriptions</div>
-                </div>
-                <div>
-                  <div className="text-purple-400 font-semibold">📄 Clean Design</div>
-                  <div>Professional templates</div>
-                </div>
-                <div>
-                  <div className="text-orange-400 font-semibold">💾 Save Templates</div>
-                  <div>Reuse your profiles</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
     );
   }
 
