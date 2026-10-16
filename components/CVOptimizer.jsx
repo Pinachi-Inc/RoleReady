@@ -22,10 +22,11 @@ import ProfileSwitcher from './ProfileSwitcher.jsx';
 import HistoryPage from './HistoryPage.jsx';
 import PricingModal from './PricingModal.jsx';
 import { processPdf, processPdfText } from '../services/pdf.js';
-import { onAuthStateChange, saveUserData, getUserData } from '../services/auth.js';
+import { onAuthStateChange, onIdTokenChange, saveUserData, getUserData, needsEmailVerification } from '../services/auth.js';
 import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
 import Auth from './Auth.jsx';
 import { recordAppError, openFeedback } from '../services/feedback.js';
+import VerifyEmail from './VerifyEmail.jsx';
 
 // Repairs role ids on a raw aiUserInfo JSON string. The dedupe inside formDataToJson
 // only runs on Save, but aiUserInfo also arrives straight from PDF extraction and from
@@ -174,6 +175,9 @@ const CVOptimizer = () => {
   const [aiScoreLoading, setAiScoreLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState('main'); // 'main' | 'setup'
   const [user, setUser] = useState(null);
+  // user.reload() updates the same object in place, so bump this to re-render after verifying.
+  const [, setAuthTick] = useState(0);
+  const awaitingVerification = needsEmailVerification(user);
   const [isSaving, setIsSaving] = useState(false);
   const [showUserInfoModal, setShowUserInfoModal] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
@@ -432,6 +436,10 @@ const CVOptimizer = () => {
     setCurrentPage('main');
   };
 
+  // A refreshed token can carry a newly verified email (GitHub check, inbox link). The user
+  // object changes in place, so re-render to pick it up.
+  useEffect(() => onIdTokenChange(() => setAuthTick((n) => n + 1)), []);
+
   // Auth state management
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (user) => {
@@ -482,7 +490,7 @@ const CVOptimizer = () => {
   // webhook can land a few seconds after the redirect, so poll briefly until it does. The
   // redirect itself grants nothing; only the webhook does.
   useEffect(() => {
-    if (!user) {
+    if (!user || awaitingVerification) {
       setBilling(null);
       return;
     }
@@ -508,7 +516,7 @@ const CVOptimizer = () => {
     };
     run();
     return () => { cancelled = true; };
-  }, [user?.uid]);
+  }, [user?.uid, awaitingVerification, user?.emailVerified]);
 
   // plan: 'pro' | 'max'. A free account is sent to checkout. A subscriber asking for the other
   // plan is switched in place by the server (prorated), and the new plan shows on refresh.
@@ -1110,6 +1118,28 @@ const CVOptimizer = () => {
       onManage={handleManageBilling}
     />
   );
+
+  // Password accounts verify their email before they get the app. The server refuses their
+  // tokens until then, so nothing behind this would work anyway.
+  if (awaitingVerification) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-6">
+        <div className="max-w-md w-full">
+          <div className="flex items-center justify-center gap-3 mb-8">
+            <Target className="h-12 w-12 text-blue-400" />
+            <h1 className="text-4xl font-bold text-white">RoleBerry</h1>
+          </div>
+          <div className="bg-gray-800 rounded-xl shadow-2xl p-8 border border-gray-700">
+            <VerifyEmail
+              user={user}
+              onVerified={() => setAuthTick((n) => n + 1)}
+              onSignedOut={() => setUser(null)}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (user && currentPage === 'history') {
     return (

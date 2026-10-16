@@ -90,7 +90,14 @@ export async function requireAuth(req, res) {
 
   try {
     const claims = await verifyFirebaseIdToken(bearer[1], projectId);
-    req.user = { uid: claims.sub, email: claims.email || null };
+    // Comped Max is granted by email, so only an address the provider has verified counts.
+    // Otherwise anyone could sign up with someone else's address and inherit their access.
+    const emailVerified = claims.email_verified === true;
+    if (!emailVerified && claims.firebase?.sign_in_provider === 'password') {
+      res.status(403).json({ error: 'Please verify your email address first.', code: 'email_unverified' });
+      return null;
+    }
+    req.user = { uid: claims.sub, email: emailVerified ? (claims.email || null) : null };
     console.log('[auth] request authorised for uid=%s', req.user.uid);
     return req.user;
   } catch (err) {

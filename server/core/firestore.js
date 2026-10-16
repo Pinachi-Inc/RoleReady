@@ -313,6 +313,25 @@ export async function getAuthUserByEmail(email) {
   }
 }
 
+// Firebase Auth's record for a uid, or null if there is none.
+export async function getAuthUser(uid) {
+  const app = init();
+  if (!app) throw new Error('Firestore is not configured on the server');
+  try {
+    return await admin.auth(app).getUser(uid);
+  } catch (err) {
+    if (err?.code === 'auth/user-not-found') return null;
+    throw err;
+  }
+}
+
+// Mark an account's email as verified, once something we trust (GitHub) has vouched for it.
+export async function markEmailVerified(uid) {
+  const app = init();
+  if (!app) throw new Error('Firestore is not configured on the server');
+  await admin.auth(app).updateUser(uid, { emailVerified: true });
+}
+
 // Turn the admin-granted comp on or off. Off deletes the fields rather than writing false, so
 // the document carries no trace of a comp that was taken away.
 export async function setCompFlag(uid, on, { email = null } = {}) {

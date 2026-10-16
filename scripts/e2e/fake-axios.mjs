@@ -3,6 +3,7 @@
 // the Lemon Squeezy API that server/core/billing.js uses. Lemon Squeezy state is on
 // globalThis.__E2E_LS so tests can create subscriptions, change them as the customer portal
 // would, and read back what checkout and plan switches were asked for.
+// GitHub's API is played from globalThis.__E2E_GITHUB.
 
 const CERT_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 
@@ -33,12 +34,20 @@ function cvJson() {
 }
 
 const axios = {
-  async get(url) {
+  async get(url, { headers = {} } = {}) {
     if (url === CERT_URL) return { data: globalThis.__E2E_CERTS, headers: { 'cache-control': 'max-age=3600' } };
     if (url.startsWith(`${LS_API}/subscriptions/`)) {
       const sub = ls.subs.get(subIdFrom(url));
       if (!sub) throw notFound(url);
       return { data: { data: structuredClone(sub) } };
+    }
+    if (url.startsWith('https://api.github.com/')) {
+      // globalThis.__E2E_GITHUB: access token -> { id, emails: [{ email, verified }] }
+      const token = String(headers.Authorization || '').replace(/^Bearer\s+/, '');
+      const account = globalThis.__E2E_GITHUB?.[token];
+      if (!account) throw Object.assign(new Error('Bad credentials'), { response: { status: 401 } });
+      if (url.endsWith('/user')) return { data: { id: account.id } };
+      if (url.endsWith('/user/emails')) return { data: account.emails };
     }
     throw new Error(`fake axios: unexpected GET ${url}`);
   },
