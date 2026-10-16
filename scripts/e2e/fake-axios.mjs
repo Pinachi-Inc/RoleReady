@@ -9,6 +9,9 @@ const CERT_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@
 
 let calls = 0;
 
+// Every email sent through Brevo, for the feedback tests. Set __E2E_MAIL_FAIL to make Brevo answer 500.
+globalThis.__E2E_MAIL = [];
+
 const LS_API = 'https://api.lemonsqueezy.com/v1';
 const ls = { subs: new Map(), checkouts: [], patches: [] };
 globalThis.__E2E_LS = ls;
@@ -68,6 +71,11 @@ const axios = {
     if (url.endsWith('/chat/completions')) {
       globalThis.__E2E_LAST_MODEL = body?.model;
       return { data: { choices: [{ message: { content: cvJson() }, finish_reason: 'stop' }], usage: {} } };
+    }
+    if (url === 'https://api.brevo.com/v3/smtp/email') {
+      if (globalThis.__E2E_MAIL_FAIL) throw Object.assign(new Error('fake Brevo: 500'), { response: { status: 500 } });
+      globalThis.__E2E_MAIL.push({ body, headers: config?.headers });
+      return { data: { messageId: 'fake@brevo' } };
     }
     throw new Error(`fake axios: unexpected POST ${url}`);
   },

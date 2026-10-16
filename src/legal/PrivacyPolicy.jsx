@@ -87,6 +87,14 @@ const PrivacyPolicy = () => (
       </li>
     </ul>
 
+    <h3>When you contact us</h3>
+    <p>
+      If you send feedback or report a problem, we receive your message, the email address you
+      give us or your account email, any screenshot you attach, the page you were on, basic
+      browser details (browser, language, time zone and screen size) and recent error messages
+      from the app. We use it only to answer you and fix problems.
+    </p>
+
     <h2>How we use it</h2>
     <ul>
       <li>To run the service: build your profile, tailor CVs and cover letters, keep your history and profiles.</li>
@@ -135,6 +143,7 @@ const PrivacyPolicy = () => (
         <tr><td>OpenRouter and the AI model providers it routes to</td><td>Generating CVs, cover letters and profile imports</td><td>Profile content, job postings, imported CV text</td></tr>
         <tr><td>Sapling AI</td><td>AI-writing estimate</td><td>Generated CV text</td></tr>
         <tr><td>Lemon Squeezy (merchant of record) and its payment processors</td><td>Selling the subscription: payment, sales tax / VAT, receipts, refunds</td><td>Email, name, payment details, billing address, subscription</td></tr>
+        <tr><td>Brevo</td><td>Delivering feedback and problem reports to our inbox</td><td>Your message, email address, screenshot and the browser details above</td></tr>
         <tr><td>jsDelivr (CDN)</td><td>Loading the in-browser text reader for scanned PDFs</td><td>IP address and browser details only; your file stays on your device</td></tr>
       </tbody>
     </table>
@@ -162,6 +171,7 @@ const PrivacyPolicy = () => (
       <li><strong>After you ask us to delete your account:</strong> removed within {LEGAL.deletionDays} days, including from backups.</li>
       <li><strong>Uploaded PDF files:</strong> not stored. They are discarded as soon as the import finishes.</li>
       <li><strong>Server logs:</strong> a limited period set by our hosting provider.</li>
+      <li><strong>Feedback and problem reports:</strong> up to 2 years, or sooner if you ask us to delete them.</li>
       <li><strong>Billing records:</strong> as long as tax and accounting law requires, held by Lemon Squeezy and in our records.</li>
     </ul>
 
