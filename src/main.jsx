@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import CVOptimizer from './App.jsx'
 import LegalPage, { LEGAL_PAGES } from '../components/LegalPage.jsx'
 import './index.css'
+import { initMetaPixel } from './metaPixel.js'
+
+initMetaPixel()
 
 // The app has no router. The legal pages are the only other URLs, and Vercel already rewrites
 // every path to index.html, so a pathname check is all they need.
