@@ -106,7 +106,6 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
   // Signed-out form state
   // New visitors land on sign-up; someone who has signed in on this browser before lands on sign-in.
   const [mode, setMode] = useState(() => (readReturning() ? 'signin' : 'signup')); // 'signin' | 'signup'
-  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -159,7 +158,7 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
   const handleEmailSubmit = (e) => {
     e.preventDefault();
     if (mode === 'signup') {
-      runSignIn('email', () => signUpWithEmail(email, password, name));
+      runSignIn('email', () => signUpWithEmail(email, password));
     } else {
       runSignIn('email', () => signInWithEmail(email, password));
     }
@@ -358,20 +357,6 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
       </div>
 
       <form onSubmit={handleEmailSubmit} className="space-y-4">
-        {isSignup && (
-          <div>
-            <label htmlFor="auth-name" className={labelClass}>Your name</label>
-            <input
-              id="auth-name"
-              type="text"
-              autoComplete="name"
-              placeholder="Alex Morgan"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-        )}
         <div>
           <label htmlFor="auth-email" className={labelClass}>Email</label>
           <input
