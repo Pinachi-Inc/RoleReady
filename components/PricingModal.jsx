@@ -13,7 +13,7 @@ import { Check, Clock, Sparkles } from 'lucide-react';
 // Max's limits are shown as "Unlimited" on purpose: the fair-use run cap (MAX_MONTHLY_RUNS)
 // and the 100-profile safety cap live on the server and in firestore.rules, not here.
 
-const PLANS = [
+export const PLANS = [
   {
     key: 'free',
     name: 'Free',
