@@ -84,6 +84,7 @@ app.post('/billing/portal', async (req, res) => (await billingHandlers()).handle
 app.post('/billing/status', async (req, res) => (await billingHandlers()).handleBillingStatus(req, res));
 app.post('/lemonsqueezy-webhook', async (req, res) => (await billingHandlers()).handleBillingWebhook(req, res));
 app.post('/history', async (req, res) => (await import('../server/core/historyHandler.js')).handleHistory(req, res));
+app.post('/auth/github-verify', async (req, res) => (await import('../server/core/githubVerifyHandler.js')).handleGithubVerify(req, res));
 
 // Export the Express app as a Firebase Function
 exports.api = functions.https.onRequest(app);

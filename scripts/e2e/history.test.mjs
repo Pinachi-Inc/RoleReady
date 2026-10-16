@@ -37,16 +37,20 @@ const fs = globalThis.__E2E_FS;
 const ls = globalThis.__E2E_LS;
 
 const b64url = (v) => Buffer.from(typeof v === 'string' ? v : JSON.stringify(v)).toString('base64url');
-function token(uid, email) {
+// Defaults to a Google sign-in with a verified email, like most real users.
+function token(uid, email, { verified = true, provider = 'google.com' } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const head = b64url({ alg: 'RS256', kid: 'k1', typ: 'JWT' });
-  const body = b64url({ sub: uid, email, aud: PROJECT, iss: `https://securetoken.google.com/${PROJECT}`, iat: now, exp: now + 3600 });
+  const body = b64url({
+    sub: uid, email, email_verified: verified, firebase: { sign_in_provider: provider },
+    aud: PROJECT, iss: `https://securetoken.google.com/${PROJECT}`, iat: now, exp: now + 3600,
+  });
   const sig = crypto.createSign('RSA-SHA256').update(`${head}.${body}`).sign(privateKey).toString('base64url');
   return `${head}.${body}.${sig}`;
 }
 
-async function call(handler, uid, body = {}, { auth = true } = {}) {
-  const req = { headers: auth ? { authorization: `Bearer ${token(uid, `${uid}@example.com`)}` } : {}, body };
+async function call(handler, uid, body = {}, { auth = true, email = `${uid}@example.com`, verified, provider } = {}) {
+  const req = { headers: auth ? { authorization: `Bearer ${token(uid, email, { verified, provider })}` } : {}, body };
   const res = {
     statusCode: 200,
     body: undefined,
@@ -656,6 +660,86 @@ await check('enforced: comped accounts hit the same fair-use cap as Max', async 
     delete process.env.MAX_MONTHLY_RUNS;
     delete process.env.COMP_MAX_EMAILS;
   }
+});
+
+out('\nunverified emails');
+
+await check('password account with an unverified email is refused with 403', async () => {
+  const res = await call(handleHistory, 'unverified1', {}, { verified: false, provider: 'password' });
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.code, 'email_unverified');
+  const run = await call(handleOptimizeRequest, 'unverified1', { jobDescription: 'Platform role', aiUserInfo: '{"experienceSource":[]}' }, { verified: false, provider: 'password' });
+  assert.equal(run.statusCode, 403);
+});
+
+await check('password account works once its email is verified', async () => {
+  const res = await call(handleHistory, 'verified1', {}, { verified: true, provider: 'password' });
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+});
+
+await check('unverified email does not inherit a comp granted to that address', async () => {
+  process.env.COMP_MAX_EMAILS = 'vip@example.com';
+  try {
+    // Someone else's GitHub account claiming the comped address, not verified.
+    const squatter = await call(handleBillingStatus, 'squatter', {}, { email: 'vip@example.com', verified: false, provider: 'github.com' });
+    assert.equal(squatter.statusCode, 200, JSON.stringify(squatter.body));
+    assert.equal(squatter.body.plan, 'free');
+    // The real owner, verified, still gets Max.
+    const owner = await call(handleBillingStatus, 'vip', {}, { email: 'vip@example.com' });
+    assert.equal(owner.body.plan, 'max');
+  } finally {
+    delete process.env.COMP_MAX_EMAILS;
+  }
+});
+
+out('\nGitHub email check');
+
+const { handleGithubVerify } = await import('../../server/core/githubVerifyHandler.js');
+const authRecords = globalThis.__E2E_AUTH_RECORDS;
+globalThis.__E2E_GITHUB = {
+  gho_owner: { id: 101, emails: [{ email: 'Gh@Example.com', verified: true }] },
+  gho_unverified: { id: 202, emails: [{ email: 'ghu@example.com', verified: false }] },
+  gho_stranger: { id: 999, emails: [{ email: 'gh@example.com', verified: true }] },
+};
+const githubUser = (uid, email, githubId) => authRecords.set(uid, {
+  uid, email, emailVerified: false, providerData: [{ providerId: 'github.com', uid: String(githubId) }],
+});
+const ghVerify = (uid, email, accessToken) => call(handleGithubVerify, uid, { accessToken }, { email, verified: false, provider: 'github.com' });
+
+await check('GitHub-verified email is marked verified in Firebase', async () => {
+  githubUser('gh', 'gh@example.com', 101);
+  const res = await ghVerify('gh', 'gh@example.com', 'gho_owner');
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.verified, true);
+  assert.equal(authRecords.get('gh').emailVerified, true);
+});
+
+await check('address GitHub has not verified stays unverified', async () => {
+  githubUser('ghu', 'ghu@example.com', 202);
+  const res = await ghVerify('ghu', 'ghu@example.com', 'gho_unverified');
+  assert.equal(res.body.verified, false);
+  assert.equal(authRecords.get('ghu').emailVerified, false);
+});
+
+await check('a token from a different GitHub account is refused', async () => {
+  githubUser('gh2', 'gh@example.com', 101);
+  const res = await ghVerify('gh2', 'gh@example.com', 'gho_stranger');
+  assert.equal(res.statusCode, 403);
+  assert.equal(authRecords.get('gh2').emailVerified, false);
+});
+
+await check('bad GitHub token and missing token are refused', async () => {
+  githubUser('gh3', 'gh3@example.com', 303);
+  assert.equal((await ghVerify('gh3', 'gh3@example.com', 'gho_nope')).statusCode, 401);
+  assert.equal((await ghVerify('gh3', 'gh3@example.com', '')).statusCode, 400);
+  assert.equal(authRecords.get('gh3').emailVerified, false);
+});
+
+await check('account without GitHub linked is refused', async () => {
+  authRecords.set('pw', { uid: 'pw', email: 'pw@example.com', emailVerified: false, providerData: [{ providerId: 'password', uid: 'pw@example.com' }] });
+  const res = await call(handleGithubVerify, 'pw', { accessToken: 'gho_owner' }, { email: 'pw@example.com', verified: false, provider: 'google.com' });
+  assert.equal(res.statusCode, 400);
+  assert.equal(authRecords.get('pw').emailVerified, false);
 });
 
 out(`\n${passed} passed, ${failures.length} failed`);
