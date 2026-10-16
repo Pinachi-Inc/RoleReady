@@ -26,6 +26,7 @@ import { processPdf, processPdfText } from '../services/pdf.js';
 import { onAuthStateChange, onIdTokenChange, saveUserData, getUserData, needsEmailVerification } from '../services/auth.js';
 import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
 import Auth from './Auth.jsx';
+import { recordAppError, openFeedback } from '../services/feedback.js';
 import VerifyEmail from './VerifyEmail.jsx';
 
 // Repairs role ids on a raw aiUserInfo JSON string. The dedupe inside formDataToJson
@@ -725,6 +726,7 @@ const CVOptimizer = () => {
       console.log('✅ PDF processed successfully');
     } catch (error) {
       console.error('PDF processing error:', error);
+      recordAppError(`PDF import: ${error.message}`);
       setPdfError(error.message || 'Failed to process PDF');
     } finally {
       setIsProcessingPdf(false);
@@ -1089,6 +1091,7 @@ const CVOptimizer = () => {
         setShowPaywall(true);
         return;
       }
+      recordAppError(`Optimize: ${error.message}`);
       if (error.message.includes('500')) {
         alert('Server error occurred. The OpenAI API may be temporarily unavailable. Please try again in a few moments.');
       } else if (error.message.includes('400')) {
@@ -1370,6 +1373,13 @@ const CVOptimizer = () => {
                     <div className="mt-3 flex items-start gap-2 text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 rounded-lg p-2.5">
                       <AlertCircle className="h-4 w-4 mt-px shrink-0" />
                       <span>{pdfError}</span>
+                      <button
+                        type="button"
+                        onClick={() => openFeedback({ type: 'bug', message: `Importing my CV failed: ${pdfError}` })}
+                        className="ml-auto shrink-0 underline hover:no-underline"
+                      >
+                        Report this problem
+                      </button>
                     </div>
                   )}
                 </div>
