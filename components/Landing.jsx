@@ -163,10 +163,18 @@ const Pricing = () => (
 );
 
 const Landing = ({ signIn }) => (
-  <div className="min-h-screen overflow-x-hidden" style={{ backgroundColor: '#FBF7F8' }}>
+  <div className="font-brand min-h-screen overflow-x-hidden" style={{ backgroundColor: '#FBF7F8' }}>
     <section className="px-4 pt-6 pb-10 sm:px-6 md:pt-12 md:pb-16" style={{ backgroundColor: INK }}>
       <div className="mx-auto max-w-5xl">
-        <Wordmark className="h-8 w-auto" />
+        <div className="flex items-center justify-between gap-4">
+          <Wordmark className="h-8 w-auto md:h-9" />
+          <a
+            href="#signin"
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-white/90 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/30"
+          >
+            Sign in
+          </a>
+        </div>
         <div className="mt-6 grid items-center gap-8 md:mt-10 md:grid-cols-2 md:gap-12">
           <div className="text-center md:text-left">
             <h1 className="text-4xl font-bold leading-tight text-white md:text-5xl">20 jobs. 20 CVs. Same&nbsp;you.</h1>
@@ -176,7 +184,7 @@ const Landing = ({ signIn }) => (
             <p className="mt-2 text-sm text-gray-400">Free for your first 5 runs. No card needed.</p>
             <div className="mt-8 hidden md:block"><CardStack /></div>
           </div>
-          <div className="mx-auto w-full max-w-md rounded-xl border border-white/10 bg-gray-800 p-5 shadow-2xl sm:p-6">
+          <div id="signin" className="mx-auto w-full max-w-md scroll-mt-6 rounded-2xl bg-white p-6 shadow-2xl shadow-black/30 ring-1 ring-black/5 sm:p-8">
             {signIn}
           </div>
           <div className="md:hidden"><CardStack /></div>

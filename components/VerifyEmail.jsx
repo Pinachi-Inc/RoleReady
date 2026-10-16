@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { MailCheck } from 'lucide-react';
+import { MailCheck, Loader2 } from 'lucide-react';
 import { resendVerification, refreshEmailVerified, signOutUser, friendlyAuthError } from '../services/auth.js';
+import { authButtonClasses, ErrorBox, NoticeBox } from './Auth.jsx';
 
 // Shown instead of the app to a password account whose email is not verified yet.
 const VerifyEmail = ({ user, onVerified, onSignedOut }) => {
@@ -40,10 +41,12 @@ const VerifyEmail = ({ user, onVerified, onSignedOut }) => {
 
   return (
     <div className="text-center">
-      <MailCheck className="h-10 w-10 text-blue-400 mx-auto mb-4" />
-      <h2 className="text-2xl font-semibold text-white mb-2">Check your inbox</h2>
-      <p className="text-gray-400 mb-6">
-        We sent a verification link to <span className="text-gray-200 break-all">{user.email}</span>.
+      <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-berry-soft">
+        <MailCheck className="h-6 w-6 text-berry" aria-hidden="true" />
+      </div>
+      <h2 className="mb-2 text-2xl font-bold tracking-tight text-ink">Check your inbox</h2>
+      <p className="mb-6 text-ink-muted">
+        We sent a verification link to <span className="break-all font-semibold text-ink">{user.email}</span>.
         Click it to finish setting up your account.
       </p>
       <div className="space-y-3">
@@ -51,15 +54,22 @@ const VerifyEmail = ({ user, onVerified, onSignedOut }) => {
           type="button"
           onClick={handleCheck}
           disabled={!!busy}
-          className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          className={authButtonClasses.primary}
         >
-          {busy === 'check' ? 'Checking…' : "I've verified"}
+          {busy === 'check' ? (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              <span>Checking…</span>
+            </>
+          ) : (
+            <span>I've verified</span>
+          )}
         </button>
         <button
           type="button"
           onClick={handleResend}
           disabled={!!busy}
-          className="w-full px-6 py-3 bg-gray-700 hover:bg-gray-600 text-gray-100 font-medium rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          className={authButtonClasses.secondary}
         >
           {busy === 'resend' ? 'Sending…' : 'Resend email'}
         </button>
@@ -67,13 +77,13 @@ const VerifyEmail = ({ user, onVerified, onSignedOut }) => {
           type="button"
           onClick={handleSignOut}
           disabled={!!busy}
-          className="text-sm text-gray-400 hover:text-gray-200 underline disabled:opacity-60"
+          className="rounded text-sm font-semibold text-ink-muted hover:text-ink hover:underline disabled:opacity-60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-berry/20"
         >
           Sign out
         </button>
       </div>
-      {error && <p className="mt-4 text-sm text-red-400" role="alert">{error}</p>}
-      {notice && <p className="mt-4 text-sm text-green-400" role="status">{notice}</p>}
+      {error && <ErrorBox>{error}</ErrorBox>}
+      {notice && <NoticeBox>{notice}</NoticeBox>}
     </div>
   );
 };
