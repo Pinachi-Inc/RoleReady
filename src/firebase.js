@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, GithubAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -40,5 +40,9 @@ export const db = getFirestore(app);
 
 // Google Auth Provider
 export const googleProvider = new GoogleAuthProvider();
+
+// GitHub Auth Provider. user:email lets Firebase read a private primary address.
+export const githubProvider = new GithubAuthProvider();
+githubProvider.addScope('user:email');
 
 export default app;

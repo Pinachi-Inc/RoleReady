@@ -1,5 +1,6 @@
 // Just enough of the Admin SDK's Firestore and Auth for server/core, held in memory. The store
-// is globalThis.__E2E_FS (path -> data) and the Auth users globalThis.__E2E_AUTH (email -> uid),
+// is globalThis.__E2E_FS (path -> data), the Auth users globalThis.__E2E_AUTH (email -> uid) and
+// full Auth records globalThis.__E2E_AUTH_RECORDS (uid -> record),
 // so tests can seed and inspect both.
 
 const store = new Map();
@@ -7,6 +8,10 @@ globalThis.__E2E_FS = store;
 
 const authUsers = new Map();
 globalThis.__E2E_AUTH = authUsers;
+
+// Full Auth records by uid, for handlers that read or update one (getUser / updateUser).
+const authRecords = new Map();
+globalThis.__E2E_AUTH_RECORDS = authRecords;
 
 const SERVER_TIMESTAMP = Symbol('serverTimestamp');
 const DELETE_FIELD = Symbol('deleteField');
@@ -104,6 +109,17 @@ const auth = () => ({
     const uid = authUsers.get(String(email).toLowerCase());
     if (!uid) throw Object.assign(new Error('no user record'), { code: 'auth/user-not-found' });
     return { uid, email };
+  },
+  async getUser(uid) {
+    const record = authRecords.get(uid);
+    if (!record) throw Object.assign(new Error('no user record'), { code: 'auth/user-not-found' });
+    return clone(record);
+  },
+  async updateUser(uid, patch) {
+    const record = authRecords.get(uid);
+    if (!record) throw Object.assign(new Error('no user record'), { code: 'auth/user-not-found' });
+    authRecords.set(uid, { ...record, ...patch });
+    return clone(authRecords.get(uid));
   },
 });
 
