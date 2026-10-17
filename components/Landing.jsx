@@ -109,7 +109,7 @@ const CardStack = () => {
           );
         })}
       </div>
-      <p className="mt-3 text-center text-xs text-white/60">
+      <p className="mt-8 text-center text-xs text-white/60">
         Example CV, fictional person. Same experience, reworded for each job.
       </p>
     </div>
