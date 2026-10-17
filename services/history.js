@@ -1,0 +1,26 @@
+import { getAuthHeaders } from './auth.js';
+
+async function postHistory(body) {
+  const response = await fetch('/api/history', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
+    body: JSON.stringify(body)
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || `History request failed: ${response.status}`);
+    error.status = response.status;
+    error.code = data.code || null;
+    throw error;
+  }
+  return data;
+}
+
+// { runs: [{ id, createdAt, companyName, jobTitle, profileName, hasCoverLetter }],
+//   visibleLimit, lockedCount, lockedRuns: [{ createdAt }] }
+// Paid: visibleLimit null, nothing locked. Free: the newest runs in full, older ones as stubs.
+export const listHistory = () => postHistory({});
+
+// { id, createdAt, companyName, jobTitle, profileName, cv, cvContent, coverLetter }
+export const getHistoryRun = async (id) => (await postHistory({ id })).run;
