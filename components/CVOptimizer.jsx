@@ -1124,19 +1124,14 @@ const CVOptimizer = () => {
   // tokens until then, so nothing behind this would work anyway.
   if (awaitingVerification) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-6">
-        <div className="max-w-md w-full">
-          <div className="flex items-center justify-center gap-3 mb-8">
-            <Target className="h-12 w-12 text-blue-400" />
-            <h1 className="text-4xl font-bold text-white">RoleBerry</h1>
-          </div>
-          <div className="bg-gray-800 rounded-xl shadow-2xl p-8 border border-gray-700">
-            <VerifyEmail
-              user={user}
-              onVerified={() => setAuthTick((n) => n + 1)}
-              onSignedOut={() => setUser(null)}
-            />
-          </div>
+      <div className="font-brand min-h-screen flex flex-col items-center justify-center px-4 py-10" style={{ backgroundColor: '#24131C' }}>
+        <img src="/roleberry-logo-dark.svg" alt="Roleberry" className="h-9 w-auto mb-8" />
+        <div className="mx-auto w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl shadow-black/30 ring-1 ring-black/5 sm:p-8">
+          <VerifyEmail
+            user={user}
+            onVerified={() => setAuthTick((n) => n + 1)}
+            onSignedOut={() => setUser(null)}
+          />
         </div>
       </div>
     );
@@ -1740,11 +1735,11 @@ const CVOptimizer = () => {
         signIn={
           <>
             <Auth user={user} onAuthChange={setUser} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
-            <p className="mt-4 text-center text-xs text-gray-500">
+            <p className="mt-6 border-t border-line pt-4 text-center text-xs leading-relaxed text-ink-muted">
               By continuing you agree to the{' '}
-              <a href="/terms" className="underline hover:text-gray-300">Terms of Service</a>
+              <a href="/terms" className="font-medium text-ink underline underline-offset-2 hover:text-berry">Terms of Service</a>
               {' '}and acknowledge the{' '}
-              <a href="/privacy" className="underline hover:text-gray-300">Privacy Policy</a>.
+              <a href="/privacy" className="font-medium text-ink underline underline-offset-2 hover:text-berry">Privacy Policy</a>.
             </p>
           </>
         }
