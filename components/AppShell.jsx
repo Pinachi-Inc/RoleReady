@@ -42,7 +42,7 @@ export function TopBar({ page, onNavigate, onTips, profileSwitcher, account }) {
   );
 }
 
-export function PlanStrip({ billing, billingNotice, billingBusy, onUpgrade, onPlans, onManage }) {
+export function PlanStrip({ billing, billingNotice, onUpgrade, onPlans }) {
   if (!billing) return null;
 
   const planName = billing.plan === 'paid'
@@ -68,9 +68,6 @@ export function PlanStrip({ billing, billingNotice, billingBusy, onUpgrade, onPl
     ? ` · ends ${new Date(billing.renewsAt).toLocaleDateString()}`
     : '';
 
-  const showManage = (billing.plan === 'paid' || billing.plan === 'max') && billing.hasCustomer
-    && (!billing.comped || (billing.billingPlan && billing.billingPlan !== 'free'));
-
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-blush px-4 sm:px-6 py-2 text-[13px] text-ink-muted dark:bg-night-surface dark:border-night-line dark:text-night-muted">
       <span className="font-bold text-ink dark:text-night-text">{planName}</span>
@@ -95,16 +92,6 @@ export function PlanStrip({ billing, billingNotice, billingBusy, onUpgrade, onPl
       {(billing.plan === 'paid' || billing.plan === 'max') && (
         <button type="button" onClick={onPlans} className="font-semibold text-berry hover:text-berry-dark">
           Plans
-        </button>
-      )}
-      {showManage && (
-        <button
-          type="button"
-          onClick={onManage}
-          disabled={billingBusy}
-          className="font-semibold text-ink-muted hover:text-ink disabled:opacity-50"
-        >
-          Manage subscription
         </button>
       )}
     </div>

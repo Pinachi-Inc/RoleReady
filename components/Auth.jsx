@@ -8,7 +8,7 @@ import {
   signOutUser,
   friendlyAuthError,
 } from '../services/auth.js';
-import { Moon, FolderOpen, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Moon, CreditCard, FolderOpen, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { isFolderApiSupported, getStoredFolderName, pickNewFolder } from '../services/folderManager.js';
 
 const RETURNING_KEY = 'rb_returning';
@@ -54,7 +54,7 @@ export const NoticeBox = ({ children }) => (
   </div>
 );
 
-const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, onToggleFolderMgmt, initialMode, onModeChange }) => {
+const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, onToggleFolderMgmt, initialMode, onModeChange, onManageSubscription, manageBusy }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [folderName, setFolderName] = useState(null);
 
@@ -283,6 +283,17 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
                     <div className="px-4 pb-2 text-xs text-danger-text">{folderError}</div>
                   )}
                 </>
+              )}
+              {onManageSubscription && (
+                <button
+                  type="button"
+                  onClick={() => { setShowDropdown(false); onManageSubscription(); }}
+                  disabled={manageBusy}
+                  className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-ink hover:bg-blush border-t border-line disabled:opacity-50"
+                >
+                  <CreditCard className="h-4 w-4 text-ink-muted" />
+                  Manage subscription
+                </button>
               )}
               <button
                 onClick={handleSignOut}
