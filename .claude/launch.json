@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "roleberry",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start"],
+      "port": 5173
+    },
+    {
+      "name": "roleberry-build",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "preview", "--port", "4173", "--strictPort"],
+      "port": 4173
+    }
+  ]
+}

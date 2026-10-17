@@ -2,8 +2,19 @@ export const validateAndFixSkills = (coreSkills, { minCategories = 6, maxCategor
   const categories = Array.isArray(coreSkills) ? coreSkills : [];
   const fixed = [];
 
+  // Truncation used to happen silently, which made the `> maxItems` and
+  // `> maxCategories` checks downstream unreachable and lost skills without a
+  // trace. Count what gets dropped so the caller can report it.
+  const dropped = { items: 0, categories: 0, itemsByCategory: [] };
+
   for (const cat of categories) {
     if (!cat?.category || !Array.isArray(cat.items)) continue;
+
+    if (fixed.length >= maxCategories) {
+      dropped.categories++;
+      continue;
+    }
+
     const unique = [];
     const seen = new Set();
     for (const item of cat.items) {
@@ -15,26 +26,25 @@ export const validateAndFixSkills = (coreSkills, { minCategories = 6, maxCategor
       unique.push({ skill, source: item.source === 'jd' ? 'jd' : 'base', jdLiteral: item.jdLiteral || null });
     }
     if (unique.length === 0) continue;
-    // Clamp item count
+
+    // Clamp item count (nothing can be synthesized to reach minItems)
     const clampedItems = unique.slice(0, maxItems);
-    while (clampedItems.length < minItems) {
-      break; // can't synthesize
+    const lost = unique.length - clampedItems.length;
+    if (lost > 0) {
+      dropped.items += lost;
+      dropped.itemsByCategory.push(`${cat.category}:${lost}`);
     }
+
     fixed.push({ category: cat.category, items: clampedItems });
-    if (fixed.length >= maxCategories) break;
   }
 
-  // Ensure category count
-  while (fixed.length < minCategories) {
-    break; // can't synthesize
-  }
-
-  // Compute JD share
+  // Compute JD share. NOTE: `source` is the model's own label for its output —
+  // this is not verified against the job description text anywhere.
   const allItems = fixed.flatMap((c) => c.items);
   const jdCount = allItems.filter((it) => it.source === 'jd').length;
   const share = allItems.length ? jdCount / allItems.length : 0;
 
-  return { coreSkills: fixed, jdShare: share };
+  return { coreSkills: fixed, jdShare: share, dropped };
 };
 
 export const reorderSkills = (coreSkills) => {
