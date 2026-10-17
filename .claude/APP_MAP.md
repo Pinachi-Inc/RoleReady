@@ -112,7 +112,7 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 | `vercel.json` | build -> `dist`, `maxDuration` 300s/1536MB for optimize, 30s/512MB for detect-ai, SPA rewrite. **`api/process-pdf.js` has no function config** (default 10s/1024MB). |
 | `firebase.json` | hosting from `dist`, `/api/**` -> `api` function, node18 |
 | `scripts/e2e/` | `npm run test:e2e`. Runs the real optimize/history/billing handlers against an in-memory Firestore, locally signed Firebase tokens, a stubbed model and a stubbed Lemon Squeezy API (both inside `fake-axios.mjs`), via a module hook (`register.mjs` / `loader.mjs`) that swaps `firebase-admin` and `axios` for fakes inside `server/`. |
-| `scripts/patch-pdfjs.cjs` | postinstall + vercel-build: rewrites pdfjs worker path to `__dirname`-based so it works in serverless |
+| `scripts/patch-pdfjs.cjs` | postinstall: rewrites pdfjs worker path to `__dirname`-based so it works in serverless |
 | `scripts/setup-vercel-env.js` | pushes `.env` into Vercel env |
 | `docker-compose.yml` / `Dockerfile.dev` | node:20 dev container running `npm start` |
 | `eng.traineddata` (5MB) | Tesseract English data. Leftover from the disabled OCR path. |
