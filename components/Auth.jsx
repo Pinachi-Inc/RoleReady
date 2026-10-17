@@ -220,7 +220,7 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
               className="fixed inset-0 z-10"
               onClick={() => setShowDropdown(false)}
             ></div>
-            <div className="absolute right-0 top-11 z-20 w-64 rounded-xl border border-line bg-white py-2 text-ink shadow-xl">
+            <div className="absolute right-0 top-11 z-20 w-72 rounded-xl border border-line bg-white py-2 text-ink shadow-xl">
               <div className="px-4 py-2 border-b border-line">
                 <p className="text-sm font-semibold">{user.displayName || user.email}</p>
                 <p className="text-xs text-ink-muted">{user.email}</p>
@@ -267,7 +267,7 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
                         type="text"
                         readOnly
                         value={folderName || 'No folder selected'}
-                        className="flex-1 text-xs bg-blush border-line text-ink-muted rounded px-2 py-1 border truncate"
+                        className="min-w-0 flex-1 text-xs bg-blush border-line text-ink-muted rounded px-2 py-1 border truncate"
                         title={folderName || 'No folder selected'}
                       />
                       <button
@@ -288,7 +288,7 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
                 onClick={handleSignOut}
                 className="w-full text-left px-4 py-2 text-sm hover:bg-blush transition-colors border-t border-line"
               >
-                Sign Out
+                Sign out
               </button>
             </div>
           </>

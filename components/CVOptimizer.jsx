@@ -1385,7 +1385,7 @@ const CVOptimizer = () => {
           </aside>
 
           {/* Canvas */}
-          <div className="flex-1 min-w-0 max-w-[1080px] px-4 sm:px-10 py-8 space-y-8">
+          <div className="flex-1 min-w-0 max-w-[1080px] px-4 sm:px-10 pt-8 pb-24 space-y-8">
             <div>
               <h1 className="text-[28px] font-extrabold tracking-tight">Your info</h1>
               <p className="mt-1.5 text-[14.5px] text-ink-muted dark:text-night-muted">
@@ -1817,7 +1817,7 @@ const CVOptimizer = () => {
         )}
 
         {/* Left column: job posting */}
-        <section aria-label="Job posting" className={`flex flex-col gap-3.5 p-4 sm:p-6 lg:border-r border-line dark:border-night-line dark:bg-night-surface ${jdCollapsed ? 'lg:hidden' : ''}`}>
+        <section aria-label="Job posting" className={`flex flex-col gap-3.5 p-4 sm:p-6 pb-20 lg:border-r border-line dark:border-night-line dark:bg-night-surface ${jdCollapsed ? 'lg:hidden' : ''}`}>
           <div className="flex items-baseline gap-2.5 flex-wrap">
             <label htmlFor="jd-input" className="text-[17px] font-extrabold tracking-tight">Job posting</label>
             <span className="text-[13px] text-ink-muted dark:text-night-muted">Paste the whole thing, requirements included</span>
@@ -1891,7 +1891,7 @@ const CVOptimizer = () => {
         </section>
 
         {/* Right column: result */}
-        <section aria-label="Result" className="flex flex-col gap-3.5 p-4 sm:p-6 bg-paper dark:bg-night">
+        <section aria-label="Result" className="flex flex-col gap-3.5 p-4 sm:p-6 pb-20 bg-paper dark:bg-night">
           <div className="flex flex-wrap items-center gap-2.5">
             {coverLetter ? (
               <div role="tablist" aria-label="Document" className="inline-flex p-[3px] rounded-[10px] bg-[#EADDE2] dark:bg-night-raised">
@@ -1925,7 +1925,7 @@ const CVOptimizer = () => {
             })()}
             <div className="flex-1" />
             {folderMgmtEnabled && (optimizedCv || structuredCv) && (
-              <label className="inline-flex items-center gap-1.5 h-[34px] px-2.5 rounded-[9px] border border-line bg-white text-ink-muted dark:bg-night-raised dark:border-night-line">
+              <label className="inline-flex items-center gap-1.5 h-[34px] px-2.5 rounded-[9px] border border-line bg-white text-ink-muted dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface">
                 <FolderOpen className="h-4 w-4" />
                 <input
                   type="text"
@@ -1947,7 +1947,7 @@ const CVOptimizer = () => {
                 className={`inline-flex items-center gap-1.5 h-[34px] px-3 rounded-[9px] border text-[13px] font-semibold ${
                   letterCopied
                     ? 'bg-leaf-soft text-leaf-text border-[#CFE7D8]'
-                    : 'border-line bg-white text-ink hover:bg-blush'
+                    : 'border-line bg-white text-ink hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface'
                 }`}
                 aria-live="polite"
               >
@@ -2001,7 +2001,7 @@ const CVOptimizer = () => {
                   className={`h-12 rounded-xl border font-bold inline-flex items-center justify-center gap-2 ${
                     needsFix
                       ? 'border-warn-line bg-warn-bg text-warn-text'
-                      : 'border-line bg-white text-ink hover:bg-blush'
+                      : 'border-line bg-white text-ink hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface'
                   }`}
                   aria-label={needsFix ? 'View Analysis (issues detected)' : 'View Analysis'}
                   title={needsFix ? 'Issues detected: open analysis' : 'View analysis'}

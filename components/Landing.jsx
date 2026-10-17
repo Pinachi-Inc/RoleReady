@@ -82,7 +82,7 @@ const CardStack = () => {
           </button>
         ))}
       </div>
-      <div className="relative mx-auto mt-4 h-[400px] w-full max-w-[340px]">
+      <div className="relative mx-auto mt-4 h-[430px] w-full max-w-[280px] sm:h-[400px] sm:max-w-[340px]">
         {EXAMPLES.map((ex, i) => {
           const pos = (i - front + 3) % 3;
           return (
@@ -109,7 +109,7 @@ const CardStack = () => {
           );
         })}
       </div>
-      <p className="mt-8 text-center text-xs text-white/60">
+      <p className="mt-12 text-center text-xs text-white/60">
         Example CV, fictional person. Same experience, reworded for each job.
       </p>
     </div>
