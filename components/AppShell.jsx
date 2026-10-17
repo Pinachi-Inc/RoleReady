@@ -1,7 +1,7 @@
 import React from 'react';
 import { Zap, Clock, UserRound, Lightbulb, Sparkles } from 'lucide-react';
 
-const NAV_BASE = 'inline-flex items-center gap-[7px] h-9 px-3 rounded-[10px] text-[13.5px] font-semibold whitespace-nowrap focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25';
+const NAV_BASE = 'flex flex-col justify-center sm:flex-row sm:inline-flex items-center gap-1 sm:gap-[7px] h-14 sm:h-9 px-1 sm:px-3 rounded-[10px] text-[12px] sm:text-[13.5px] font-semibold whitespace-nowrap focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25';
 const NAV_ACTIVE = 'bg-white/10 text-white';
 const NAV_IDLE = 'text-white/80 hover:bg-white/10 hover:text-white';
 
@@ -14,7 +14,7 @@ export function TopBar({ page, onNavigate, onTips, profileSwitcher, account }) {
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-ink px-4 sm:px-6 py-2.5">
       <img src="/roleberry-logo-dark.svg" alt="Roleberry" className="h-[26px] w-auto mr-2 sm:mr-4" />
-      <nav aria-label="App" className="flex flex-wrap gap-0.5">
+      <nav aria-label="App" className="order-last w-full grid grid-cols-4 gap-1 sm:order-none sm:w-auto sm:flex sm:flex-row sm:flex-wrap sm:gap-0.5">
         {items.map(({ id, label, Icon }) => {
           const active = page === id;
           return (

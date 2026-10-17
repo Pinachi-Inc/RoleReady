@@ -245,10 +245,10 @@ const FeedbackWidget = () => {
           onClick={() => setOpen(true)}
           title="Report a problem or share feedback"
           aria-label="Report a problem or share feedback"
-          className="fixed bottom-4 right-4 z-40 inline-flex items-center gap-2 h-[38px] px-3.5 rounded-full border border-line bg-white text-[13px] font-semibold text-ink shadow-[0_6px_18px_rgba(36,19,28,0.14)] hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text print:hidden"
+          className="fixed bottom-4 right-4 z-40 inline-flex items-center justify-center gap-2 h-11 w-11 px-0 sm:h-[38px] sm:w-auto sm:px-3.5 rounded-full border border-line bg-white text-[13px] font-semibold text-ink shadow-[0_6px_18px_rgba(36,19,28,0.14)] hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text print:hidden"
         >
           <MessageSquare className="h-4 w-4" />
-          Feedback
+          <span className="hidden sm:inline">Feedback</span>
         </button>
       )}
 
