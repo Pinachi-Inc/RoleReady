@@ -8,7 +8,7 @@ import {
   signOutUser,
   friendlyAuthError,
 } from '../services/auth.js';
-import { Sun, Moon, FolderOpen, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Moon, CreditCard, FolderOpen, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { isFolderApiSupported, getStoredFolderName, pickNewFolder } from '../services/folderManager.js';
 
 const RETURNING_KEY = 'rb_returning';
@@ -54,7 +54,7 @@ export const NoticeBox = ({ children }) => (
   </div>
 );
 
-const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, onToggleFolderMgmt }) => {
+const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, onToggleFolderMgmt, initialMode, onModeChange, onManageSubscription, manageBusy }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [folderName, setFolderName] = useState(null);
 
@@ -105,7 +105,7 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
 
   // Signed-out form state
   // New visitors land on sign-up; someone who has signed in on this browser before lands on sign-in.
-  const [mode, setMode] = useState(() => (readReturning() ? 'signin' : 'signup')); // 'signin' | 'signup'
+  const [mode, setMode] = useState(() => initialMode || (readReturning() ? 'signin' : 'signup')); // 'signin' | 'signup'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -113,21 +113,6 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
   const [authError, setAuthError] = useState('');
   const [authNotice, setAuthNotice] = useState('');
   const emailRef = useRef(null);
-
-  // The landing page's "Sign in" link points at #signin: switch to sign-in and put the cursor in Email.
-  useEffect(() => {
-    if (user) return undefined;
-    const openSignIn = () => {
-      if (window.location.hash !== '#signin') return;
-      setMode('signin');
-      setAuthError('');
-      setAuthNotice('');
-      requestAnimationFrame(() => emailRef.current?.focus());
-    };
-    openSignIn();
-    window.addEventListener('hashchange', openSignIn);
-    return () => window.removeEventListener('hashchange', openSignIn);
-  }, [user]);
 
   const showError = (error) => {
     console.warn('[auth] sign-in failed: %s', error?.code || error?.message);
@@ -188,7 +173,13 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
   };
 
   const switchMode = () => {
-    setMode((m) => (m === 'signin' ? 'signup' : 'signin'));
+    const next = mode === 'signin' ? 'signup' : 'signin';
+    setMode(next);
+    onModeChange?.(next);
+    // On the dedicated pages, keep the address bar in step with the form.
+    if (['/login', '/signup'].includes(window.location.pathname.replace(/\/+$/, ''))) {
+      window.history.replaceState(null, '', next === 'signup' ? '/signup' : '/login');
+    }
     setAuthError('');
     setAuthNotice('');
   };
@@ -204,44 +195,60 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
   };
 
   if (user) {
+    const nameWords = String(user.displayName || '').trim().split(/\s+/).filter(Boolean);
+    const initials = (nameWords.length
+      ? nameWords.slice(0, 2).map((w) => w[0]).join('')
+      : String(user.email || 'U')[0]).toUpperCase();
     return (
       <div className="relative flex items-center gap-3">
         <button
-          onClick={onToggleTheme}
-          className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-white/30 text-white/80 hover:text-white hover:border-white/60 transition-colors"
-          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
-        <button
+          type="button"
           onClick={() => setShowDropdown(!showDropdown)}
-          className="w-10 h-10 rounded-full border-2 border-white/20 hover:border-white/40 transition-colors focus:outline-none focus:border-white/60"
+          className="h-9 w-9 rounded-full overflow-hidden ring-2 ring-white/15 hover:ring-white/40 focus-visible:outline-none focus-visible:ring-white/60"
+          aria-label="Account menu"
         >
-          <img 
-            src={user.photoURL || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.displayName || user.email || 'User') + '&background=0D8ABC&color=ffffff&size=128'}
-            alt={user.displayName || user.email || 'User'}
-            className="w-full h-full rounded-full object-cover"
-          />
+          {user.photoURL ? (
+            <img src={user.photoURL} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="grid h-full w-full place-items-center bg-berry text-[13px] font-bold text-white">{initials}</span>
+          )}
         </button>
-        
+
         {showDropdown && (
           <>
-            <div 
-              className="fixed inset-0 z-10" 
+            <div
+              className="fixed inset-0 z-10"
               onClick={() => setShowDropdown(false)}
             ></div>
-            <div className="absolute top-12 right-0 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-2 min-w-48">
-              <div className="px-4 py-2 border-b border-gray-100">
-                <p className="font-medium text-gray-900 text-sm">{user.displayName || user.email}</p>
-                <p className="text-xs text-gray-600">{user.email}</p>
+            <div className="absolute right-0 top-11 z-20 w-72 rounded-xl border border-line bg-white py-2 text-ink shadow-xl">
+              <div className="px-4 py-2 border-b border-line">
+                <p className="text-sm font-semibold">{user.displayName || user.email}</p>
+                <p className="text-xs text-ink-muted">{user.email}</p>
               </div>
+              {onToggleTheme && (
+                <div className="px-4 py-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Moon className="h-4 w-4 text-ink-muted" />
+                    <span className="text-sm">Dark mode</span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(isDark)}
+                    aria-label="Dark mode"
+                    onClick={onToggleTheme}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${isDark ? 'bg-berry' : 'bg-line'}`}
+                  >
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isDark ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+              )}
               {onToggleFolderMgmt && (
                 <>
-                  <div className={`px-4 py-2 flex items-center justify-between gap-3 border-t border-gray-100 ${!isFolderApiSupported() ? 'opacity-40' : ''}`}>
+                  <div className={`px-4 py-2 flex items-center justify-between gap-3 border-t border-line ${!isFolderApiSupported() ? 'opacity-40' : ''}`}>
                     <div className="flex items-center gap-2">
-                      <FolderOpen className="h-4 w-4 text-gray-500" />
-                      <span className="text-sm text-gray-700" title={!isFolderApiSupported() ? 'Not supported in this browser' : ''}>
+                      <FolderOpen className="h-4 w-4 text-ink-muted" />
+                      <span className="text-sm" title={!isFolderApiSupported() ? 'Not supported in this browser' : ''}>
                         Folder management
                       </span>
                     </div>
@@ -249,7 +256,7 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
                       type="button"
                       disabled={!isFolderApiSupported()}
                       onClick={() => onToggleFolderMgmt(!folderMgmtEnabled)}
-                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${folderMgmtEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${folderMgmtEnabled ? 'bg-berry' : 'bg-line'}`}
                     >
                       <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${folderMgmtEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
                     </button>
@@ -260,28 +267,39 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
                         type="text"
                         readOnly
                         value={folderName || 'No folder selected'}
-                        className="flex-1 text-xs bg-gray-100 text-gray-600 rounded px-2 py-1 border border-gray-200 truncate"
+                        className="min-w-0 flex-1 text-xs bg-blush border-line text-ink-muted rounded px-2 py-1 border truncate"
                         title={folderName || 'No folder selected'}
                       />
                       <button
                         type="button"
                         onClick={handleChangeFolder}
-                        className="text-xs px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded border border-blue-200 whitespace-nowrap transition-colors"
+                        className="text-xs px-2 py-1 bg-berry-soft text-berry-dark hover:bg-[#F6D3DF] rounded border border-berry-line whitespace-nowrap transition-colors"
                       >
                         {folderName ? 'Change' : 'Choose'}
                       </button>
                     </div>
                   )}
                   {folderMgmtEnabled && folderError && (
-                    <div className="px-4 pb-2 text-xs text-red-600">{folderError}</div>
+                    <div className="px-4 pb-2 text-xs text-danger-text">{folderError}</div>
                   )}
                 </>
               )}
+              {onManageSubscription && (
+                <button
+                  type="button"
+                  onClick={() => { setShowDropdown(false); onManageSubscription(); }}
+                  disabled={manageBusy}
+                  className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-ink hover:bg-blush border-t border-line disabled:opacity-50"
+                >
+                  <CreditCard className="h-4 w-4 text-ink-muted" />
+                  Manage subscription
+                </button>
+              )}
               <button
                 onClick={handleSignOut}
-                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-100"
+                className="w-full text-left px-4 py-2 text-sm hover:bg-blush transition-colors border-t border-line"
               >
-                Sign Out
+                Sign out
               </button>
             </div>
           </>
