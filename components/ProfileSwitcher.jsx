@@ -38,8 +38,8 @@ const ProfileSwitcher = ({ locked, upsell, profiles, activeProfileId, limit, bus
         title={locked ? 'Saved profiles are part of Roleberry Pro' : 'Switch profile'}
       >
         {locked ? <Lock className="h-4 w-4" /> : <Users className="h-4 w-4" />}
-        <span className="max-w-[10rem] truncate">{active ? active.name : 'Profiles'}</span>
-        {tone === 'dark' && <ChevronDown className="h-4 w-4 opacity-60" />}
+        <span className="max-w-[7rem] sm:max-w-[10rem] truncate">{active ? active.name : 'Profiles'}</span>
+        {tone === 'dark' && <ChevronDown className="hidden sm:block h-4 w-4 opacity-60" />}
       </button>
 
       {open && !locked && (
