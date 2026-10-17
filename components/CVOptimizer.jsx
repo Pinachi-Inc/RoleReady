@@ -1187,6 +1187,9 @@ const CVOptimizer = () => {
     );
   }
 
+  // Comped accounts have nothing to manage, unless they also still pay for a subscription they may want to cancel.
+  const canManageSubscription = (billing?.plan === 'paid' || billing?.plan === 'max') && billing.hasCustomer
+    && (!billing.comped || (billing.billingPlan && billing.billingPlan !== 'free'));
   const profileSwitcherEl = (
     <ProfileSwitcher
       tone="dark"
@@ -1204,16 +1207,14 @@ const CVOptimizer = () => {
     />
   );
   const accountEl = (
-    <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v => !v)} isDark={isDark} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
+    <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v => !v)} isDark={isDark} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} onManageSubscription={canManageSubscription ? handleManageBilling : undefined} manageBusy={billingBusy} />
   );
   const planStripEl = (
     <PlanStrip
       billing={billing}
       billingNotice={billingNotice}
-      billingBusy={billingBusy}
       onUpgrade={() => setShowPaywall(true)}
       onPlans={() => setShowPaywall(true)}
-      onManage={handleManageBilling}
     />
   );
   const pageRootCls = 'font-brand min-h-screen flex flex-col bg-white text-ink dark:bg-night dark:text-night-text';
