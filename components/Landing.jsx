@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Check, Clock, ClipboardPaste, Download, UserRound } from 'lucide-react';
-import { PLANS } from './PricingModal.jsx';
+import { PLANS, ExperimentalBadge } from './PricingModal.jsx';
 
 // The signed-out home: what Roleberry does, a before/after example and the prices. Sign-in lives on
 // /login and /signup (see LoginPage).
@@ -217,7 +217,11 @@ const Pricing = () => (
               {perk.soon
                 ? <Clock className="mt-0.5 h-4 w-4 shrink-0" />
                 : <Check className="mt-0.5 h-4 w-4 shrink-0" style={{ color: LEAF }} />}
-              <span>{perk.text}{perk.soon && ' (coming soon)'}</span>
+              <span>
+                {perk.text}{perk.soon && ' (coming soon)'}
+                {perk.experimental && <ExperimentalBadge className="ml-1.5" />}
+                {perk.detail && <span className="mt-0.5 block text-xs text-ink-muted">{perk.detail}</span>}
+              </span>
             </li>
           ))}
         </ul>
