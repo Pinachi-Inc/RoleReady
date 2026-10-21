@@ -1,5 +1,6 @@
 import React from 'react';
 import { Zap, Clock, UserRound, Lightbulb, Sparkles } from 'lucide-react';
+import { prefetchHistory } from '../services/history.js';
 
 const NAV_BASE = 'flex flex-col justify-center sm:flex-row sm:inline-flex items-center gap-1 sm:gap-[7px] h-14 sm:h-9 px-1 sm:px-3 rounded-[10px] text-[12px] sm:text-[13.5px] font-semibold whitespace-nowrap focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25';
 const NAV_ACTIVE = 'bg-white/10 text-white';
@@ -22,6 +23,9 @@ export function TopBar({ page, onNavigate, onTips, profileSwitcher, account }) {
               key={id}
               type="button"
               onClick={() => onNavigate(id)}
+              // Starts loading History while the pointer is on its way to the click.
+              onPointerEnter={id === 'history' ? () => prefetchHistory() : undefined}
+              onFocus={id === 'history' ? () => prefetchHistory() : undefined}
               aria-current={active ? 'page' : undefined}
               className={`${NAV_BASE} ${active ? NAV_ACTIVE : NAV_IDLE}`}
             >
