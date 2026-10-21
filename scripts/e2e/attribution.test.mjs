@@ -1,7 +1,7 @@
 // First-touch attribution: what a landing URL and referrer turn into, and what lands on the
 // account. Pure functions, no browser needed.
 import assert from 'node:assert/strict';
-import { touchFromVisit, sourceLabel, signupSourceRecord } from '../../src/attribution.js';
+import { touchFromVisit, sourceLabel, signupSourceRecord, channelOf } from '../../src/attribution.js';
 
 const now = new Date('2026-10-27T12:00:00Z');
 let passed = 0;
@@ -23,6 +23,12 @@ test('Reddit ad link with UTMs', () => {
 test('click id alone names the network', () => {
   assert.equal(sourceLabel(touchFromVisit('https://roleberry.app/?fbclid=abc', '', now)), 'meta');
   assert.equal(sourceLabel(touchFromVisit('https://roleberry.app/?rdt_cid=abc', '', now)), 'reddit');
+});
+
+test('sources group into meta, reddit or other', () => {
+  for (const s of ['meta', 'facebook', 'instagram', 'l.facebook.com']) assert.equal(channelOf(s), 'meta');
+  for (const s of ['reddit', 'reddit.com', 'out.reddit.com']) assert.equal(channelOf(s), 'reddit');
+  for (const s of ['google', 'google.com', 'chatgpt.com', 'direct', null]) assert.equal(channelOf(s), 'other');
 });
 
 test('utm_source is lowercased', () => {

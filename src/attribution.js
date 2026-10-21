@@ -36,6 +36,17 @@ export const sourceLabel = (touch) => {
   return 'direct';
 };
 
+// Which ad channel a source label belongs to, for the three-line report: meta, reddit or other.
+const CHANNELS = {
+  meta: ['meta', 'facebook', 'fb', 'instagram', 'ig', 'facebook.com', 'm.facebook.com', 'l.facebook.com', 'lm.facebook.com', 'instagram.com', 'l.instagram.com'],
+  reddit: ['reddit', 'reddit.com', 'old.reddit.com', 'out.reddit.com'],
+};
+export const channelOf = (source) => {
+  const s = String(source || '').toLowerCase();
+  for (const [channel, names] of Object.entries(CHANNELS)) if (names.includes(s)) return channel;
+  return 'other';
+};
+
 // Reads the landing URL and referrer. Returns a touch, or null when the visit says nothing
 // about where it came from (typed URL, bookmark, a link inside our own site).
 export const touchFromVisit = (href, referrer, now = new Date()) => {
