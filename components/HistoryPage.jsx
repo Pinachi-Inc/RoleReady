@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Clock, Download, FileText, Lock, Sparkles } from 'lucide-react';
 import { listHistory, cachedHistory, getHistoryRun } from '../services/history.js';
 import { buildCvPdf, buildCoverLetterPdf } from '../src/cvPdf.js';
+import { useDialog } from './Dialog.jsx';
 
 // Past runs, newest first. Every plan's runs are saved; free can open its newest few
 // (visibleLimit) and sees the rest as greyed, blurred rows with an unlock prompt. The server
@@ -34,6 +35,7 @@ const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
       : { loading: true, error: '', visibleLimit: null, lockedCount: 0, lockedRuns: [], runs: [] };
   });
   const [busyId, setBusyId] = useState(null);
+  const dialog = useDialog();
 
   useEffect(() => {
     let cancelled = false;
@@ -57,20 +59,20 @@ const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
       fn(await getHistoryRun(id));
     } catch (err) {
       if (err.code === 'upgrade_required') onUpgrade();
-      else alert(err.message || 'Could not load that run.');
+      else dialog.alert({ title: 'Could not open this run', message: err.message || 'Please try again in a moment.' });
     } finally {
       setBusyId(null);
     }
   };
 
   const downloadCv = (id) => withRun(id, (run) => {
-    if (!run.cv) return alert('This run has no CV to download.');
+    if (!run.cv) return dialog.alert({ title: 'No CV in this run', message: 'This run has no CV to download.' });
     const base = [filePart(run.cv.name) || 'Roleberry_CV', filePart(run.companyName)].filter(Boolean).join('_');
     buildCvPdf(run.cv).save(`${base}.pdf`);
   });
 
   const downloadLetter = (id) => withRun(id, (run) => {
-    if (!run.coverLetter) return alert('This run has no cover letter.');
+    if (!run.coverLetter) return dialog.alert({ title: 'No cover letter', message: 'This run has no cover letter.' });
     const base = [filePart(run.cv?.name) || 'Roleberry', filePart(run.companyName)].filter(Boolean).join('_');
     buildCoverLetterPdf(run.coverLetter, run.cv).save(`${base}_Cover_Letter.pdf`);
   });
