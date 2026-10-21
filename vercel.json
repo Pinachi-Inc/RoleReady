@@ -15,10 +15,6 @@
       "maxDuration": 300,
       "memory": 1536
     },
-    "api/detect-ai.js": {
-      "maxDuration": 30,
-      "memory": 512
-    },
     "api/feedback.js": {
       "maxDuration": 15,
       "memory": 512
