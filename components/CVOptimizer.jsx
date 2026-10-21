@@ -246,6 +246,11 @@ const CVOptimizer = () => {
     setFolderMgmtEnabled(val);
     localStorage.setItem('folderMgmtEnabled', val ? 'true' : 'false');
   };
+  // Job folders are a Max feature, marked Experimental. The switch stays visible for everyone,
+  // but only a Max account (paid or complimentary) can turn it on, and it is off until they do.
+  // The stored choice is kept, so it only takes effect while the account is on Max.
+  const folderMgmtAllowed = billing?.plan === 'max';
+  const folderMgmtActive = folderMgmtEnabled && folderMgmtAllowed;
   
   // Structured form data
   const [formData, setFormData] = useState(emptyFormData);
@@ -778,9 +783,9 @@ const CVOptimizer = () => {
     let preFetchedFolderHandle = null;
     let filePickerBlocked = false;
     console.log('[download] start: folderMgmt=%s apiSupported=%s doc=%s',
-      folderMgmtEnabled, isFolderApiSupported(), activeDoc);
+      folderMgmtActive, isFolderApiSupported(), activeDoc);
 
-    if (folderMgmtEnabled && isFolderApiSupported()) {
+    if (folderMgmtActive && isFolderApiSupported()) {
       try {
         preFetchedFolderHandle = await getFolderHandle();
         console.log('[download] folder handle acquired: %s', preFetchedFolderHandle?.name);
@@ -1112,7 +1117,7 @@ const CVOptimizer = () => {
     />
   );
   const accountEl = (
-    <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v => !v)} isDark={isDark} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} onManageSubscription={canManageSubscription ? handleManageBilling : undefined} manageBusy={billingBusy} />
+    <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v => !v)} isDark={isDark} folderMgmtEnabled={folderMgmtActive} folderMgmtLocked={!folderMgmtAllowed} planKnown={Boolean(billing)} onFolderMgmtLocked={() => setShowPaywall(true)} onToggleFolderMgmt={handleToggleFolderMgmt} onManageSubscription={canManageSubscription ? handleManageBilling : undefined} manageBusy={billingBusy} />
   );
   const planStripEl = (
     <PlanStrip
@@ -1838,7 +1843,7 @@ const CVOptimizer = () => {
               <h2 className="text-[15px] font-extrabold">CV preview</h2>
             )}
             <div className="flex-1" />
-            {folderMgmtEnabled && (optimizedCv || structuredCv) && (
+            {folderMgmtActive && (optimizedCv || structuredCv) && (
               <label className="inline-flex items-center gap-1.5 h-[34px] px-2.5 rounded-[9px] border border-line bg-white text-ink-muted dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface">
                 <FolderOpen className="h-4 w-4" />
                 <input

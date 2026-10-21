@@ -10,6 +10,8 @@ import { useDialog } from './Dialog.jsx';
 //
 // `soon: true` marks a perk that is sold but not built yet. It renders greyed with a clock and
 // "coming soon", so it never reads as something already delivered.
+// `experimental: true` marks a perk that works but is not fully tested. It renders an
+// "Experimental" badge, and `detail` adds a short line under the perk.
 //
 // Max's limits are shown as "Unlimited" on purpose: the fair-use run cap (MAX_MONTHLY_RUNS)
 // and the 100-profile safety cap live on the server and in firestore.rules, not here.
@@ -44,12 +46,28 @@ export const PLANS = [
     perks: [
       { text: 'Unlimited optimizations' },
       { text: 'Unlimited saved profiles' },
+      {
+        text: 'First access to every new feature',
+        detail: 'Try new tools before anyone else, while they are still experimental.',
+      },
+      {
+        text: 'Job folders: every CV filed for you',
+        experimental: true,
+        detail: 'Pick a folder once. Every CV saves into its own company folder under the same file name. No renaming, no sorting by hand. Chrome and Edge on desktop.',
+      },
       { text: 'Saved history of every CV and cover letter' },
       { text: 'Extra CV templates', soon: true },
       { text: 'Cancel any time' },
     ],
   },
 ];
+
+// The pill for features that work but are not fully tested yet. Also used in the account menu.
+export const ExperimentalBadge = ({ className = '' }) => (
+  <span className={`inline-block rounded-full border border-berry-line bg-berry-soft px-1.5 py-px align-middle text-[10px] font-semibold uppercase tracking-wide text-berry-dark ${className}`}>
+    Experimental
+  </span>
+);
 
 // Stored plan -> pricing column. Pro is stored as 'paid'.
 const COLUMN_FOR_PLAN = { free: 'free', paid: 'pro', max: 'max' };
@@ -156,6 +174,8 @@ const PricingModal = ({ billing, busy, onClose, onCheckout, onManage }) => {
                         <span>
                           {perk.text}
                           {perk.soon && <span className="ml-1 text-xs font-medium text-ink-faint">coming soon</span>}
+                          {perk.experimental && <ExperimentalBadge className="ml-1.5" />}
+                          {perk.detail && <span className="mt-0.5 block text-xs text-ink-muted">{perk.detail}</span>}
                         </span>
                       </li>
                     ))}
