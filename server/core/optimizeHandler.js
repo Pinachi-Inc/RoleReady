@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { validateAndFixSkills, reorderSkills } from '../cvValidation.js';
-import { labelSkills, analyzeCoverage } from '../skillMatch.js';
+import { labelSkills, analyzeCoverage, dropUnbackedSkills } from '../skillMatch.js';
 import { renderCvMarkdown } from '../cvRenderer.js';
 import { requireAuth } from './firebaseAuth.js';
 import { consumeQuota, refundQuota, recordRun } from './firestore.js';
@@ -240,7 +240,7 @@ Use the JD's literal wording inside bullets wherever it fits the real work.
 </experience>
 
 <hard_limits>
-Only real experience. Naming a task the described work necessarily included is fine, and so is calling Docker work container orchestration. Stating a role, employer, domain or technology the candidate has not touched is not, and a JD priority with no counterpart in their history is left out rather than filled in.
+Only real experience. Naming a task the described work necessarily included is fine, and so is calling Docker work container orchestration. Stating a role, employer, domain or technology the candidate has not touched is not, and a JD priority with no counterpart in their history is left out rather than filled in. Before naming any tool, platform or method in the summary or a bullet, check that aiUserInfo shows it. A JD technology absent from aiUserInfo appears nowhere in the output, not even as "exposure to" or "familiar with".
 Organisation names from the JD stay out of the summary, the skills and the bullets: the hiring company, its customers, partners, parent, competitors, plus req numbers, posting ids and URLs. Technologies are not organisations, so AWS, Kubernetes, Terraform, React and PostgreSQL are used verbatim wherever the JD uses them. The candidate's own employers are rendered separately from saved data, so bullets do not repeat them.
 companyName holds the hiring company's name. It is metadata, never rendered into the CV; empty string if the JD does not say.
 jobTitle holds the title of the advertised role as the JD states it. Also metadata, never rendered; empty string if the JD does not say.
@@ -513,7 +513,11 @@ async function runOptimize(req, res, quota) {
           }
         });
       }
-      const { coreSkills, dropped } = validateAndFixSkills(parsed.coreSkills);
+      const { coreSkills: validSkills, dropped } = validateAndFixSkills(parsed.coreSkills);
+      // The model still lists JD tools the profile never mentions, whatever the prompt says,
+      // so the skills list is enforced here rather than trusted.
+      const { coreSkills, removed } = dropUnbackedSkills(validSkills, { jobDescription, profileText: `${aiUserInfo || ''}\n${fixedUserInfo || ''}` });
+      if (removed.length) console.warn('[optimize] removed unbacked skills: %s', removed.join(', '));
       const orderedSkills = reorderSkills(labelSkills(coreSkills, jobDescription));
       if (dropped && (dropped.items > 0 || dropped.categories > 0)) {
         console.warn('[optimize] over-production trimmed: %s skills (%s), %s categories',

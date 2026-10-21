@@ -21,6 +21,44 @@ export function makeTextMatcher(text) {
   };
 }
 
+// A JD term counts as backed by the profile when the profile names one of these instead.
+export const PROFILE_ALIASES = {
+  'gitops': ['argo cd', 'argocd', 'flux', 'fluxcd'],
+  'ci/cd': ['github actions', 'gitlab ci', 'jenkins', 'circleci', 'argo cd', 'azure devops', 'teamcity', 'bamboo'],
+  'infrastructure as code': ['terraform', 'cloudformation', 'pulumi', 'ansible', 'bicep'],
+  'iac': ['terraform', 'cloudformation', 'pulumi', 'ansible', 'bicep'],
+  'containerization': ['docker', 'podman'],
+  'container orchestration': ['kubernetes', 'eks', 'aks', 'gke', 'openshift', 'nomad', 'ecs'],
+  'observability': ['prometheus', 'grafana', 'datadog', 'new relic', 'elk', 'opentelemetry', 'splunk'],
+  'monitoring': ['prometheus', 'grafana', 'datadog', 'new relic', 'zabbix', 'nagios', 'cloudwatch'],
+  'centralized logging': ['elk', 'elasticsearch', 'kibana', 'loki', 'splunk', 'graylog', 'cloudwatch logs'],
+};
+const ALIASES = new Map(Object.entries(PROFILE_ALIASES).map(([k, v]) => [normalizeTerm(k), v]));
+
+// (term) => boolean against the profile text, alias-aware. Used only for the profile check, not for JD matching.
+export function makeProfileMatcher(profileText) {
+  const direct = makeTextMatcher(profileText);
+  return (term) => direct(term) || (ALIASES.get(normalizeTerm(term)) || []).some((a) => direct(a));
+}
+
+// Removes every skill that the JD names but the profile does not back. A category left empty goes too.
+// Categories are not refilled; the caller's category-size log still records a short one.
+export function dropUnbackedSkills(coreSkills, { jobDescription = '', profileText = '' } = {}) {
+  const inJd = makeTextMatcher(jobDescription);
+  const inProfile = makeProfileMatcher(profileText);
+  const removed = [];
+  const kept = [];
+  for (const cat of Array.isArray(coreSkills) ? coreSkills : []) {
+    const items = cat.items.filter((it) => {
+      const unbacked = inJd(it.skill) && !inProfile(it.skill);
+      if (unbacked) removed.push(it.skill);
+      return !unbacked;
+    });
+    if (items.length) kept.push({ ...cat, items });
+  }
+  return { coreSkills: kept, removed };
+}
+
 const uniq = (arr) => [...new Map(arr.map((s) => [normalizeTerm(s), s])).values()].filter((s) => normalizeTerm(s));
 
 // Labels each skill jd/base (used only to put JD skills first inside a category).
@@ -40,7 +78,7 @@ export function analyzeCoverage({ jdKeywords = [], jobDescription = '', cvText =
   const inJd = makeTextMatcher(jobDescription);
   const inCv = makeTextMatcher(cvText);
   const inWritten = makeTextMatcher(writtenText);
-  const inProfile = makeTextMatcher(profileText);
+  const inProfile = makeProfileMatcher(profileText);
   const keywords = uniq((Array.isArray(jdKeywords) ? jdKeywords : []).map(String).filter(inJd)).slice(0, 30);
   const matched = keywords.filter(inCv);
   const missing = keywords.filter((k) => !inCv(k)).map((term) => ({ term, inProfile: inProfile(term) }));
