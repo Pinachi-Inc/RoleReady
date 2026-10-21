@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Clock, Download, FileText, Lock, Sparkles } from 'lucide-react';
-import { listHistory, getHistoryRun } from '../services/history.js';
+import { listHistory, cachedHistory, getHistoryRun } from '../services/history.js';
 import { buildCvPdf, buildCoverLetterPdf } from '../src/cvPdf.js';
 
 // Past runs, newest first. Every plan's runs are saved; free can open its newest few
@@ -18,25 +18,34 @@ const filePart = (s) => String(s || '').trim().replace(/[^A-Za-z0-9]+/g, '_').re
 const PLACEHOLDER_TITLES = ['Senior Platform Engineer', 'DevOps Engineer', 'Site Reliability Engineer'];
 const MAX_LOCKED_ROWS = 3;
 
+const fromResponse = (data) => ({
+  visibleLimit: data.visibleLimit ?? null,
+  lockedCount: data.lockedCount || 0,
+  lockedRuns: data.lockedRuns || [],
+  runs: data.runs || [],
+});
+
 const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
-  const [state, setState] = useState({ loading: true, error: '', visibleLimit: null, lockedCount: 0, lockedRuns: [], runs: [] });
+  // Shows the last list fetched this session straight away, then refreshes it in the background.
+  const [state, setState] = useState(() => {
+    const cached = cachedHistory();
+    return cached
+      ? { ...fromResponse(cached), loading: false, error: '' }
+      : { loading: true, error: '', visibleLimit: null, lockedCount: 0, lockedRuns: [], runs: [] };
+  });
   const [busyId, setBusyId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     listHistory()
       .then((data) => {
-        if (!cancelled) setState({
-          loading: false,
-          error: '',
-          visibleLimit: data.visibleLimit ?? null,
-          lockedCount: data.lockedCount || 0,
-          lockedRuns: data.lockedRuns || [],
-          runs: data.runs || [],
-        });
+        if (!cancelled) setState({ ...fromResponse(data), loading: false, error: '' });
       })
       .catch((err) => {
-        if (!cancelled) setState((s) => ({ ...s, loading: false, error: err.message || 'Could not load your history.' }));
+        // A failed background refresh keeps the cached list on screen rather than an error.
+        if (!cancelled) setState((s) => (s.loading
+          ? { ...s, loading: false, error: err.message || 'Could not load your history.' }
+          : s));
       });
     return () => { cancelled = true; };
   }, []);
@@ -82,7 +91,16 @@ const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
         <h2 className="text-2xl font-bold flex items-center gap-2"><Clock className="h-6 w-6" />History</h2>
       </div>
 
-      {state.loading && <p className="text-sm text-ink-muted">Loading your history…</p>}
+      {state.loading && (
+        <ul className="divide-y divide-line dark:divide-night-line rounded-2xl border border-line dark:border-night-line animate-pulse" aria-label="Loading your history">
+          {[0, 1, 2].map((i) => (
+            <li key={i} className="p-4 space-y-2">
+              <div className="h-4 w-48 max-w-full rounded bg-line dark:bg-night-raised" />
+              <div className="h-3 w-64 max-w-full rounded bg-line/70 dark:bg-night-raised/70" />
+            </li>
+          ))}
+        </ul>
+      )}
       {state.error && <p className="text-sm text-danger-text">{state.error}</p>}
 
       {!state.loading && !state.error && state.runs.length === 0 && (

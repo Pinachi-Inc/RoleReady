@@ -1,4 +1,5 @@
 import admin from 'firebase-admin';
+import { initializeFirestore } from 'firebase-admin/firestore';
 
 // The server could verify Firebase tokens (server/core/firebaseAuth.js, node:crypto against
 // Google's public certs) but had no way to WRITE Firestore. That is fine while everything is
@@ -39,9 +40,15 @@ export function isFirestoreReady() {
   return Boolean(init());
 }
 
+// REST rather than gRPC: on a cold serverless start, opening a gRPC channel adds a second or
+// more before the first read. Plain HTTPS starts fast, and nothing here needs live listeners.
+let cachedDb = null;
 function db() {
+  if (cachedDb) return cachedDb;
   const app = init();
-  return app ? admin.firestore(app) : null;
+  if (!app) return null;
+  cachedDb = initializeFirestore(app, { preferRest: true });
+  return cachedDb;
 }
 
 // Plan limits live here rather than in the client so the numbers cannot drift between what
@@ -70,6 +77,11 @@ export const PLAN_LIMITS = {
   paid: { window: 'month', optimizations: 1000, pdfImports: null, profiles: 3, historyVisible: null },
   max: { window: 'month', optimizations: 5000, pdfImports: null, profiles: 100, historyVisible: null, fairUse: true, unlimitedProfiles: true },
 };
+
+// The most runs any limited plan can open, so history can be read before the plan is known.
+export const MAX_HISTORY_VISIBLE = Math.max(
+  0, ...Object.values(PLAN_LIMITS).map((p) => p.historyVisible ?? 0),
+);
 
 export function maxMonthlyRuns() {
   const n = Number.parseInt(String(process.env.MAX_MONTHLY_RUNS || '').trim(), 10);
@@ -412,9 +424,12 @@ function isoTime(value) {
 export async function listRuns(uid, limit = 50) {
   const database = db();
   if (!database) return null;
+  // select() asks Firestore for these fields only. Without it every document arrives with its
+  // whole CV and cover letter, which made the list slow to load.
   const snap = await database.collection('users').doc(uid).collection('history')
     .orderBy('createdAt', 'desc')
     .limit(limit)
+    .select('createdAt', 'companyName', 'jobTitle', 'profileName', 'hasCoverLetter')
     .get();
   return snap.docs.map((doc) => {
     const d = doc.data();
