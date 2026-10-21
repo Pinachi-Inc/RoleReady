@@ -45,7 +45,7 @@ export const PLANS = [
       { text: 'Unlimited optimizations' },
       { text: 'Unlimited saved profiles' },
       { text: 'Saved history of every CV and cover letter' },
-      { text: 'Extra CV templates', soon: true },
+      { text: '3 CV templates: Classic, Modern, Executive' },
       { text: 'Cancel any time' },
     ],
   },

@@ -28,7 +28,7 @@ const fromResponse = (data) => ({
   runs: data.runs || [],
 });
 
-const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
+const HistoryPage = ({ onBack, onOpenRun, onUpgrade, cvStyle }) => {
   // Shows the last list fetched this session straight away, then refreshes it in the background.
   const [state, setState] = useState(() => {
     const cached = cachedHistory();
@@ -71,14 +71,14 @@ const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
     if (!run.cv) return dialog.alert({ title: 'No CV in this run', message: 'This run has no CV to download.' });
     const base = [filePart(run.cv.name) || 'Roleberry_CV', filePart(run.companyName)].filter(Boolean).join('_');
     const { renderCvPdf } = await loadDocuments();
-    downloadBlob(await renderCvPdf(run.cv), `${base}.pdf`);
+    downloadBlob(await renderCvPdf(run.cv, { style: cvStyle }), `${base}.pdf`);
   });
 
   const downloadLetter = (id) => withRun(id, async (run) => {
     if (!run.coverLetter) return dialog.alert({ title: 'No cover letter', message: 'This run has no cover letter.' });
     const base = [filePart(run.cv?.name) || 'Roleberry', filePart(run.companyName)].filter(Boolean).join('_');
     const { renderLetterPdf } = await loadDocuments();
-    downloadBlob(await renderLetterPdf(run.coverLetter, run.cv), `${base}_Cover_Letter.pdf`);
+    downloadBlob(await renderLetterPdf(run.coverLetter, run.cv, { style: cvStyle }), `${base}_Cover_Letter.pdf`);
   });
 
   const open = (id) => withRun(id, onOpenRun);
