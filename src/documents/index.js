@@ -4,9 +4,14 @@ import { createElement as h } from 'react';
 import { pdf } from '@react-pdf/renderer';
 import { prepareCv, prepareLetter } from './prepare.js';
 import * as classic from './styles/classic.js';
+import * as modern from './styles/modern.js';
+import * as executive from './styles/executive.js';
+import { DEFAULT_STYLE } from './catalog.js';
 
-export const STYLES = { classic };
-export const DEFAULT_STYLE = 'classic';
+export { DEFAULT_STYLE };
+
+// One file per style in ./styles. The picker's names and descriptions live in catalog.js.
+export const STYLES = { classic, modern, executive };
 const pick = (style) => STYLES[style] || STYLES[DEFAULT_STYLE];
 
 export const cvElement = (cv, style) => h(pick(style).CvDocument, { prepared: prepareCv(cv) });
