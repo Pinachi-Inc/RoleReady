@@ -18,12 +18,12 @@ export const validateAndFixSkills = (coreSkills, { minCategories = 6, maxCategor
     const unique = [];
     const seen = new Set();
     for (const item of cat.items) {
-      const skill = (item?.skill || '').trim();
+      const skill = (typeof item === 'string' ? item : item?.skill || '').trim();
       if (!skill) continue;
       const key = skill.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-      unique.push({ skill, source: item.source === 'jd' ? 'jd' : 'base', jdLiteral: item.jdLiteral || null });
+      unique.push({ skill, source: 'base' });
     }
     if (unique.length === 0) continue;
 
@@ -38,13 +38,7 @@ export const validateAndFixSkills = (coreSkills, { minCategories = 6, maxCategor
     fixed.push({ category: cat.category, items: clampedItems });
   }
 
-  // Compute JD share. NOTE: `source` is the model's own label for its output —
-  // this is not verified against the job description text anywhere.
-  const allItems = fixed.flatMap((c) => c.items);
-  const jdCount = allItems.filter((it) => it.source === 'jd').length;
-  const share = allItems.length ? jdCount / allItems.length : 0;
-
-  return { coreSkills: fixed, jdShare: share, dropped };
+  return { coreSkills: fixed, dropped };
 };
 
 export const reorderSkills = (coreSkills) => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Download, FileText, Zap, AlertCircle, Save, Info, Copy, Check, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, Link2, Award, GraduationCap, Briefcase, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Download, FileText, Zap, AlertCircle, Save, Copy, Check, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, Link2, Award, GraduationCap, Briefcase, BarChart3 } from 'lucide-react';
 import { convertMarkdownToHtml } from '../utils/markdown.js';
 import { generateDownloadHtml, downloadHtml, downloadBlob } from '../utils/download.js';
 import PdfPreview from './PdfPreview.jsx';
@@ -11,7 +11,7 @@ const loadDocuments = () => import('../src/documents/index.js');
 const PreviewLoading = () => (
   <div className="flex min-h-[560px] items-center justify-center p-8 text-[13.5px] text-ink-muted dark:text-night-muted">Preparing preview…</div>
 );
-import { optimizeCv as optimizeCvService, detectAiContent } from '../services/openai.js';
+import { optimizeCv as optimizeCvService } from '../services/openai.js';
 import { getBillingStatus, startCheckout, openBillingPortal } from '../services/billing.js';
 import { newProfileId, saveProfile, renameProfile, deleteProfile, activateProfile } from '../services/profiles.js';
 import ProfileSwitcher from './ProfileSwitcher.jsx';
@@ -176,12 +176,8 @@ const CVOptimizer = () => {
   const [fixedUserInfo, setFixedUserInfo] = useState('');
   const [optimizedCv, setOptimizedCv] = useState('');
   const [structuredCv, setStructuredCv] = useState(null);
-  const [keywords, setKeywords] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [needsFix, setNeedsFix] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [aiScore, setAiScore] = useState(null);
-  const [aiScoreLoading, setAiScoreLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState('main'); // 'main' | 'setup'
   const [user, setUser] = useState(null);
   // user.reload() updates the same object in place, so bump this to re-render after verifying.
@@ -190,7 +186,6 @@ const CVOptimizer = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showUserInfoModal, setShowUserInfoModal] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
-  const [overlapSkills, setOverlapSkills] = useState([]);
   const [showTips, setShowTips] = useState(false);
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   const [pdfError, setPdfError] = useState('');
@@ -246,18 +241,6 @@ const CVOptimizer = () => {
   // Read once: Lemon Squeezy's checkout sends people back to /?checkout=success.
   const checkoutReturnRef = useRef(new URLSearchParams(window.location.search).get('checkout'));
   const downloadingRef = useRef(false);
-
-  const detectableWordCount = (cv) => {
-    if (!cv) return 0;
-    const parts = [];
-    if (cv.summary) parts.push(cv.summary);
-    if (Array.isArray(cv.experience)) {
-      for (const job of cv.experience) {
-        if (Array.isArray(job.achievements)) parts.push(...job.achievements);
-      }
-    }
-    return parts.join(' ').trim().split(/\s+/).filter(Boolean).length;
-  };
 
   const handleToggleFolderMgmt = (val) => {
     setFolderMgmtEnabled(val);
@@ -396,10 +379,6 @@ const CVOptimizer = () => {
   const [collapsedRoles, setCollapsedRoles] = useState(() => new Set());
   const [skillDrafts, setSkillDrafts] = useState({});
   const sectionRefs = useRef({});
-  // Bumped whenever a run starts or the session is cleared. A detection response
-  // that resolves after its bump is stale and must not touch state — that is how a
-  // score ended up on a page with no CV on it.
-  const detectRunRef = useRef(0);
 
   // A signed-in user with no profile can only go to the setup page and its CV upload,
   // so start warming the OCR assets now rather than making them wait for a ~7MB
@@ -462,13 +441,7 @@ const CVOptimizer = () => {
     setJobDescription('');
     setOptimizedCv('');
     setStructuredCv(null);
-    setKeywords([]);
-    setStats(null);
-    setNeedsFix(false);
-    setOverlapSkills([]);
-    detectRunRef.current++;
-    setAiScore(null);
-    setAiScoreLoading(false);
+    setAnalysis(null);
     setCompanyName('');
     setCoverLetter('');
     setActiveDoc('cv');
@@ -660,17 +633,11 @@ const CVOptimizer = () => {
 
   // Loads a past run from history into the result view, where the usual download works.
   const handleOpenRun = (run) => {
-    detectRunRef.current++;
-    setAiScore(null);
-    setAiScoreLoading(false);
     setOptimizedCv(run.cvContent || '');
     setStructuredCv(run.cv || null);
     setCoverLetter(run.coverLetter || '');
     setCompanyName(run.companyName || '');
-    setKeywords([]);
-    setStats(null);
-    setNeedsFix(false);
-    setOverlapSkills([]);
+    setAnalysis(null);
     setDownloadNotice('');
     setActiveDoc('cv');
     setJdCollapsed(true);
@@ -999,14 +966,12 @@ const CVOptimizer = () => {
     // Fetch the PDF renderer while the model works, so the preview is ready when it returns.
     loadDocuments().catch(() => {});
     setOptimizedCv('');
-    setKeywords([]);
-    detectRunRef.current++;
-    setAiScore(null);
+    setAnalysis(null);
     setCoverLetter('');
     setActiveDoc('cv');
 
     try {
-      const { cvContent, keywords: kws, keywordsFiltered: kf, cv, needsFix: nf, stats: st, overlapSkills: os, companyName: cn, coverLetter: cl, quota } = await optimizeCvService({
+      const { cvContent, cv, analysis: an, companyName: cn, coverLetter: cl, quota } = await optimizeCvService({
         jobDescription,
         aiUserInfo,
         fixedUserInfo,
@@ -1017,36 +982,13 @@ const CVOptimizer = () => {
       if (quota) setBilling((prev) => (prev ? { ...prev, ...quota } : prev));
       setOptimizedCv(cvContent);
       setStructuredCv(cv || null);
-      setKeywords(kf && kf.length ? kf : kws);
+      setAnalysis(an || null);
       if (cn) setCompanyName(cn);
-      setNeedsFix(Boolean(nf));
-      setStats(st || null);
-      setOverlapSkills(Array.isArray(os) ? os : []);
       setCoverLetter(typeof cl === 'string' ? cl : '');
       if (wantsCoverLetter && !cl) {
         setDownloadNotice('The CV is ready, but the cover letter could not be written this time.');
       }
 
-      // Non-blocking AI detection — runs after main optimization
-      if (cv) {
-        const parts = [];
-        if (cv.summary) parts.push(cv.summary);
-        if (Array.isArray(cv.experience)) {
-          for (const job of cv.experience) {
-            if (Array.isArray(job.achievements)) parts.push(...job.achievements);
-          }
-        }
-        const detectText = parts.join('\n').trim();
-        if (detectText) {
-          const run = ++detectRunRef.current;
-          setAiScoreLoading(true);
-          detectAiContent(detectText)
-            .then(score => { if (detectRunRef.current === run) setAiScore(score); })
-            .catch(() => {/* silently ignore detection errors */})
-            .finally(() => { if (detectRunRef.current === run) setAiScoreLoading(false); });
-        }
-      }
-      
       // Collapse JD into sidebar after CV is successfully generated (desktop only)
       setJdCollapsed(true);
     } catch (error) {
@@ -1877,14 +1819,6 @@ const CVOptimizer = () => {
             ) : (
               <h2 className="text-[15px] font-extrabold">CV preview</h2>
             )}
-            {aiScoreLoading && (
-              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-blush text-ink-muted">AI detecting…</span>
-            )}
-            {!aiScoreLoading && aiScore !== null && (() => {
-              const pct = Math.round(aiScore * 100);
-              const color = pct >= 70 ? 'bg-danger-bg text-danger-text' : pct >= 40 ? 'bg-warn-bg text-warn-text' : 'bg-leaf-soft text-leaf-text';
-              return <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${color}`}>{pct}% AI</span>;
-            })()}
             <div className="flex-1" />
             {folderMgmtEnabled && (optimizedCv || structuredCv) && (
               <label className="inline-flex items-center gap-1.5 h-[34px] px-2.5 rounded-[9px] border border-line bg-white text-ink-muted dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface">
@@ -1935,7 +1869,7 @@ const CVOptimizer = () => {
             )}
           </div>
 
-          {(optimizedCv || stats || (keywords && keywords.length > 0)) && (
+          {(optimizedCv || analysis) && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <button
                 type="button"
@@ -1948,19 +1882,15 @@ const CVOptimizer = () => {
                   ? 'Downloading...'
                   : (coverLetter && activeDoc === 'letter' ? 'Download cover letter' : 'Download PDF')}
               </button>
-              {(stats || (keywords && keywords.length > 0)) && (
+              {analysis && (
                 <button
                   type="button"
                   onClick={() => setShowAnalysis(true)}
-                  className={`h-12 rounded-xl border font-bold inline-flex items-center justify-center gap-2 ${
-                    needsFix
-                      ? 'border-warn-line bg-warn-bg text-warn-text'
-                      : 'border-line bg-white text-ink hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface'
-                  }`}
-                  aria-label={needsFix ? 'View Analysis (issues detected)' : 'View Analysis'}
-                  title={needsFix ? 'Issues detected: open analysis' : 'View analysis'}
+                  className="h-12 rounded-xl border border-line bg-white text-ink hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface font-bold inline-flex items-center justify-center gap-2"
+                  aria-label="View Analysis"
+                  title="View analysis"
                 >
-                  {needsFix ? <Info className="h-4 w-4" /> : <BarChart3 className="h-4 w-4" />}
+                  <BarChart3 className="h-4 w-4" />
                   View Analysis
                 </button>
               )}
@@ -2006,52 +1936,54 @@ const CVOptimizer = () => {
               </button>
             </div>
             <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-              {needsFix && (
-                <div className="p-3 rounded-lg bg-danger-bg border border-danger-line text-danger-text text-sm">
-                  The result may not fully meet the constraints (e.g., JD keyword share or category sizes). You can still download, but consider refining the inputs.
-                </div>
-              )}
-              {keywords.length > 0 && (
+              {analysis && (
                 <div>
-                  <h4 className="text-base font-bold text-ink mb-2">Keywords Integrated</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {keywords.map((keyword, index) => (
-                      <span key={index} className="bg-berry-soft text-berry-dark px-3 py-1 rounded-full text-sm font-medium">
-                        {keyword}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {stats && (
-                <div>
-                  <h4 className="text-base font-bold text-ink mb-2">AI Stats</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="bg-blush border border-line rounded-xl p-3">JD Share: {(stats.jdShare * 100).toFixed(0)}%</div>
-                    <div className="bg-blush border border-line rounded-xl p-3">Categories: {stats.categories}</div>
-                    <div className="bg-blush border border-line rounded-xl p-3">Total Skills: {stats.totalSkills}</div>
-                    <div className="sm:col-span-3 bg-blush border border-line rounded-xl p-3">Overlap Skills: {stats.overlapCount ?? 0}</div>
-                    <div className="sm:col-span-3 bg-blush border border-line rounded-xl p-3">AI-detectable words (summary + bullets): {detectableWordCount(structuredCv)}</div>
-                    {Array.isArray(stats.categorySizeViolations) && stats.categorySizeViolations.length > 0 && (
-                      <div className="sm:col-span-3 bg-warn-bg border border-warn-line text-warn-text rounded-xl p-3">
-                        Category size issues: {stats.categorySizeViolations.join(', ')}
+                  <h4 className="text-base font-bold text-ink mb-2">Job keyword match</h4>
+                  {analysis.total === 0 ? (
+                    <p className="text-sm text-ink-muted">Couldn't read key requirements from this job description.</p>
+                  ) : (
+                    <>
+                      <p className="text-lg font-extrabold text-ink mb-3">
+                        Matches {analysis.matched.length} of {analysis.total} key requirements ({Math.round((analysis.coverage ?? 0) * 100)}%)
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {analysis.matched.map((term) => (
+                          <span key={term} className="bg-berry-soft text-berry-dark px-3 py-1 rounded-full text-sm font-medium">
+                            {term}
+                          </span>
+                        ))}
                       </div>
-                    )}
-                  </div>
+                    </>
+                  )}
                 </div>
               )}
 
-              {Array.isArray(overlapSkills) && overlapSkills.length > 0 && (
+              {analysis && analysis.missing.length > 0 && (
                 <div>
-                  <h4 className="text-base font-bold text-ink mb-2">Skills Overlap (JD ∩ Base)</h4>
+                  <h4 className="text-base font-bold text-ink mb-2">Missing from this CV</h4>
                   <div className="flex flex-wrap gap-2">
-                    {overlapSkills.map((s, i) => (
-                      <span key={i} className="bg-leaf-soft text-leaf-text px-3 py-1 rounded-full text-sm font-medium">
-                        {s}
+                    {analysis.missing.map(({ term, inProfile }) => (
+                      <span key={term} className="bg-blush border border-line text-ink px-3 py-1 rounded-full text-sm font-medium">
+                        {term}
+                        {inProfile && <span className="text-ink-muted font-normal"> · in your profile</span>}
                       </span>
                     ))}
                   </div>
+                  <p className="text-sm text-ink-muted mt-2">If you have one of these and it's not in your profile, add it there and generate again.</p>
+                </div>
+              )}
+
+              {analysis && analysis.unsupported.length > 0 && (
+                <div>
+                  <h4 className="text-base font-bold text-ink mb-2">Not in your profile</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {analysis.unsupported.map((term) => (
+                      <span key={term} className="bg-blush border border-line text-ink-muted px-3 py-1 rounded-full text-sm font-medium">
+                        {term}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-sm text-ink-muted mt-2">These job terms are in the CV but not in your saved profile.</p>
                 </div>
               )}
             </div>
