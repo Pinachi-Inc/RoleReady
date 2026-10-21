@@ -3,12 +3,14 @@
 //   npm run signups                      all time
 //   npm run signups -- --since 2026-10-27
 //   npm run signups -- --since 2026-10-27 --by content    (or: campaign, method)
+//   npm run signups -- --by channel                       meta / reddit / other
 //
 // Needs FIREBASE_SERVICE_ACCOUNT (read from .env). Accounts created before tracking existed
 // have no source and are counted as "untracked".
 
 import 'dotenv/config';
 import { listSignupSources } from '../server/core/firestore.js';
+import { channelOf } from '../src/attribution.js';
 
 const args = process.argv.slice(2);
 const opt = (name) => {
@@ -34,12 +36,12 @@ try {
       continue;
     }
     if (since && new Date(r.signedUpAt) < since) continue;
-    const key = detail ? `${r.source}  ${r[detail] || '-'}` : r.source;
+    const key = by === 'channel' ? channelOf(r.source) : detail ? `${r.source}  ${r[detail] || '-'}` : r.source;
     counts.set(key, (counts.get(key) || 0) + 1);
   }
   const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   const total = sorted.reduce((n, [, c]) => n + c, 0);
-  console.log(`Sign-ups${since ? ` since ${since.toISOString().slice(0, 10)}` : ''}${detail ? ` by source and ${by}` : ' by source'}:`);
+  console.log(`Sign-ups${since ? ` since ${since.toISOString().slice(0, 10)}` : ''}${by === 'channel' ? ' by channel' : detail ? ` by source and ${by}` : ' by source'}:`);
   for (const [key, c] of sorted) console.log(`  ${String(c).padStart(4)}  ${key}`);
   console.log(`  ${String(total).padStart(4)}  total tracked`);
   if (!since) console.log(`  ${String(untracked).padStart(4)}  untracked (made before tracking, or no source saved)`);
