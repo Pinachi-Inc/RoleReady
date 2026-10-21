@@ -1,5 +1,6 @@
 import React from 'react';
 import { Check, Clock, Sparkles } from 'lucide-react';
+import { useDialog } from './Dialog.jsx';
 
 // The paywall: Free, Pro and Max side by side, Pro in the middle as the recommended plan.
 // A free account upgrades through checkout (onCheckout('pro' | 'max')). A subscriber switches
@@ -54,6 +55,7 @@ export const PLANS = [
 const COLUMN_FOR_PLAN = { free: 'free', paid: 'pro', max: 'max' };
 
 const PricingModal = ({ billing, busy, onClose, onCheckout, onManage }) => {
+  const dialog = useDialog();
   const plan = billing?.plan || 'free';
   const current = COLUMN_FOR_PLAN[plan] || null;
   // Complimentary Max: the Max column is current and nothing is for sale.
@@ -72,8 +74,13 @@ const PricingModal = ({ billing, busy, onClose, onCheckout, onManage }) => {
       const price = key === 'max' ? '$49' : '$12';
       return {
         label: `Switch to ${name}`,
-        onClick: () => {
-          if (window.confirm(`Switch to ${name} for ${price}/month? The difference for the rest of this month is prorated.`)) onCheckout(key);
+        onClick: async () => {
+          const ok = await dialog.confirm({
+            title: `Switch to ${name}?`,
+            message: `${name} is ${price}/month. The difference for the rest of this month is prorated.`,
+            confirmLabel: `Switch to ${name}`,
+          });
+          if (ok) onCheckout(key);
         },
         primary: key === 'max',
       };
