@@ -1,11 +1,14 @@
 // Meta (Facebook) Pixel. Loads only when VITE_META_PIXEL_ID is set, so local
-// dev and preview builds without the variable send nothing to Meta.
+// dev and preview builds without the variable send nothing to Meta. adConsent.js decides
+// which visitors get it at all.
+import { adPixelsAllowed } from './adConsent.js';
+
 const PIXEL_ID = (import.meta.env.VITE_META_PIXEL_ID || '').trim();
 
 // Meta's standard base code, minus the hardcoded ID and the <noscript> image
 // (this is a JS app, so a no-JS visit never reaches it anyway).
 export const initMetaPixel = () => {
-  if (!PIXEL_ID || typeof window === 'undefined' || window.fbq) return;
+  if (!PIXEL_ID || typeof window === 'undefined' || window.fbq || !adPixelsAllowed()) return;
   /* eslint-disable */
   !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
   n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
