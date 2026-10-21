@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Clock, Download, FileText, Lock, Sparkles } from 'lucide-react';
-import { listHistory, getHistoryRun } from '../services/history.js';
-import { buildCvPdf, buildCoverLetterPdf } from '../src/cvPdf.js';
+import { listHistory, cachedHistory, getHistoryRun } from '../services/history.js';
+import { downloadBlob } from '../utils/download.js';
+import { useDialog } from './Dialog.jsx';
+
+const loadDocuments = () => import('../src/documents/index.js');
 
 // Past runs, newest first. Every plan's runs are saved; free can open its newest few
 // (visibleLimit) and sees the rest as greyed, blurred rows with an unlock prompt. The server
@@ -18,25 +21,35 @@ const filePart = (s) => String(s || '').trim().replace(/[^A-Za-z0-9]+/g, '_').re
 const PLACEHOLDER_TITLES = ['Senior Platform Engineer', 'DevOps Engineer', 'Site Reliability Engineer'];
 const MAX_LOCKED_ROWS = 3;
 
+const fromResponse = (data) => ({
+  visibleLimit: data.visibleLimit ?? null,
+  lockedCount: data.lockedCount || 0,
+  lockedRuns: data.lockedRuns || [],
+  runs: data.runs || [],
+});
+
 const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
-  const [state, setState] = useState({ loading: true, error: '', visibleLimit: null, lockedCount: 0, lockedRuns: [], runs: [] });
+  // Shows the last list fetched this session straight away, then refreshes it in the background.
+  const [state, setState] = useState(() => {
+    const cached = cachedHistory();
+    return cached
+      ? { ...fromResponse(cached), loading: false, error: '' }
+      : { loading: true, error: '', visibleLimit: null, lockedCount: 0, lockedRuns: [], runs: [] };
+  });
   const [busyId, setBusyId] = useState(null);
+  const dialog = useDialog();
 
   useEffect(() => {
     let cancelled = false;
     listHistory()
       .then((data) => {
-        if (!cancelled) setState({
-          loading: false,
-          error: '',
-          visibleLimit: data.visibleLimit ?? null,
-          lockedCount: data.lockedCount || 0,
-          lockedRuns: data.lockedRuns || [],
-          runs: data.runs || [],
-        });
+        if (!cancelled) setState({ ...fromResponse(data), loading: false, error: '' });
       })
       .catch((err) => {
-        if (!cancelled) setState((s) => ({ ...s, loading: false, error: err.message || 'Could not load your history.' }));
+        // A failed background refresh keeps the cached list on screen rather than an error.
+        if (!cancelled) setState((s) => (s.loading
+          ? { ...s, loading: false, error: err.message || 'Could not load your history.' }
+          : s));
       });
     return () => { cancelled = true; };
   }, []);
@@ -45,25 +58,27 @@ const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
   const withRun = async (id, fn) => {
     setBusyId(id);
     try {
-      fn(await getHistoryRun(id));
+      await fn(await getHistoryRun(id));
     } catch (err) {
       if (err.code === 'upgrade_required') onUpgrade();
-      else alert(err.message || 'Could not load that run.');
+      else dialog.alert({ title: 'Could not open this run', message: err.message || 'Please try again in a moment.' });
     } finally {
       setBusyId(null);
     }
   };
 
-  const downloadCv = (id) => withRun(id, (run) => {
-    if (!run.cv) return alert('This run has no CV to download.');
+  const downloadCv = (id) => withRun(id, async (run) => {
+    if (!run.cv) return dialog.alert({ title: 'No CV in this run', message: 'This run has no CV to download.' });
     const base = [filePart(run.cv.name) || 'Roleberry_CV', filePart(run.companyName)].filter(Boolean).join('_');
-    buildCvPdf(run.cv).save(`${base}.pdf`);
+    const { renderCvPdf } = await loadDocuments();
+    downloadBlob(await renderCvPdf(run.cv), `${base}.pdf`);
   });
 
-  const downloadLetter = (id) => withRun(id, (run) => {
-    if (!run.coverLetter) return alert('This run has no cover letter.');
+  const downloadLetter = (id) => withRun(id, async (run) => {
+    if (!run.coverLetter) return dialog.alert({ title: 'No cover letter', message: 'This run has no cover letter.' });
     const base = [filePart(run.cv?.name) || 'Roleberry', filePart(run.companyName)].filter(Boolean).join('_');
-    buildCoverLetterPdf(run.coverLetter, run.cv).save(`${base}_Cover_Letter.pdf`);
+    const { renderLetterPdf } = await loadDocuments();
+    downloadBlob(await renderLetterPdf(run.coverLetter, run.cv), `${base}_Cover_Letter.pdf`);
   });
 
   const open = (id) => withRun(id, onOpenRun);
@@ -82,7 +97,16 @@ const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
         <h2 className="text-2xl font-bold flex items-center gap-2"><Clock className="h-6 w-6" />History</h2>
       </div>
 
-      {state.loading && <p className="text-sm text-ink-muted">Loading your history…</p>}
+      {state.loading && (
+        <ul className="divide-y divide-line dark:divide-night-line rounded-2xl border border-line dark:border-night-line animate-pulse" aria-label="Loading your history">
+          {[0, 1, 2].map((i) => (
+            <li key={i} className="p-4 space-y-2">
+              <div className="h-4 w-48 max-w-full rounded bg-line dark:bg-night-raised" />
+              <div className="h-3 w-64 max-w-full rounded bg-line/70 dark:bg-night-raised/70" />
+            </li>
+          ))}
+        </ul>
+      )}
       {state.error && <p className="text-sm text-danger-text">{state.error}</p>}
 
       {!state.loading && !state.error && state.runs.length === 0 && (

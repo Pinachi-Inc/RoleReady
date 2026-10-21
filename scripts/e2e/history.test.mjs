@@ -113,6 +113,14 @@ await check('free list: newest 5 in full, newest first', async () => {
   }
 });
 
+await check('the list reads metadata only from Firestore, over REST', async () => {
+  await history('free1');
+  const fields = globalThis.__E2E_HISTORY_SELECT;
+  assert.ok(Array.isArray(fields), 'history list query uses select()');
+  assert.ok(!fields.includes('cv') && !fields.includes('coverLetter'), 'CV bodies are not fetched');
+  assert.equal(globalThis.__E2E_FS_SETTINGS?.preferRest, true);
+});
+
 await check('free list: older runs come back locked, date only', async () => {
   assert.equal(freeList.lockedCount, 2);
   assert.equal(freeList.lockedRuns.length, 2);

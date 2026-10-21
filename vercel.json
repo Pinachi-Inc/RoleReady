@@ -1,6 +1,9 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "regions": [
+    "fra1"
+  ],
   "git": {
     "deploymentEnabled": {
       "gh-readonly-queue/**": false

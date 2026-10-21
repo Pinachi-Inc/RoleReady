@@ -2,6 +2,7 @@
 // in-memory fakes next to this file instead. Nothing outside server/ is redirected.
 const FAKES = {
   'firebase-admin': new URL('./fake-firebase-admin.mjs', import.meta.url).href,
+  'firebase-admin/firestore': new URL('./fake-firebase-admin.mjs', import.meta.url).href,
   axios: new URL('./fake-axios.mjs', import.meta.url).href,
 };
 

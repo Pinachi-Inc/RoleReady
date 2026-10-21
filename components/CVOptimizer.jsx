@@ -1,24 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Download, FileText, Zap, AlertCircle, Save, Copy, Check, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, Link2, Award, GraduationCap, Briefcase, BarChart3 } from 'lucide-react';
 import { convertMarkdownToHtml } from '../utils/markdown.js';
-import { generateDownloadHtml, downloadHtml } from '../utils/download.js';
-import html2pdf from 'html2pdf.js';
-
-function extractBody(htmlString) {
-  try {
-    const match = String(htmlString || '').match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    return match ? match[1] : htmlString;
-  } catch {
-    return htmlString;
-  }
-}
-import { renderCvHtml, renderCoverLetterHtml } from '../src/templateRenderer.js';
-import { buildCvPdf, buildCoverLetterPdf } from '../src/cvPdf.js';
+import { generateDownloadHtml, downloadHtml, downloadBlob } from '../utils/download.js';
+import PdfPreview from './PdfPreview.jsx';
 import { prefetchOcrAssets, ocrPdfInBrowser, isOcrSupported } from '../services/browserOcr.js';
+
+// react-pdf is about 1.2 MB, so it loads only once there is a CV to draw.
+const loadDocuments = () => import('../src/documents/index.js');
+
+const PreviewLoading = () => (
+  <div className="flex min-h-[560px] items-center justify-center p-8 text-[13.5px] text-ink-muted dark:text-night-muted">Preparing preview…</div>
+);
 import { optimizeCv as optimizeCvService } from '../services/openai.js';
 import { getBillingStatus, startCheckout, openBillingPortal } from '../services/billing.js';
 import { newProfileId, saveProfile, renameProfile, deleteProfile, activateProfile } from '../services/profiles.js';
 import ProfileSwitcher from './ProfileSwitcher.jsx';
+import { useDialog } from './Dialog.jsx';
 import HistoryPage from './HistoryPage.jsx';
 import PricingModal from './PricingModal.jsx';
 import Landing from './Landing.jsx';
@@ -171,6 +168,9 @@ const emptyFormData = () => ({
 
 
 const CVOptimizer = () => {
+  // In-app notice instead of the browser's alert().
+  const dialog = useDialog();
+  const notify = (title, message) => dialog.alert({ title, message });
   const [jobDescription, setJobDescription] = useState('');
   const [aiUserInfo, setAiUserInfo] = useState('');
   const [fixedUserInfo, setFixedUserInfo] = useState('');
@@ -203,6 +203,34 @@ const CVOptimizer = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadNotice, setDownloadNotice] = useState('');
   const [downloadNoticeTone, setDownloadNoticeTone] = useState('warn'); // 'warn' | 'ok'
+  // The preview draws these PDFs and the download saves them, so the two are the same file.
+  const [cvBlob, setCvBlob] = useState(null);
+  const [letterBlob, setLetterBlob] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCvBlob(null);
+    setLetterBlob(null);
+    if (!structuredCv) return undefined;
+    (async () => {
+      try {
+        const { renderCvPdf, renderLetterPdf } = await loadDocuments();
+        const cvFile = await renderCvPdf(structuredCv);
+        if (!cancelled) setCvBlob(cvFile);
+        if (coverLetter) {
+          const letterPdf = await renderLetterPdf(coverLetter, structuredCv);
+          if (!cancelled) setLetterBlob(letterPdf);
+        }
+      } catch (err) {
+        console.error('[documents] render failed:', err);
+        if (!cancelled) {
+          setDownloadNoticeTone('warn');
+          setDownloadNotice('Could not build the PDF. Please try again.');
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [structuredCv, coverLetter]);
   const [billing, setBilling] = useState(null); // server's view of plan and allowance, see services/billing.js
   const [showPaywall, setShowPaywall] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
@@ -528,7 +556,7 @@ const CVOptimizer = () => {
         setShowPaywall(false);
         setBillingNotice('Your account already has full access.');
       } else {
-        alert(err.message || 'Could not start checkout. Please try again.');
+        notify('Checkout didn’t open', err.message || 'Could not start checkout. Please try again.');
       }
     }
   };
@@ -539,7 +567,7 @@ const CVOptimizer = () => {
       await openBillingPortal();
     } catch (err) {
       setBillingBusy(false);
-      alert(err.message || 'Could not open billing settings. Please try again.');
+      notify('Billing settings didn’t open', err.message || 'Could not open billing settings. Please try again.');
     }
   };
 
@@ -554,9 +582,11 @@ const CVOptimizer = () => {
       await fn();
     } catch (err) {
       console.error('[profiles] %s', err?.message || err);
-      alert(err?.code === 'permission-denied'
-        ? 'Your plan does not allow that. Free keeps 1 saved profile, Pro up to 3, Max unlimited.'
-        : failure);
+      if (err?.code === 'permission-denied') {
+        notify('Profile limit reached', 'Your plan does not allow that. Free keeps 1 saved profile, Pro up to 3, Max unlimited.');
+      } else {
+        notify('Something went wrong', failure);
+      }
     } finally {
       setProfileBusy(false);
     }
@@ -564,7 +594,7 @@ const CVOptimizer = () => {
 
   const handleSaveProfileAs = (name) => runProfileOp(async () => {
     if (!aiUserInfo.trim()) {
-      alert('Set up your info first, then save it as a profile.');
+      notify('Nothing to save yet', 'Set up your info first, then save it as a profile.');
       return;
     }
     const id = newProfileId();
@@ -617,7 +647,7 @@ const CVOptimizer = () => {
 
   const saveUserInfo = async () => {
     if (!user) {
-      alert('Please sign in to save your information.');
+      notify('Sign in to save', 'Please sign in to save your information.');
       return;
     }
 
@@ -650,7 +680,7 @@ const CVOptimizer = () => {
       // Saved successfully
     } catch (error) {
       console.error('Error saving user data:', error);
-      alert('Failed to save user information. Please try again.');
+      notify('Couldn’t save your info', 'Failed to save user information. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -797,145 +827,60 @@ const CVOptimizer = () => {
       ? `${getPreferredFilename()}_Cover_Letter`
       : getPreferredFilename();
 
-    // Build full HTML document including styles
-    let fullHtml = '';
-    if (showingLetter) {
-      fullHtml = renderCoverLetterHtml(coverLetter, structuredCv);
-    } else if (structuredCv) {
-      fullHtml = renderCvHtml(structuredCv);
-    } else if (optimizedCv) {
-      fullHtml = generateDownloadHtml(optimizedCv);
-    }
-
-    if (fullHtml) {
-
-      const opt = {
-        margin:       [10, 10, 10, 10],
-        filename:     `${baseFilename}.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak:    { mode: ['css', 'legacy'], avoid: ['li', '.skills-block'] }
-      };
-
-      const saveWithPicker = async (blob) => {
-        if (preFetchedFolderHandle) {
-          try {
-            const where = await writePdfWithHandle(blob, preFetchedFolderHandle, companyName, `${baseFilename}.pdf`);
-            // Each download makes its own numbered folder, so say which one — otherwise
-            // the file looks missing when the user checks the folder they named.
-            if (where?.folder) {
-              console.log('[download] saved to %s/%s/%s', where.root, where.folder, where.filename);
-              setDownloadNoticeTone('ok');
-              setDownloadNotice(`Saved to ${where.root}/${where.folder}/${where.filename}`);
-            }
-            return true;
-          } catch (err) {
-            console.error('[download] writing into the chosen folder failed:', err);
-            setDownloadNoticeTone('warn');
-            setDownloadNotice(`Could not write into "${preFetchedFolderHandle?.name || 'the chosen folder'}" (${err?.name || 'error'}). The PDF went to your usual downloads folder instead.`);
-            return false;
-          }
-        }
-        if (filePickerBlocked || !('showSaveFilePicker' in window)) return false;
+    const saveWithPicker = async (blob) => {
+      if (preFetchedFolderHandle) {
         try {
-          const handle = await window.showSaveFilePicker({
-            suggestedName: `${baseFilename}.pdf`,
-            types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }]
-          });
-          const writable = await handle.createWritable();
-          await writable.write(blob);
-          await writable.close();
+          const where = await writePdfWithHandle(blob, preFetchedFolderHandle, companyName, `${baseFilename}.pdf`);
+          // Each download makes its own numbered folder, so say which one — otherwise
+          // the file looks missing when the user checks the folder they named.
+          if (where?.folder) {
+            console.log('[download] saved to %s/%s/%s', where.root, where.folder, where.filename);
+            setDownloadNoticeTone('ok');
+            setDownloadNotice(`Saved to ${where.root}/${where.folder}/${where.filename}`);
+          }
           return true;
         } catch (err) {
-          // SecurityError here means PDF rendering outlived the click's transient
-          // activation, which is expected for anything but a very small CV.
-          if (err?.name !== 'AbortError') {
-            console.warn('[download] save picker unavailable (%s), using the default download', err?.name || err);
-          }
+          console.error('[download] writing into the chosen folder failed:', err);
+          setDownloadNoticeTone('warn');
+          setDownloadNotice(`Could not write into "${preFetchedFolderHandle?.name || 'the chosen folder'}" (${err?.name || 'error'}). The PDF went to your usual downloads folder instead.`);
           return false;
         }
-      };
-
-      // Both documents are drawn with jsPDF text primitives, not screenshotted. html2pdf
-      // is html2canvas + addImage: it produced a PDF containing JPEGs and zero extractable
-      // text, so an ATS parsing it read nothing at all. Verified with poppler, mupdf and
-      // pdfjs — all returned 0 characters.
-      const buildTextPdf = () => {
-        if (showingLetter) return coverLetter ? buildCoverLetterPdf(coverLetter, structuredCv) : null;
-        return structuredCv ? buildCvPdf(structuredCv) : null;
-      };
-
+      }
+      if (filePickerBlocked || !('showSaveFilePicker' in window)) return false;
       try {
-        const pdf = buildTextPdf();
-        if (pdf) {
-          const blob = pdf.output('blob');
-          const saved = await saveWithPicker(blob);
-          if (!saved) {
-            console.log('[download] falling back to the browser download');
-            pdf.save(`${baseFilename}.pdf`);
-          }
-          return;
-        }
+        const handle = await window.showSaveFilePicker({
+          suggestedName: `${baseFilename}.pdf`,
+          types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return true;
       } catch (err) {
-        // Fall through to the html2pdf path rather than lose the download.
-        console.error('[download] text PDF build failed, falling back to the image renderer:', err);
-      }
-
-      try {
-        const pdf = await html2pdf().set(opt).from(fullHtml).toPdf().get('pdf');
-        const blob = pdf.output('blob');
-        const saved = await saveWithPicker(blob);
-        if (!saved) {
-          console.log('[download] falling back to the browser download');
-          pdf.save(`${baseFilename}.pdf`);
+        // SecurityError here means the click's transient activation ran out before the
+        // picker opened (the PDF is normally ready already, so this should be rare).
+        if (err?.name !== 'AbortError') {
+          console.warn('[download] save picker unavailable (%s), using the default download', err?.name || err);
         }
-        return;
-      } catch (e) {
-        // Fallback to DOM container render
-        const container = document.createElement('div');
-        container.style.position = 'fixed';
-        container.style.top = '0';
-        container.style.left = '0';
-        container.style.opacity = '0';
-        container.style.pointerEvents = 'none';
-        container.style.width = '794px';
-        container.style.background = '#ffffff';
-        container.innerHTML = extractBody(fullHtml);
-        document.body.appendChild(container);
-        try {
-          // Generate blob again from container
-          const pdf = await html2pdf().set(opt).from(container).toPdf().get('pdf');
-          const blob = pdf.output('blob');
-          const saved = await saveWithPicker(blob);
-          if (!saved) {
-            console.log('[download] falling back to the browser download (container)');
-            pdf.save(`${baseFilename}.pdf`);
-          }
-        } catch (inner) {
-          // Both render paths failed. Fall through to the HTML download below rather
-          // than throwing out of downloadCv, which produced no file and no message.
-          console.error('[download] both PDF render paths failed:', e, inner);
-          setDownloadNoticeTone('warn');
-          setDownloadNotice('Could not build the PDF, so an HTML copy was downloaded instead. Open it and print to PDF.');
-          document.body.removeChild(container);
-          const htmlOnly = structuredCv && !(coverLetter && activeDoc === 'letter')
-            ? renderCvHtml(structuredCv)
-            : fullHtml;
-          downloadHtml(htmlOnly, `${baseFilename}.html`);
-          return;
-        }
-        document.body.removeChild(container);
-        return;
+        return false;
       }
-    }
+    };
 
-    // Fallback to HTML download
     if (structuredCv) {
-      const html = renderCvHtml(structuredCv);
-      downloadHtml(html, `${baseFilename}.html`);
+      let blob = showingLetter ? letterBlob : cvBlob;
+      if (!blob) {
+        const { renderCvPdf, renderLetterPdf } = await loadDocuments();
+        blob = showingLetter ? await renderLetterPdf(coverLetter, structuredCv) : await renderCvPdf(structuredCv);
+      }
+      const saved = await saveWithPicker(blob);
+      if (!saved) {
+        console.log('[download] falling back to the browser download');
+        downloadBlob(blob, `${baseFilename}.pdf`);
+      }
       return;
     }
+
+    // Runs without a structured CV only have markdown; they download as printable HTML.
     const htmlFallback = generateDownloadHtml(optimizedCv);
     // Try File System Access API for HTML
     if ('showSaveFilePicker' in window) {
@@ -1008,16 +953,18 @@ const CVOptimizer = () => {
 
   const handleOptimize = async () => {
     if (!jobDescription.trim() || !aiUserInfo.trim()) {
-      alert('Please provide both job description and AI input content.');
+      notify('Missing information', 'Paste a job description and fill in your info first.');
       return;
     }
     if (jobDescription.length > 10000 || aiUserInfo.length > 20000 || fixedUserInfo.length > 10000) {
-      alert('Input text is too long. Please shorten your inputs.');
+      notify('Too long', 'Input text is too long. Please shorten your inputs.');
       return;
     }
 
     setIsProcessing(true);
     setOpenedFromHistory(false);
+    // Fetch the PDF renderer while the model works, so the preview is ready when it returns.
+    loadDocuments().catch(() => {});
     setOptimizedCv('');
     setAnalysis(null);
     setCoverLetter('');
@@ -1052,17 +999,17 @@ const CVOptimizer = () => {
       }
       recordAppError(`Optimize: ${error.message}`);
       if (error.message.includes('500')) {
-        alert('Server error occurred. The OpenAI API may be temporarily unavailable. Please try again in a few moments.');
+        notify('Server error', 'The AI service may be temporarily unavailable. Please try again in a few moments.');
       } else if (error.message.includes('400')) {
-        alert('Invalid request format. Please check your input and try again.');
+        notify('Couldn’t generate', 'Invalid request format. Please check your input and try again.');
       } else if (error.message.includes('401')) {
-        alert('Authentication error. Please check your OpenAI API key.');
+        notify('Couldn’t generate', 'Authentication error on our side. Please try again later or send us feedback.');
       } else if (error.message.includes('403')) {
-        alert('Access forbidden. Please check your OpenAI API permissions.');
+        notify('Couldn’t generate', 'Access was refused on our side. Please try again later or send us feedback.');
       } else if (error.message.includes('429')) {
-        alert('Rate limit exceeded. Please wait a moment before trying again.');
+        notify('Too many requests', 'Please wait a moment before trying again.');
       } else {
-        alert(`An error occurred while optimizing your CV: ${error.message}`);
+        notify('Couldn’t generate', `An error occurred while optimizing your CV: ${error.message}`);
       }
     } finally {
       setIsProcessing(false);
@@ -1908,17 +1855,9 @@ const CVOptimizer = () => {
 
           <div id="cv-preview" className="flex-1 min-h-[560px] overflow-auto rounded-[10px] bg-white shadow-[0_1px_2px_rgba(36,19,28,0.08),0_12px_32px_rgba(36,19,28,0.10)] dark:bg-night-surface">
             {coverLetter && activeDoc === 'letter' ? (
-              <iframe
-                title="Cover Letter Preview"
-                style={{ width: '100%', height: '100%', minHeight: '560px', border: '0' }}
-                srcDoc={renderCoverLetterHtml(coverLetter, structuredCv)}
-              />
+              letterBlob ? <PdfPreview blob={letterBlob} title="Cover letter preview" /> : <PreviewLoading />
             ) : structuredCv ? (
-              <iframe
-                title="CV Preview"
-                style={{ width: '100%', height: '100%', minHeight: '560px', border: '0' }}
-                srcDoc={renderCvHtml(structuredCv)}
-              />
+              cvBlob ? <PdfPreview blob={cvBlob} title="CV preview" /> : <PreviewLoading />
             ) : optimizedCv ? (
               <div className="p-4 prose prose-sm max-w-none min-h-[40vh]" dangerouslySetInnerHTML={{ __html: convertMarkdownToHtml(optimizedCv) }} />
             ) : (
