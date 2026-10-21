@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { validateAndFixSkills, reorderSkills } from '../cvValidation.js';
+import { labelSkills, analyzeCoverage } from '../skillMatch.js';
 import { renderCvMarkdown } from '../cvRenderer.js';
 import { requireAuth } from './firebaseAuth.js';
 import { consumeQuota, refundQuota, recordRun } from './firestore.js';
@@ -93,20 +94,36 @@ Re-angling real work toward this job is right; the letter holds only work I did.
 Three paragraphs of plain text. No greeting, no signature, no markdown.`;
 }
 
-async function generateCoverLetter({ config, model, jobDescription, cv, temperature, companyName }) {
-  const me = {
-    name: cv?.name || null,
-    summary: cv?.summary || '',
-    experience: (Array.isArray(cv?.experience) ? cv.experience : []).slice(0, 3).map(job => ({
-      title: job.title,
-      company: job.company,
-      start: job.start,
-      end: job.end,
-      achievements: (job.achievements || []).slice(0, 4)
+// What the cover letter reads about the candidate: the saved profile, not the generated CV,
+// so the letter call can start at the same moment as the CV call instead of waiting for it.
+export function buildLetterProfile(aiParsed, fixedUserInfo, aiUserInfoRaw) {
+  let fixed = null;
+  try { fixed = fixedUserInfo ? JSON.parse(fixedUserInfo) : null; } catch {}
+  if (!aiParsed || !Array.isArray(aiParsed.experienceSource)) {
+    return { name: fixed?.name || null, yearsOfExperience: fixed?.yearsOfExperience ?? null, profileText: String(aiUserInfoRaw || '').slice(0, 12000) };
+  }
+  return {
+    name: fixed?.name || null,
+    yearsOfExperience: fixed?.yearsOfExperience ?? null,
+    experience: aiParsed.experienceSource.slice(0, 3).map((r) => ({
+      title: r.title, company: r.company, start: r.start, end: r.end,
+      achievements: (Array.isArray(r.baseAchievements) ? r.baseAchievements : []).slice(0, 6),
     })),
-    skills: (Array.isArray(cv?.coreSkills) ? cv.coreSkills : []).flatMap(c => (c.items || []).map(i => i.skill)).slice(0, 25)
+    skills: (Array.isArray(aiParsed.coreSkillsBase) ? aiParsed.coreSkillsBase : [])
+      .flatMap((c) => (Array.isArray(c?.items) ? c.items : [])).slice(0, 30),
   };
+}
 
+// Greeting and signature are assembled here rather than asked of the model. They are
+// pure slot-fills from data the server already holds; in the prompt they cost two
+// instruction slots and risked a literal placeholder reaching the rendered PDF.
+export function assembleLetter(body, companyName, name) {
+  const greeting = companyName ? `Dear ${companyName} hiring team,` : 'Dear hiring team,';
+  return [greeting, body, name].filter(Boolean).join('\n\n');
+}
+
+// Returns the trimmed letter body ('' when the model sent nothing).
+async function generateCoverLetter({ config, model, jobDescription, profile, temperature }) {
   const headers = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${config.OPENAI_API_KEY}`
@@ -124,7 +141,7 @@ async function generateCoverLetter({ config, model, jobDescription, cv, temperat
     ...providerConfig(),
     messages: [
       { role: 'system', content: buildCoverLetterPrompt() },
-      { role: 'user', content: JSON.stringify({ jobDescription, myProfile: me }) }
+      { role: 'user', content: JSON.stringify({ jobDescription, myProfile: profile }) }
     ]
   }, { headers });
 
@@ -136,13 +153,7 @@ async function generateCoverLetter({ config, model, jobDescription, cv, temperat
     console.warn('[usage] cover-letter returned empty content — see the [usage] line above for finish/reasoning');
     return '';
   }
-
-  // Greeting and signature are assembled here rather than asked of the model. They are
-  // pure slot-fills from data the server already holds; in the prompt they cost two
-  // instruction slots and risked a literal placeholder reaching the rendered PDF.
-  const body = String(text).trim();
-  const greeting = companyName ? `Dear ${companyName} hiring team,` : 'Dear hiring team,';
-  return [greeting, body, cv?.name].filter(Boolean).join('\n\n');
+  return String(text).trim();
 }
 
 // Config getter. Reads process.env only — this module is ESM, so the old
@@ -166,13 +177,12 @@ export function buildCvInstruction() {
   const jsonSchema = `{
     "summary": "string",
     "coreSkills": [
-      { "category": "string", "items": [ { "skill": "string", "source": "jd|base", "jdLiteral": "string|null" } ] }
+      { "category": "string", "items": ["string"] }
     ],
     "experience": [
       { "roleId": "string|null", "achievements": ["string"] }
     ],
-    "keywordsUsed": ["string"],
-    "overlapSkills": ["string"],
+    "jdKeywords": ["string"],
     "companyName": "string",
     "jobTitle": "string"
   }`;
@@ -213,11 +223,11 @@ Third person throughout, no pronouns for the candidate.
 <skills>
 8 or 9 categories, 4 to 6 skills in each, around 36 to 50 skills in total. More categories is better: split broad groupings into specific ones rather than lumping them together.
 Every category carries at least 4. A category holding two or three is not shipped: either fill it out from the candidate's base skills and the JD, or merge it into the nearest category.
-Half or more of all skills are lifted literally from the job description in its exact spelling. Those carry source:"jd" and jdLiteral set to the exact JD substring; the rest carry source:"base" and jdLiteral:null.
-overlapSkills = skills present in both aiUserInfo.coreSkillsBase and the JD, written in JD spelling. Every one of them stays in coreSkills.
+Half or more of all skills are lifted literally from the job description in its exact spelling; the rest come from the candidate's base skills.
+Every skill present in both aiUserInfo.coreSkillsBase and the JD stays in coreSkills, written in JD spelling.
 Order inside a category: JD skills first by prominence, then base skills.
 Prefer skills that also appear in the experience bullets; a reader checks the two against each other.
-When these pull against each other, the category and per-category counts win, then overlapSkills, then the JD share. Drop non-overlap base skills first.
+When these pull against each other, the category and per-category counts win, then the skills present in both, then the JD share. Drop base skills that are not in the JD first.
 </skills>
 
 <experience>
@@ -234,7 +244,7 @@ Only real experience. Naming a task the described work necessarily included is f
 Organisation names from the JD stay out of the summary, the skills and the bullets: the hiring company, its customers, partners, parent, competitors, plus req numbers, posting ids and URLs. Technologies are not organisations, so AWS, Kubernetes, Terraform, React and PostgreSQL are used verbatim wherever the JD uses them. The candidate's own employers are rendered separately from saved data, so bullets do not repeat them.
 companyName holds the hiring company's name. It is metadata, never rendered into the CV; empty string if the JD does not say.
 jobTitle holds the title of the advertised role as the JD states it. Also metadata, never rendered; empty string if the JD does not say.
-keywordsUsed: JD terms that actually appear in the text you wrote.
+jdKeywords: the 15 to 25 most important hard requirements in the job description, whether or not the candidate has them: tools, technologies, platforms, methods, certifications, domains. Each copied from the JD character for character, shortest form that still names it. No soft skills and no generic words such as build, infrastructure, monitoring or team. It describes the job only.
 Reply with the JSON object only.
 </hard_limits>`;
 
@@ -358,6 +368,35 @@ async function runOptimize(req, res, quota) {
       if (config.OPENROUTER_APP_TITLE) headers['X-Title'] = config.OPENROUTER_APP_TITLE;
     }
 
+    const stripCodeFences = (raw) => {
+      if (typeof raw !== 'string') return '';
+      // Full fence (opening + closing)
+      if (/```[a-zA-Z]*\n[\s\S]*?```/.test(raw)) {
+        console.log('[optimize] stripping code fences from model output');
+        return raw.replace(/```[a-zA-Z]*\n([\s\S]*?)```/, '$1').trim();
+      }
+      // Opening fence only (truncated response — strip the prefix and take what we have)
+      if (/^```[a-zA-Z]*\n/.test(raw.trim())) {
+        console.log('[optimize] stripping opening-only code fence (truncated response)');
+        return raw.trim().replace(/^```[a-zA-Z]*\n/, '').trim();
+      }
+      return raw.trim();
+    };
+
+    // The saved profile, parsed once: the role metadata merge and the cover letter both read it.
+    const aiParsed = (() => { try { return JSON.parse(stripCodeFences(aiUserInfo)); } catch { return null; } })();
+
+    // The cover letter reads the saved profile, so it starts alongside the CV call rather
+    // than after it. A failure here must not cost the user their CV: it is caught and
+    // reported as an empty letter.
+    const startedAt = Date.now();
+    let letterMs = null;
+    const letterPromise = includeCoverLetter
+      ? generateCoverLetter({ config, model, jobDescription, profile: buildLetterProfile(aiParsed, fixedUserInfo, aiUserInfo), temperature })
+          .then((t) => { letterMs = Date.now() - startedAt; return t; })
+          .catch((err) => { console.error('[optimize] cover letter failed: %s', err.response?.status || err.message); return ''; })
+      : Promise.resolve('');
+
     console.log('[optimize] POST %s/chat/completions', config.API_BASE_URL);
     const initialBody = {
       model,
@@ -378,6 +417,7 @@ async function runOptimize(req, res, quota) {
       JSON.stringify(userPayload).slice(0, 400)
     );
     const result = await axios.post(url, initialBody, { headers });
+    const cvMs = Date.now() - startedAt;
 
     logModelCall('cv', result, max_tokens);
 
@@ -397,21 +437,6 @@ async function runOptimize(req, res, quota) {
       } catch {}
       return res.status(500).json({ error: 'Invalid response from model (empty content)' });
     }
-
-    const stripCodeFences = (raw) => {
-      if (typeof raw !== 'string') return '';
-      // Full fence (opening + closing)
-      if (/```[a-zA-Z]*\n[\s\S]*?```/.test(raw)) {
-        console.log('[optimize] stripping code fences from model output');
-        return raw.replace(/```[a-zA-Z]*\n([\s\S]*?)```/, '$1').trim();
-      }
-      // Opening fence only (truncated response — strip the prefix and take what we have)
-      if (/^```[a-zA-Z]*\n/.test(raw.trim())) {
-        console.log('[optimize] stripping opening-only code fence (truncated response)');
-        return raw.trim().replace(/^```[a-zA-Z]*\n/, '').trim();
-      }
-      return raw.trim();
-    };
 
     const parseAndPrepare = (raw) => {
       const clean = stripCodeFences(raw);
@@ -446,7 +471,8 @@ async function runOptimize(req, res, quota) {
 
       // Structural validation to explain why JSON may be considered invalid
       const structureIssues = [];
-      const allowedKeys = new Set(['summary', 'coreSkills', 'experience', 'keywordsUsed', 'overlapSkills', 'companyName', 'jobTitle']);
+      // keywordsUsed and overlapSkills are accepted without complaint: older prompts asked for them.
+      const allowedKeys = new Set(['summary', 'coreSkills', 'experience', 'jdKeywords', 'keywordsUsed', 'overlapSkills', 'companyName', 'jobTitle']);
       for (const k of Object.keys(parsed || {})) {
         if (!allowedKeys.has(k)) structureIssues.push(`Unexpected key: ${k}`);
       }
@@ -463,10 +489,11 @@ async function runOptimize(req, res, quota) {
             structureIssues.push(`coreSkills[${idx}].items is empty`);
           } else {
             cat.items.forEach((it, jdx) => {
-              if (!it || typeof it.skill !== 'string') {
-                structureIssues.push(`coreSkills[${idx}].items[${jdx}].skill must be string`);
+              const isValid = (typeof it === 'string' && it.trim().length > 0) || (it && typeof it === 'object' && typeof it.skill === 'string');
+              if (!isValid) {
+                structureIssues.push(`coreSkills[${idx}].items[${jdx}] must be a skill string or {skill: string}`);
               }
-              if (it && it.source && !['jd', 'base'].includes(it.source)) {
+              if (it && typeof it === 'object' && it.source && !['jd', 'base'].includes(it.source)) {
                 structureIssues.push(`coreSkills[${idx}].items[${jdx}].source must be "jd"|"base"`);
               }
             });
@@ -486,8 +513,8 @@ async function runOptimize(req, res, quota) {
           }
         });
       }
-      const { coreSkills, jdShare, dropped } = validateAndFixSkills(parsed.coreSkills);
-      const orderedSkills = reorderSkills(coreSkills);
+      const { coreSkills, dropped } = validateAndFixSkills(parsed.coreSkills);
+      const orderedSkills = reorderSkills(labelSkills(coreSkills, jobDescription));
       if (dropped && (dropped.items > 0 || dropped.categories > 0)) {
         console.warn('[optimize] over-production trimmed: %s skills (%s), %s categories',
           dropped.items, dropped.itemsByCategory.join(', ') || 'none', dropped.categories);
@@ -497,8 +524,6 @@ async function runOptimize(req, res, quota) {
       // Merge role metadata from aiUserInfo (if JSON with experienceSource is provided)
       const roleMetaMap = (() => {
         try {
-          const aiClean = stripCodeFences(aiUserInfo || '');
-          const aiParsed = JSON.parse(aiClean);
           const src = Array.isArray(aiParsed?.experienceSource) ? aiParsed.experienceSource : [];
           const map = new Map();
           for (const r of src) {
@@ -545,29 +570,10 @@ async function runOptimize(req, res, quota) {
         experience: enrichedExperience,
         education: Array.isArray(parsed.education) ? parsed.education : []
       };
-      return { cv: prepared, jdShare, dropped, keywords: Array.isArray(parsed.keywordsUsed) ? parsed.keywordsUsed : [], overlapSkills: Array.isArray(parsed.overlapSkills) ? parsed.overlapSkills : [], structureIssues, companyName: typeof parsed.companyName === 'string' ? parsed.companyName.trim() : '', jobTitle: typeof parsed.jobTitle === 'string' ? parsed.jobTitle.trim() : '' };
+      return { cv: prepared, dropped, jdKeywords: Array.isArray(parsed.jdKeywords) ? parsed.jdKeywords : [], structureIssues, companyName: typeof parsed.companyName === 'string' ? parsed.companyName.trim() : '', jobTitle: typeof parsed.jobTitle === 'string' ? parsed.jobTitle.trim() : '' };
     };
 
-    let { cv, jdShare, dropped, keywords, overlapSkills, structureIssues, companyName, jobTitle } = parseAndPrepare(content);
-
-    let totals = 0;
-    let categoryCount = 0;
-    let needsFix = false;
-    let boundsViolations = [];
-    if (cv && Array.isArray(cv.coreSkills)) {
-      totals = cv.coreSkills.reduce((acc, c) => acc + c.items.length, 0);
-      categoryCount = cv.coreSkills.length;
-      boundsViolations = cv.coreSkills
-        .filter(c => c.items.length < 3 || c.items.length > 9)
-        .map(c => `${c.category}:${c.items.length}`);
-      needsFix = (jdShare ?? 0) < 0.5 || categoryCount < 6 || categoryCount > 9 || boundsViolations.length > 0;
-      console.log('[optimize] skills stats: jdShare=%s, categories=%s, totalSkills=%s', jdShare, categoryCount, totals);
-      if (boundsViolations.length > 0) {
-        console.log('[optimize] category size violations: %s', boundsViolations.join(', '));
-      }
-    } else {
-      needsFix = true; // parsing failed
-    }
+    const { cv, dropped, jdKeywords, structureIssues, companyName, jobTitle } = parseAndPrepare(content);
 
     if (!cv || !Array.isArray(cv.coreSkills) || cv.coreSkills.length === 0) {
       console.error('[optimize] JSON invalid or empty. Last output preview (first 400): %s', String(content || '').slice(0, 400));
@@ -598,59 +604,32 @@ async function runOptimize(req, res, quota) {
       }
     } catch {}
 
-    // Compute filtered keywords that actually appear in the rendered CV content
     const markdown = renderCvMarkdown(cv);
-    const plainText = (() => {
-      try {
-        // very simple strip of markdown markers
-        return String(markdown)
-          .replace(/[#*_`>\-]/g, ' ')
-          .replace(/\s+/g, ' ')
-          .toLowerCase();
-      } catch { return ''; }
-    })();
-    const filteredKeywords = (Array.isArray(keywords) ? keywords : [])
-      .filter(k => {
-        const term = String(k || '').trim().toLowerCase();
-        if (!term) return false;
-        return plainText.includes(term);
-      });
+
+    // Everything below is checked by the server against the job description and the saved
+    // profile: the model only names the JD's key requirements, it never grades itself.
+    const writtenText = [cv.summary, ...cv.coreSkills.flatMap((c) => c.items.map((i) => i.skill)), ...cv.experience.flatMap((j) => j.achievements)].join('\n');
+    const cvText = [writtenText, ...(cv.certifications || []), ...(cv.education || []), ...cv.experience.map((j) => j.title || '')].join('\n');
+    const analysis = analyzeCoverage({ jdKeywords, jobDescription, cvText, writtenText, profileText: `${aiUserInfo || ''}\n${fixedUserInfo || ''}` });
+    console.log('[optimize] skills: categories=%s totalSkills=%s dropped=%s/%s analysis=%s matched=%s unsupported=%s',
+      cv.coreSkills.length,
+      cv.coreSkills.reduce((acc, c) => acc + c.items.length, 0),
+      dropped?.items ?? 0, dropped?.categories ?? 0,
+      analysis.total, analysis.matched.length, analysis.unsupported.length);
 
     if (Array.isArray(structureIssues) && structureIssues.length) {
       console.warn('[optimize] structure issues:', structureIssues.join(' | '));
     }
 
-    // Optional second pass. A failure here must not cost the user their CV, so it is
-    // caught and reported as an empty letter rather than failing the request.
-    let coverLetter = '';
-    if (includeCoverLetter) {
-      try {
-        console.log('[optimize] generating cover letter');
-        coverLetter = await generateCoverLetter({ config, model, jobDescription, cv, temperature, companyName });
-        console.log('[optimize] cover letter length=%s', coverLetter.length);
-      } catch (err) {
-        console.error('[optimize] cover letter failed: %s', err.response?.status || err.message);
-      }
-    }
-    const stats = {
-      jdShare: jdShare ?? 0,
-      categories: categoryCount,
-      totalSkills: totals,
-      categorySizeViolations: boundsViolations,
-      structureIssues: structureIssues || [],
-      overlapCount: Array.isArray(overlapSkills) ? overlapSkills.length : 0,
-      droppedSkills: dropped?.items ?? 0,
-      droppedCategories: dropped?.categories ?? 0
-    };
+    const letterBody = await letterPromise;
+    const coverLetter = letterBody ? assembleLetter(letterBody, companyName, cv.name) : '';
+    console.log('[timing] cv=%sms letter=%sms total=%sms', cvMs, letterMs ?? '-', Date.now() - startedAt);
+
     const payload = {
       cvContent: markdown,
-      keywords: (keywords || []).slice(0, 20),
-      keywordsFiltered: filteredKeywords.slice(0, 20),
       cv,
       coverLetter,
-      needsFix,
-      stats,
-      overlapSkills: Array.isArray(overlapSkills) ? overlapSkills : [],
+      analysis,
       companyName: companyName || '',
       jobTitle: jobTitle || '',
       quota

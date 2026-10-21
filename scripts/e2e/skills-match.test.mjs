@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { makeTextMatcher, analyzeCoverage } from '../../server/skillMatch.js';
+import { validateAndFixSkills } from '../../server/cvValidation.js';
+
+// makeTextMatcher
+const matches = makeTextMatcher('We use GitLab CI/CD and Node.js, C++ and C#.');
+for (const term of ['CI/CD', 'gitlab ci/cd', 'Node.js', 'C++', 'C#']) {
+  assert.ok(matches(term), `expected "${term}" to match`);
+}
+assert.ok(!makeTextMatcher('We run on Google Cloud.')('Go'), 'Go must not match Google Cloud');
+assert.ok(makeTextMatcher('We write Helm charts.')('Helm chart'), 'singular term matches a plural in the text');
+
+// analyzeCoverage
+const result = analyzeCoverage({
+  jdKeywords: ['Kubernetes', 'Terraform', 'Azure', 'Rust', 'Snowflake'],
+  jobDescription: 'We need Kubernetes, Terraform, Azure and Rust.',
+  cvText: 'Kubernetes Terraform Azure',
+  writtenText: 'Kubernetes Terraform Azure',
+  profileText: 'Kubernetes Terraform Rust',
+});
+assert.equal(result.total, 4);
+assert.deepEqual(result.matched, ['Kubernetes', 'Terraform', 'Azure']);
+assert.deepEqual(result.missing, [{ term: 'Rust', inProfile: true }]);
+assert.deepEqual(result.unsupported, ['Azure']);
+assert.equal(result.coverage, 0.75);
+
+// validateAndFixSkills: mixed string/object items, case-insensitive dedupe
+const { coreSkills } = validateAndFixSkills([
+  { category: 'Cloud', items: ['AWS', { skill: 'aws' }, { skill: 'Kubernetes', source: 'jd' }, 'Terraform', '  '] },
+]);
+assert.deepEqual(coreSkills[0].items.map((i) => i.skill), ['AWS', 'Kubernetes', 'Terraform']);
+
+console.log('skills-match: ok');
+
+// makeProfileMatcher: aliases
+{
+  const { makeProfileMatcher } = await import('../../server/skillMatch.js');
+  const backed = makeProfileMatcher('Argo CD, Jenkins');
+  assert.ok(backed('GitOps'), 'Argo CD backs GitOps');
+  assert.ok(backed('CI/CD'), 'Jenkins backs CI/CD');
+  assert.ok(!backed('HashiCorp Vault'));
+}
+
+// Key-word profile check
+{
+  const { makeProfileMatcher } = await import('../../server/skillMatch.js');
+  const backed = makeProfileMatcher('IAM, Linux servers, Wrote runbooks for the top 15 incidents, VPC, AWS');
+  for (const term of ['IAM least privilege', 'Linux administration', 'Incident response', 'VPC networking']) {
+    assert.ok(backed(term), `"${term}" should be backed`);
+  }
+  for (const term of ['HashiCorp Vault', 'OpenTelemetry', 'SAST/DAST', 'SLOs', 'FinOps']) {
+    assert.ok(!backed(term), `"${term}" should not be backed`);
+  }
+  console.log('skills-match (key words): ok');
+}
