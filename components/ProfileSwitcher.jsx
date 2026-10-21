@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useDialog } from './Dialog.jsx';
 import { Users, Lock, Check, Pencil, Trash2, Plus, ChevronDown } from 'lucide-react';
 
 // Toolbar dropdown for saved profiles. Free keeps one and sees a locked second slot that opens
@@ -12,11 +13,22 @@ const ProfileSwitcher = ({ locked, upsell, profiles, activeProfileId, limit, bus
   const active = activeProfileId && profiles?.[activeProfileId];
   const atCap = limit != null && entries.length >= limit;
 
-  const askName = (current = '') => {
-    const name = window.prompt('Profile name', current);
-    const trimmed = String(name || '').trim().slice(0, 80);
-    return trimmed || null;
-  };
+  const dialog = useDialog();
+
+  // Asks for a profile name in an in-app dialog. Resolves to the trimmed name, or null on cancel.
+  const askName = ({ id = null, current = '' } = {}) => dialog.prompt({
+    title: id ? 'Rename profile' : 'Save as a new profile',
+    message: id ? null : 'Saves your current info under a name, e.g. one per role you apply for.',
+    label: 'Profile name',
+    placeholder: 'e.g. Backend engineer',
+    defaultValue: current,
+    confirmLabel: id ? 'Rename' : 'Save profile',
+    maxLength: 80,
+    validate: (name) => {
+      const taken = entries.some(([otherId, p]) => otherId !== id && String(p.name || '').trim().toLowerCase() === name.toLowerCase());
+      return taken ? 'You already have a profile with this name.' : null;
+    },
+  });
 
   const handleButton = () => {
     if (locked) {
@@ -67,7 +79,11 @@ const ProfileSwitcher = ({ locked, upsell, profiles, activeProfileId, limit, bus
                 </button>
                 <button
                   type="button"
-                  onClick={() => { const name = askName(p.name); if (name) onRename(id, name); }}
+                  onClick={async () => {
+                    setOpen(false);
+                    const name = await askName({ id, current: p.name || '' });
+                    if (name && name !== p.name) onRename(id, name);
+                  }}
                   className="p-1 text-ink-faint hover:text-ink"
                   aria-label={`Rename ${p.name}`}
                 >
@@ -75,7 +91,16 @@ const ProfileSwitcher = ({ locked, upsell, profiles, activeProfileId, limit, bus
                 </button>
                 <button
                   type="button"
-                  onClick={() => { if (window.confirm(`Delete the profile "${p.name}"? Your current info is kept.`)) onDelete(id); }}
+                  onClick={async () => {
+                    setOpen(false);
+                    const ok = await dialog.confirm({
+                      title: `Delete "${p.name || 'Untitled'}"?`,
+                      message: 'This removes the saved profile. Your current info stays as it is.',
+                      confirmLabel: 'Delete profile',
+                      danger: true,
+                    });
+                    if (ok) onDelete(id);
+                  }}
                   className="p-1 text-ink-faint hover:text-danger-text"
                   aria-label={`Delete ${p.name}`}
                 >
@@ -99,7 +124,11 @@ const ProfileSwitcher = ({ locked, upsell, profiles, activeProfileId, limit, bus
               <button
                 type="button"
                 disabled={atCap}
-                onClick={() => { const name = askName(); if (name) { setOpen(false); onSaveAs(name); } }}
+                onClick={async () => {
+                  setOpen(false);
+                  const name = await askName();
+                  if (name) onSaveAs(name);
+                }}
                 className="w-full text-left px-4 py-2 text-sm text-berry hover:bg-berry-soft flex items-center gap-2 disabled:text-ink-faint disabled:hover:bg-transparent"
                 title={atCap ? `You can keep up to ${limit} profiles. Delete one to save another.` : ''}
               >

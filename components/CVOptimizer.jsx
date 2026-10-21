@@ -19,6 +19,7 @@ import { optimizeCv as optimizeCvService, detectAiContent } from '../services/op
 import { getBillingStatus, startCheckout, openBillingPortal } from '../services/billing.js';
 import { newProfileId, saveProfile, renameProfile, deleteProfile, activateProfile } from '../services/profiles.js';
 import ProfileSwitcher from './ProfileSwitcher.jsx';
+import { useDialog } from './Dialog.jsx';
 import HistoryPage from './HistoryPage.jsx';
 import PricingModal from './PricingModal.jsx';
 import Landing from './Landing.jsx';
@@ -171,6 +172,9 @@ const emptyFormData = () => ({
 
 
 const CVOptimizer = () => {
+  // In-app notice instead of the browser's alert().
+  const dialog = useDialog();
+  const notify = (title, message) => dialog.alert({ title, message });
   const [jobDescription, setJobDescription] = useState('');
   const [aiUserInfo, setAiUserInfo] = useState('');
   const [fixedUserInfo, setFixedUserInfo] = useState('');
@@ -555,7 +559,7 @@ const CVOptimizer = () => {
         setShowPaywall(false);
         setBillingNotice('Your account already has full access.');
       } else {
-        alert(err.message || 'Could not start checkout. Please try again.');
+        notify('Checkout didn’t open', err.message || 'Could not start checkout. Please try again.');
       }
     }
   };
@@ -566,7 +570,7 @@ const CVOptimizer = () => {
       await openBillingPortal();
     } catch (err) {
       setBillingBusy(false);
-      alert(err.message || 'Could not open billing settings. Please try again.');
+      notify('Billing settings didn’t open', err.message || 'Could not open billing settings. Please try again.');
     }
   };
 
@@ -581,9 +585,11 @@ const CVOptimizer = () => {
       await fn();
     } catch (err) {
       console.error('[profiles] %s', err?.message || err);
-      alert(err?.code === 'permission-denied'
-        ? 'Your plan does not allow that. Free keeps 1 saved profile, Pro up to 3, Max unlimited.'
-        : failure);
+      if (err?.code === 'permission-denied') {
+        notify('Profile limit reached', 'Your plan does not allow that. Free keeps 1 saved profile, Pro up to 3, Max unlimited.');
+      } else {
+        notify('Something went wrong', failure);
+      }
     } finally {
       setProfileBusy(false);
     }
@@ -591,7 +597,7 @@ const CVOptimizer = () => {
 
   const handleSaveProfileAs = (name) => runProfileOp(async () => {
     if (!aiUserInfo.trim()) {
-      alert('Set up your info first, then save it as a profile.');
+      notify('Nothing to save yet', 'Set up your info first, then save it as a profile.');
       return;
     }
     const id = newProfileId();
@@ -650,7 +656,7 @@ const CVOptimizer = () => {
 
   const saveUserInfo = async () => {
     if (!user) {
-      alert('Please sign in to save your information.');
+      notify('Sign in to save', 'Please sign in to save your information.');
       return;
     }
 
@@ -683,7 +689,7 @@ const CVOptimizer = () => {
       // Saved successfully
     } catch (error) {
       console.error('Error saving user data:', error);
-      alert('Failed to save user information. Please try again.');
+      notify('Couldn’t save your info', 'Failed to save user information. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -1041,11 +1047,11 @@ const CVOptimizer = () => {
 
   const handleOptimize = async () => {
     if (!jobDescription.trim() || !aiUserInfo.trim()) {
-      alert('Please provide both job description and AI input content.');
+      notify('Missing information', 'Paste a job description and fill in your info first.');
       return;
     }
     if (jobDescription.length > 10000 || aiUserInfo.length > 20000 || fixedUserInfo.length > 10000) {
-      alert('Input text is too long. Please shorten your inputs.');
+      notify('Too long', 'Input text is too long. Please shorten your inputs.');
       return;
     }
 
@@ -1110,17 +1116,17 @@ const CVOptimizer = () => {
       }
       recordAppError(`Optimize: ${error.message}`);
       if (error.message.includes('500')) {
-        alert('Server error occurred. The OpenAI API may be temporarily unavailable. Please try again in a few moments.');
+        notify('Server error', 'The AI service may be temporarily unavailable. Please try again in a few moments.');
       } else if (error.message.includes('400')) {
-        alert('Invalid request format. Please check your input and try again.');
+        notify('Couldn’t generate', 'Invalid request format. Please check your input and try again.');
       } else if (error.message.includes('401')) {
-        alert('Authentication error. Please check your OpenAI API key.');
+        notify('Couldn’t generate', 'Authentication error on our side. Please try again later or send us feedback.');
       } else if (error.message.includes('403')) {
-        alert('Access forbidden. Please check your OpenAI API permissions.');
+        notify('Couldn’t generate', 'Access was refused on our side. Please try again later or send us feedback.');
       } else if (error.message.includes('429')) {
-        alert('Rate limit exceeded. Please wait a moment before trying again.');
+        notify('Too many requests', 'Please wait a moment before trying again.');
       } else {
-        alert(`An error occurred while optimizing your CV: ${error.message}`);
+        notify('Couldn’t generate', `An error occurred while optimizing your CV: ${error.message}`);
       }
     } finally {
       setIsProcessing(false);
