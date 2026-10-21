@@ -50,24 +50,6 @@ export function makeProfileMatcher(profileText) {
   };
 }
 
-// Removes every skill that the JD names but the profile does not back. A category left empty goes too.
-// Categories are not refilled; the caller's category-size log still records a short one.
-export function dropUnbackedSkills(coreSkills, { jobDescription = '', profileText = '' } = {}) {
-  const inJd = makeTextMatcher(jobDescription);
-  const inProfile = makeProfileMatcher(profileText);
-  const removed = [];
-  const kept = [];
-  for (const cat of Array.isArray(coreSkills) ? coreSkills : []) {
-    const items = cat.items.filter((it) => {
-      const unbacked = inJd(it.skill) && !inProfile(it.skill);
-      if (unbacked) removed.push(it.skill);
-      return !unbacked;
-    });
-    if (items.length) kept.push({ ...cat, items });
-  }
-  return { coreSkills: kept, removed };
-}
-
 const uniq = (arr) => [...new Map(arr.map((s) => [normalizeTerm(s), s])).values()].filter((s) => normalizeTerm(s));
 
 // Labels each skill jd/base (used only to put JD skills first inside a category).
