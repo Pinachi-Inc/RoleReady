@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, FileText, Zap, AlertCircle, Save, Info, Copy, Check, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, Link2, Award, GraduationCap, Briefcase, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Download, FileText, Zap, AlertCircle, Save, Info, Copy, Check, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, Link2, Award, GraduationCap, Briefcase, BarChart3 } from 'lucide-react';
 import { convertMarkdownToHtml } from '../utils/markdown.js';
 import { generateDownloadHtml, downloadHtml } from '../utils/download.js';
 import html2pdf from 'html2pdf.js';
@@ -197,6 +197,8 @@ const CVOptimizer = () => {
   const [ocrStatus, setOcrStatus] = useState('');
   const [setupTab, setSetupTab] = useState('personal');
   const [jdCollapsed, setJdCollapsed] = useState(false); // Desktop-only JD sidebar collapse
+  // True while the result shown is a past run opened from History, so it can offer the way back.
+  const [openedFromHistory, setOpenedFromHistory] = useState(false);
   const [folderMgmtEnabled, setFolderMgmtEnabled] = useState(() => localStorage.getItem('folderMgmtEnabled') === 'true');
   const [companyName, setCompanyName] = useState('');
   const [wantsCoverLetter, setWantsCoverLetter] = useState(() => localStorage.getItem('wantsCoverLetter') === 'true');
@@ -642,6 +644,7 @@ const CVOptimizer = () => {
     setDownloadNotice('');
     setActiveDoc('cv');
     setJdCollapsed(true);
+    setOpenedFromHistory(true);
     setCurrentPage('main');
   };
 
@@ -1047,6 +1050,7 @@ const CVOptimizer = () => {
     }
 
     setIsProcessing(true);
+    setOpenedFromHistory(false);
     setOptimizedCv('');
     setKeywords([]);
     detectRunRef.current++;
@@ -1894,6 +1898,16 @@ const CVOptimizer = () => {
         {/* Right column: result */}
         <section aria-label="Result" className="flex flex-col gap-3.5 p-4 sm:p-6 pb-20 bg-paper dark:bg-night">
           <div className="flex flex-wrap items-center gap-2.5">
+            {openedFromHistory && (
+              <button
+                type="button"
+                onClick={() => setCurrentPage('history')}
+                className="h-[30px] px-3 rounded-lg text-[13px] font-semibold border border-line text-ink hover:bg-hover dark:border-night-line dark:text-night-text dark:hover:bg-night-surface inline-flex items-center gap-1.5"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to history
+              </button>
+            )}
             {coverLetter ? (
               <div role="tablist" aria-label="Document" className="inline-flex p-[3px] rounded-[10px] bg-[#EADDE2] dark:bg-night-raised">
                 {[['cv', 'CV'], ['letter', 'Cover letter']].map(([id, label]) => (
