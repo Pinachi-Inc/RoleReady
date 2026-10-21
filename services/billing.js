@@ -19,7 +19,7 @@ async function postBilling(path, body = {}) {
 }
 
 // { plan: 'free'|'paid'|'max', comped, billingPlan, used, limit, remaining, window, fairUse,
-//   profileLimit, unlimitedProfiles, historyVisible, billingAvailable, maxAvailable, hasCustomer,
+//   profileLimit, unlimitedProfiles, extraTemplates, historyVisible, billingAvailable, maxAvailable, hasCustomer,
 //   subscriptionStatus, renewsAt, cancelAtPeriodEnd }
 // 'paid' is Pro.
 export const getBillingStatus = () => postBilling('status');

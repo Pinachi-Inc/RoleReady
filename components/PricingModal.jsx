@@ -56,7 +56,7 @@ export const PLANS = [
         detail: 'Pick a folder once. Every CV saves into its own company folder under the same file name. No renaming, no sorting by hand. Chrome and Edge on desktop.',
       },
       { text: 'Saved history of every CV and cover letter' },
-      { text: 'Extra CV templates', soon: true },
+      { text: '3 CV templates: Classic, Modern, Executive' },
       { text: 'Cancel any time' },
     ],
   },
