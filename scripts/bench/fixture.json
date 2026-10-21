@@ -1,0 +1,67 @@
+{
+  "note": "Synthetic test profile and job description for scripts/bench-optimize.mjs. Not a real person.",
+  "fixedUserInfo": {
+    "name": "Alex Morgan",
+    "yearsOfExperience": 7,
+    "contact": { "email": "alex@example.com", "phone": "+1 555 0100", "location": "Remote", "links": ["github.com/alexmorgan"] },
+    "certifications": ["AWS Certified Solutions Architect – Associate"],
+    "education": ["BSc Computer Science, State University, 2017"]
+  },
+  "aiUserInfo": {
+    "coreSkillsBase": [
+      { "category": "Cloud", "items": ["AWS", "EC2", "S3", "IAM", "RDS", "CloudFront"] },
+      { "category": "Containers", "items": ["Docker", "Kubernetes", "Helm", "EKS"] },
+      { "category": "Infrastructure as Code", "items": ["Terraform", "Ansible", "CloudFormation"] },
+      { "category": "CI/CD", "items": ["GitHub Actions", "Jenkins", "Argo CD"] },
+      { "category": "Observability", "items": ["Prometheus", "Grafana", "ELK", "PagerDuty"] },
+      { "category": "Languages", "items": ["Python", "Bash", "Go", "Node.js"] },
+      { "category": "Databases", "items": ["PostgreSQL", "Redis", "MongoDB"] }
+    ],
+    "experienceSource": [
+      {
+        "roleId": "role-a1",
+        "title": "Senior DevOps Engineer",
+        "company": "Brightpath Logistics",
+        "location": "Remote",
+        "start": "Mar 2022",
+        "end": "Present",
+        "baseAchievements": [
+          "Migrated 40 services from EC2 VMs to EKS with Helm charts, cutting infra cost by about 30%",
+          "Built GitHub Actions pipelines with Argo CD so deploys went from a 45 minute manual process to 12 minutes",
+          "Wrote Terraform modules for VPC, RDS and IAM used by 6 product teams",
+          "Set up Prometheus and Grafana alerting, reduced pages at night by roughly half",
+          "Ran the on-call rotation and wrote runbooks for the top 15 incidents"
+        ]
+      },
+      {
+        "roleId": "role-b2",
+        "title": "DevOps Engineer",
+        "company": "Quanta Retail",
+        "location": "Berlin, Germany",
+        "start": "Jan 2019",
+        "end": "Feb 2022",
+        "baseAchievements": [
+          "Containerised a Node.js monolith with Docker and moved it to Kubernetes",
+          "Replaced Jenkins freestyle jobs with declarative pipelines, about 30 deploys a week",
+          "Automated PostgreSQL backups and tested restores monthly",
+          "Introduced Ansible for server config across 120 hosts",
+          "Moved logs into ELK so developers could search production errors themselves"
+        ]
+      },
+      {
+        "roleId": "role-c3",
+        "title": "Systems Administrator",
+        "company": "Northwind Hosting",
+        "location": "Berlin, Germany",
+        "start": "Jun 2017",
+        "end": "Dec 2018",
+        "baseAchievements": [
+          "Managed 200 Linux servers and patched them on a monthly schedule",
+          "Wrote Bash and Python scripts to automate user provisioning",
+          "Set up Redis caching for the customer portal, page loads dropped from 3s to under 1s"
+        ]
+      }
+    ]
+  },
+  "jobDescription": "Platform Engineer (DevOps)\n\nAbout the role\nWe are looking for a Platform Engineer to join our infrastructure team. You will own our Kubernetes platform, CI/CD pipelines and cloud infrastructure, and help product teams ship faster and more safely.\n\nWhat you will do\n- Design, build and operate our Kubernetes clusters on AWS (EKS) using Terraform and Helm\n- Own GitOps delivery with Argo CD and GitHub Actions; keep deployments fast and reversible\n- Improve observability with Prometheus, Grafana and OpenTelemetry; define SLOs and alerting\n- Drive incident response, run blameless postmortems and reduce MTTR\n- Harden our cloud security posture: IAM least privilege, secrets management with HashiCorp Vault, SAST/DAST in pipelines\n- Support PostgreSQL and Redis in production, including backups and disaster recovery\n- Write tooling in Python or Go to automate repetitive operational work\n- Mentor engineers on infrastructure as code and platform best practices\n\nWhat we are looking for\n- 5+ years in DevOps, SRE or platform engineering\n- Strong hands-on experience with Kubernetes, Docker and Helm\n- Production experience with AWS (EC2, S3, IAM, RDS, VPC networking)\n- Terraform at scale, module design and state management\n- CI/CD with GitHub Actions or GitLab CI/CD; GitOps with Argo CD\n- Monitoring and logging: Prometheus, Grafana, ELK or similar centralized logging\n- Scripting in Python, Bash or Go\n- Linux administration and networking fundamentals\n\nNice to have\n- Azure or GCP experience\n- Service mesh (Istio or Linkerd)\n- Cost optimisation (FinOps) experience\n- On-call experience and runbook writing\n\nWhy join us\nRemote-first team, modern stack, and real ownership of the platform."
+}
