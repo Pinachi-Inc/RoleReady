@@ -52,3 +52,16 @@ console.log('skills-match: ok');
   assert.deepEqual(guarded.coreSkills[0].items.map((i) => i.skill), ['Terraform', 'Bash']);
   console.log('skills-match (profile guard): ok');
 }
+
+// Key-word profile check
+{
+  const { makeProfileMatcher } = await import('../../server/skillMatch.js');
+  const backed = makeProfileMatcher('IAM, Linux servers, Wrote runbooks for the top 15 incidents, VPC, AWS');
+  for (const term of ['IAM least privilege', 'Linux administration', 'Incident response', 'VPC networking']) {
+    assert.ok(backed(term), `"${term}" should be backed`);
+  }
+  for (const term of ['HashiCorp Vault', 'OpenTelemetry', 'SAST/DAST', 'SLOs', 'FinOps']) {
+    assert.ok(!backed(term), `"${term}" should not be backed`);
+  }
+  console.log('skills-match (key words): ok');
+}
