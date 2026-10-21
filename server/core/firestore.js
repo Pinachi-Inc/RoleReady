@@ -72,10 +72,11 @@ function db() {
 // model bill, and profiles 100, mirrored in firestore.rules, so the user document stays well
 // inside Firestore's 1 MiB limit. `fairUse` / `unlimitedProfiles` tell the UI to say
 // "Unlimited" rather than show either number. Comped accounts get exactly Max, cap included.
+// `extraTemplates`: Modern and Executive CV templates (src/documents/catalog.js).
 export const PLAN_LIMITS = {
   free: { window: 'lifetime', optimizations: 5, pdfImports: 10, profiles: 1, historyVisible: 5 },
   paid: { window: 'month', optimizations: 1000, pdfImports: null, profiles: 3, historyVisible: null },
-  max: { window: 'month', optimizations: 5000, pdfImports: null, profiles: 100, historyVisible: null, fairUse: true, unlimitedProfiles: true },
+  max: { window: 'month', optimizations: 5000, pdfImports: null, profiles: 100, historyVisible: null, fairUse: true, unlimitedProfiles: true, extraTemplates: true },
 };
 
 // The most runs any limited plan can open, so history can be read before the plan is known.
@@ -190,6 +191,7 @@ export function getEntitlement(user, data, kind = 'optimizations') {
     historyVisible: limits.historyVisible,
     fairUse: Boolean(limits.fairUse),
     unlimitedProfiles: Boolean(limits.unlimitedProfiles),
+    extraTemplates: Boolean(limits.extraTemplates),
     enforced: enforcementOn(),
   };
 }
