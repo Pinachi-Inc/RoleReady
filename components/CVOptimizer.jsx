@@ -359,6 +359,10 @@ const CVOptimizer = () => {
   };
 
   const needsSetup = !isValidFormData();
+  // True from sign-in until the stored profile has been read. The form is empty during that
+  // window, so nothing may treat "empty" as "has no profile" until it flips back to false.
+  const [profileLoading, setProfileLoading] = useState(false);
+  const profileLoadRef = useRef(0);
 
   // Theme state must be declared before any conditional returns to keep hook order stable
   const [isDark, setIsDark] = useState(false);
@@ -384,9 +388,9 @@ const CVOptimizer = () => {
   // so start warming the OCR assets now rather than making them wait for a ~7MB
   // download at the moment they pick a scanned file. Never blocks and never throws.
   useEffect(() => {
-    if (!user || !needsSetup || !isOcrSupported()) return;
+    if (!user || profileLoading || !needsSetup || !isOcrSupported()) return;
     prefetchOcrAssets();
-  }, [user, needsSetup]);
+  }, [user, profileLoading, needsSetup]);
 
   // Scroll-spy for the rail. Re-armed whenever the setup page mounts its sections.
   useEffect(() => {
@@ -460,11 +464,17 @@ const CVOptimizer = () => {
   // Auth state management
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (user) => {
+      // A newer auth change (sign-out, another account) makes this load stale.
+      const load = ++profileLoadRef.current;
       setUser(user);
+      setProfileLoading(Boolean(user));
       if (user) {
         // Load user data when signed in
         try {
+          const t0 = performance.now();
           const userData = await getUserData(user.uid);
+          if (load !== profileLoadRef.current) return;
+          console.log('[profile] loaded in %sms', Math.round(performance.now() - t0));
           if (userData) {
             // Repair role ids on the way in: profiles saved before ids were unique
             // would otherwise optimise into a CV where every job shares one header.
@@ -483,6 +493,8 @@ const CVOptimizer = () => {
           }
         } catch (error) {
           console.error('Error loading user data:', error);
+        } finally {
+          if (load === profileLoadRef.current) setProfileLoading(false);
         }
       } else {
         clearSessionData();
@@ -1129,8 +1141,9 @@ const CVOptimizer = () => {
     );
   }
 
-  // Show setup page
-  if (currentPage === 'setup') {
+  // Show setup page. Held back while the profile loads, so nobody types into an empty
+  // form that the stored profile is about to replace.
+  if (currentPage === 'setup' && !profileLoading) {
     const sectionState = (id) => {
       switch (id) {
         case 'import':
@@ -1694,7 +1707,7 @@ const CVOptimizer = () => {
       {planStripEl}
 
       <main className={`relative flex-1 grid grid-cols-1 ${jdCollapsed ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(420px,1fr)_1.25fr]'}`}>
-        {needsSetup && (
+        {needsSetup && !profileLoading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 backdrop-blur-[1px] dark:bg-night/80">
             <div className="max-w-sm rounded-2xl border border-line bg-white p-6 text-center shadow-xl dark:bg-night-raised dark:border-night-line">
               <h2 className="text-lg font-extrabold">Set up your info first</h2>
@@ -1763,13 +1776,18 @@ const CVOptimizer = () => {
             </button>
             <button
               onClick={handleOptimize}
-              disabled={isProcessing}
+              disabled={isProcessing || profileLoading}
               className="w-full h-[52px] inline-flex items-center justify-center gap-2 bg-berry text-white text-[15px] font-bold hover:bg-berry-dark disabled:opacity-60"
             >
               {isProcessing ? (
                 <>
                   <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
                   Optimizing...
+                </>
+              ) : profileLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                  Loading your info...
                 </>
               ) : (
                 <>
