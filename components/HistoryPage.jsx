@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Clock, Download, FileText, Lock, Sparkles } from 'lucide-react';
 import { listHistory, cachedHistory, getHistoryRun } from '../services/history.js';
-import { buildCvPdf, buildCoverLetterPdf } from '../src/cvPdf.js';
+import { downloadBlob } from '../utils/download.js';
 import { useDialog } from './Dialog.jsx';
+
+const loadDocuments = () => import('../src/documents/index.js');
 
 // Past runs, newest first. Every plan's runs are saved; free can open its newest few
 // (visibleLimit) and sees the rest as greyed, blurred rows with an unlock prompt. The server
@@ -56,7 +58,7 @@ const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
   const withRun = async (id, fn) => {
     setBusyId(id);
     try {
-      fn(await getHistoryRun(id));
+      await fn(await getHistoryRun(id));
     } catch (err) {
       if (err.code === 'upgrade_required') onUpgrade();
       else dialog.alert({ title: 'Could not open this run', message: err.message || 'Please try again in a moment.' });
@@ -65,16 +67,18 @@ const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
     }
   };
 
-  const downloadCv = (id) => withRun(id, (run) => {
+  const downloadCv = (id) => withRun(id, async (run) => {
     if (!run.cv) return dialog.alert({ title: 'No CV in this run', message: 'This run has no CV to download.' });
     const base = [filePart(run.cv.name) || 'Roleberry_CV', filePart(run.companyName)].filter(Boolean).join('_');
-    buildCvPdf(run.cv).save(`${base}.pdf`);
+    const { renderCvPdf } = await loadDocuments();
+    downloadBlob(await renderCvPdf(run.cv), `${base}.pdf`);
   });
 
-  const downloadLetter = (id) => withRun(id, (run) => {
+  const downloadLetter = (id) => withRun(id, async (run) => {
     if (!run.coverLetter) return dialog.alert({ title: 'No cover letter', message: 'This run has no cover letter.' });
     const base = [filePart(run.cv?.name) || 'Roleberry', filePart(run.companyName)].filter(Boolean).join('_');
-    buildCoverLetterPdf(run.coverLetter, run.cv).save(`${base}_Cover_Letter.pdf`);
+    const { renderLetterPdf } = await loadDocuments();
+    downloadBlob(await renderLetterPdf(run.coverLetter, run.cv), `${base}_Cover_Letter.pdf`);
   });
 
   const open = (id) => withRun(id, onOpenRun);

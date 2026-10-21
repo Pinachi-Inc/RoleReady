@@ -9,7 +9,7 @@ export default {
   theme: {
     extend: {
       // Roleberry brand. font-brand goes on every page root (signed-out, verify and signed-in).
-      // The CV iframe and the generated PDF keep their own fonts.
+      // The CV PDF embeds its own fonts (src/documents/fonts).
       fontFamily: {
         brand: ['Manrope', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
       },
