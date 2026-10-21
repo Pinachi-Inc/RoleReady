@@ -31,3 +31,24 @@ const { coreSkills } = validateAndFixSkills([
 assert.deepEqual(coreSkills[0].items.map((i) => i.skill), ['AWS', 'Kubernetes', 'Terraform']);
 
 console.log('skills-match: ok');
+
+// makeProfileMatcher / dropUnbackedSkills
+{
+  const { makeProfileMatcher, dropUnbackedSkills } = await import('../../server/skillMatch.js');
+  const backed = makeProfileMatcher('Argo CD, Jenkins');
+  assert.ok(backed('GitOps'), 'Argo CD backs GitOps');
+  assert.ok(backed('CI/CD'), 'Jenkins backs CI/CD');
+  assert.ok(!backed('HashiCorp Vault'));
+
+  const guarded = dropUnbackedSkills(
+    [
+      { category: 'Security', items: [{ skill: 'HashiCorp Vault', source: 'base' }] },
+      { category: 'Tools', items: [{ skill: 'Terraform', source: 'base' }, { skill: 'Bash', source: 'base' }, { skill: 'HashiCorp Vault', source: 'base' }] },
+    ],
+    { jobDescription: 'Terraform and HashiCorp Vault', profileText: 'Terraform, Bash' },
+  );
+  assert.deepEqual(guarded.removed, ['HashiCorp Vault', 'HashiCorp Vault']);
+  assert.equal(guarded.coreSkills.length, 1, 'empty category is dropped');
+  assert.deepEqual(guarded.coreSkills[0].items.map((i) => i.skill), ['Terraform', 'Bash']);
+  console.log('skills-match (profile guard): ok');
+}
