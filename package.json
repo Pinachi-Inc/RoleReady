@@ -19,7 +19,7 @@
     "vercel:deploy": "vercel --prod",
     "vercel:setup": "node scripts/setup-vercel-env.js",
     "showcase": "vite --config vite.showcase.config.js",
-    "test:e2e": "node --import ./scripts/e2e/register.mjs scripts/e2e/history.test.mjs && node --import ./scripts/e2e/register.mjs scripts/e2e/feedback.test.mjs && node scripts/e2e/attribution.test.mjs",
+    "test:e2e": "node --import ./scripts/e2e/register.mjs scripts/e2e/history.test.mjs && node --import ./scripts/e2e/register.mjs scripts/e2e/feedback.test.mjs && node scripts/e2e/attribution.test.mjs && node scripts/e2e/skills-match.test.mjs",
     "comp": "node scripts/comp.mjs",
     "signups": "node scripts/signups.mjs"
   },

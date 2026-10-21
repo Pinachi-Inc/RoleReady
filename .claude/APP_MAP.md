@@ -19,7 +19,6 @@ Browser (Vite SPA, port 5173)
 server/core/*Handler.js   <-- SINGLE SOURCE OF TRUTH for all 3 runtimes
   |
   +-- OpenAI-compatible chat API (OPENAI_BASE_URL, works with OpenRouter)
-  +-- Sapling AI-detection API
   +-- pdfjs-dist (text extraction, in-process)
 
 Firebase (client SDK, direct from browser)
@@ -59,7 +58,7 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 ### Frontend services (browser-side)
 | File | Exports | Talks to |
 |---|---|---|
-| `services/openai.js` | `optimizeCv`, `detectAiContent` | `POST /api/optimize`, `POST /api/detect-ai` |
+| `services/openai.js` | `optimizeCv` | `POST /api/optimize` |
 | `services/pdf.js` | `processPdf` | `POST /api/process-pdf` (multipart, field name `pdf`) |
 | `services/profiles.js` | `newProfileId`, `saveProfile`, `renameProfile`, `deleteProfile`, `activateProfile` | Firestore `users/{uid}.profiles.{id}` (free 1, paid 3, comped 10). Cap enforced by firestore.rules. |
 | `services/history.js` | `listHistory`, `getHistoryRun` | `POST /api/history` |
@@ -80,9 +79,8 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 ### Backend — shared core (edit here)
 | File | Exports | Notes |
 |---|---|---|
-| `server/core/optimizeHandler.js` (422 L) | `handleOptimizeRequest` | The big one. Holds the giant prompt, JSON schema, code-fence stripping, structural validation, role-metadata merge from `aiUserInfo.experienceSource`, keyword filtering, stats. |
+| `server/core/optimizeHandler.js` (422 L) | `handleOptimizeRequest` | The big one. Holds the giant prompt, JSON schema, code-fence stripping, structural validation, role-metadata merge from `aiUserInfo.experienceSource`, the parallel cover-letter call, the `analysis` payload. |
 | `server/core/pdfHandler.js` (300 L) | `handlePdfProcessing`, `uploadMiddleware` | multer memory storage, 10MB, PDF-only. Extract -> GPT -> two JSON blobs. Also `calculateYearsOfExperience`. |
-| `server/core/aiDetectHandler.js` (33 L) | `handleAiDetect` | Sapling `/api/v1/aidetect`, returns `{ score }` 0–1 |
 | `server/core/firestore.js` | `PLAN_LIMITS`, `consumeQuota`, `refundQuota`, `getEntitlement`, `recordRun`, `listRuns`, `countRuns`, user-doc helpers | Admin SDK. Free = 5 optimizations lifetime, 1 saved profile, newest 5 runs visible; paid (Pro, $12) = 1,000/calendar month, 3 profiles, full history; max ($49) = fair-use cap `MAX_MONTHLY_RUNS` (default 5,000/month) shown as unlimited, 100 profiles shown as unlimited, full history. `plan` only ever records the billing provider (Lemon Squeezy). Complimentary Max is separate: `isCompedAccount` = env allowlist (`COMP_MAX_EMAILS`, old `UNLIMITED_EMAILS`/`UNLIMITED_UIDS`), the `comped` flag set by `npm run comp`, or the legacy `plan: 'unlimited'`. Comped gets exactly Max, fair-use cap included. The allowlist is mirrored to `compedEnv` on the doc (status and quota calls) for firestore.rules. Every run is recorded. `BILLING_ENFORCED=true` turns limits into refusals. |
 | `server/core/historyHandler.js` | `handleHistory` | `POST /api/history` -> `{ runs, visibleLimit, lockedCount, lockedRuns }`. Every plan's runs are saved; free gets its newest 5 in full and older ones as date-only stubs, paid/comped get all (`visibleLimit` null). `{ id }` returns one run with re-rendered `cvContent`, 402 for a free run outside the newest 5. History is server-read only. |
 | `server/core/githubVerifyHandler.js` | `handleGithubVerify` | `POST /api/auth/github-verify` `{ accessToken }` -> `{ verified }`. Firebase marks GitHub emails unverified; this asks GitHub's API, checks the token is the linked GitHub account and the address is verified there, then sets `emailVerified` via the Admin SDK. |
@@ -98,18 +96,18 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 ### Backend — adapters (thin, keep thin)
 | File | Runtime |
 |---|---|
-| `server/index.js` | Express, port `PORT` or 8787. Routes: `/api/optimize`, `/api/process-pdf`, `/api/detect-ai`, `/api/billing/{checkout,portal,status}`, `/api/history`, `/api/feedback`, `/api/lemonsqueezy-webhook` (raw body, registered before `express.json`) |
-| `api/optimize.js`, `api/process-pdf.js`, `api/detect-ai.js`, `api/billing/*.js`, `api/history.js` | Vercel. CORS `*`, OPTIONS, POST-only, delegate to core |
+| `server/index.js` | Express, port `PORT` or 8787. Routes: `/api/optimize`, `/api/process-pdf`, `/api/billing/{checkout,portal,status}`, `/api/history`, `/api/feedback`, `/api/lemonsqueezy-webhook` (raw body, registered before `express.json`) |
+| `api/optimize.js`, `api/process-pdf.js`, `api/billing/*.js`, `api/history.js` | Vercel. CORS `*`, OPTIONS, POST-only, delegate to core |
 | `api/feedback.js` | Vercel. Same as the others; the handler accepts signed-out visitors too. 15s / 512MB in `vercel.json`. |
 | `api/lemonsqueezy-webhook.js` | Vercel. No CORS; must not touch `req.body` (signature is over the raw stream) |
-| `functions/index.js` | Firebase. Express-in-function, CJS with dynamic `import()` of the ESM core. Routes `/optimize`, `/process-pdf`, `/health`, `/billing/*`, `/history`, `/feedback`, `/lemonsqueezy-webhook`. **No `/detect-ai`.** |
+| `functions/index.js` | Firebase. Express-in-function, CJS with dynamic `import()` of the ESM core. Routes `/optimize`, `/process-pdf`, `/health`, `/billing/*`, `/history`, `/feedback`, `/lemonsqueezy-webhook`. |
 
 ### Build / ops
 | File | Role |
 |---|---|
 | `vite.config.js` | port 5173, proxy `/api` -> `:8787`, `allowedHosts: true` |
 | `vite.showcase.config.js` | separate showcase build, port 5174 |
-| `vercel.json` | build -> `dist`, `maxDuration` 300s/1536MB for optimize, 30s/512MB for detect-ai, SPA rewrite. **`api/process-pdf.js` has no function config** (default 10s/1024MB). |
+| `vercel.json` | build -> `dist`, `maxDuration` 300s/1536MB for optimize, SPA rewrite. **`api/process-pdf.js` has no function config** (default 10s/1024MB). |
 | `firebase.json` | hosting from `dist`, `/api/**` -> `api` function, node18 |
 | `scripts/e2e/` | `npm run test:e2e`. Runs the real optimize/history/billing handlers against an in-memory Firestore, locally signed Firebase tokens, a stubbed model and a stubbed Lemon Squeezy API (both inside `fake-axios.mjs`), via a module hook (`register.mjs` / `loader.mjs`) that swaps `firebase-admin` and `axios` for fakes inside `server/`. |
 | `scripts/patch-pdfjs.cjs` | postinstall + vercel-build: rewrites pdfjs worker path to `__dirname`-based so it works in serverless |
@@ -128,7 +126,7 @@ src/main.jsx
          ├─ components/Auth.jsx
          │   ├─ services/auth.js ─────────────┐
          │   └─ services/folderManager.js     │
-         ├─ services/openai.js  → /api/optimize, /api/detect-ai
+         ├─ services/openai.js  → /api/optimize
          ├─ services/pdf.js     → /api/process-pdf
          ├─ services/auth.js ───────────────┐ │
          ├─ services/folderManager.js       │ │
@@ -148,9 +146,6 @@ server/index.js ─┐
 api/process-pdf.js┼→ server/core/pdfHandler.js ─┬─ server/core/PDFTextExtractor.js ─ pdfjs-dist
 functions/index.js┘                             ├─ multer
                                                 └─ axios
-
-server/index.js ─┐
-api/detect-ai.js ┴→ server/core/aiDetectHandler.js ─ axios
 ```
 
 No cycles. Fan-in hotspots: `server/core/optimizeHandler.js` (3 adapters),
@@ -207,11 +202,11 @@ On sign-in, `onAuthStateChange` reads it back and calls `jsonToFormData`.
 ### Flow C — Optimize (main)
 `handleOptimize → services/openai.js → POST /api/optimize`
 → chat completion → `stripCodeFences` → `JSON.parse` → structural validation
-→ `validateAndFixSkills` + `reorderSkills` → merge role metadata → merge `fixedUserInfo`
-→ `renderCvMarkdown` → filter keywords against rendered text
-→ response `{ cvContent, cv, keywords, keywordsFiltered, needsFix, stats, overlapSkills, companyName }`
+→ `validateAndFixSkills` + `labelSkills` + `reorderSkills` → merge role metadata → merge `fixedUserInfo`
+→ `renderCvMarkdown` → `analyzeCoverage` (server/skillMatch.js: the model's `jdKeywords` checked against the JD, the CV and the saved profile)
+→ response `{ cvContent, cv, analysis, coverLetter, companyName, jobTitle, quota }`
+(the cover letter call starts in parallel with the CV call and reads the saved profile)
 → preview iframe uses `renderCvHtml(cv)`.
-Then fire-and-forget `detectAiContent(summary + all bullets)` → `%AI` badge.
 
 ### Flow D — Download
 `downloadCv()` — order is deliberate:
@@ -236,8 +231,7 @@ Screen switch: `currentPage === 'setup'` → setup form; `!user` → sign-in spl
 | `aiUserInfo` / `fixedUserInfo` | stringified JSON, what's actually sent + persisted |
 | `jobDescription` | JD textarea |
 | `optimizedCv` / `structuredCv` | markdown / structured result; `structuredCv` wins for preview+PDF |
-| `keywords`, `stats`, `needsFix`, `overlapSkills` | analysis modal payload |
-| `aiScore`, `aiScoreLoading` | Sapling badge |
+| `analysis` | Result Analysis dialog payload (`{ total, matched, missing, unsupported, coverage }`) |
 | `companyName` | from model, editable; drives download subfolder |
 | `folderMgmtEnabled` | persisted in `localStorage.folderMgmtEnabled` |
 | `isDark` | toggles `.dark` on `<html>`; not persisted |
@@ -254,7 +248,7 @@ Express body limit is 1mb.
 Server-side (never `VITE_`-prefixed):
 `OPENAI_API_KEY`, `OPENAI_BASE_URL` (default `https://api.openai.com/v1`),
 `OPENAI_MODEL` (default `gpt-4o-mini`), `OPENROUTER_SITE_URL`, `OPENROUTER_APP_TITLE`,
-`SAPLING_API_KEY`, `PDF_SAMPLE_PAGES`, `PDF_MAX_PAGES`, `PDF_CHAR_THRESHOLD`, `PDF_OCR_DPI`, `PORT`.
+`PDF_SAMPLE_PAGES`, `PDF_MAX_PAGES`, `PDF_CHAR_THRESHOLD`, `PDF_OCR_DPI`, `PORT`.
 
 Client-side (bundled, must be `VITE_`): the six `VITE_FIREBASE_*` keys.
 
@@ -268,7 +262,7 @@ Unused: `CLOUDMERSIVE_API_KEY`, `VITE_FIREBASE_MEASURMENT_ID` (also misspelled).
 |---|---|
 | Prompt / model behavior for optimize | `server/core/optimizeHandler.js` (`instruction`, `jsonSchema`) |
 | Prompt for PDF extraction | `server/core/pdfHandler.js` (`prompt`, `aiInfoSchema`, `fixedInfoSchema`) |
-| Skill count / category rules | `server/cvValidation.js` + the matching prose in the optimize `instruction` **and** the `needsFix` thresholds in optimizeHandler (three places, keep in sync) |
+| Skill count / category rules | `server/cvValidation.js` + the matching prose in the optimize `instruction` (two places, keep in sync) |
 | CV visual design / print layout | `src/templateRenderer.js` only (preview iframe and PDF share it) |
 | A new API endpoint | add `server/core/<x>Handler.js`, then wire **all three** adapters |
 | Response shape from optimize | optimizeHandler `res.json` + `handleOptimize` destructure in CVOptimizer |
@@ -279,13 +273,12 @@ Unused: `CLOUDMERSIVE_API_KEY`, `VITE_FIREBASE_MEASURMENT_ID` (also misspelled).
 
 ## 8. Known drift / traps (verify before touching)
 
-1. **Firebase Functions lacks `/detect-ai`** — only Express and Vercel have it.
-2. **`api/process-pdf.js` missing from `vercel.json` functions config** — runs at the 10s default while PDF+GPT easily exceeds it.
-3. **`getConfig()` is duplicated** in `optimizeHandler.js` and `pdfHandler.js`, and only the optimize copy has `sanitizeEnv`.
-4. **`require('firebase-functions')` inside ESM** in both `getConfig()` Firebase branches — would throw if that branch ever executed.
-5. **OCR is dead** but `tesseract.js`, `canvas`, `eng.traineddata` (5MB) and the whole OCR half of `PDF_EXTRACTION_CONFIG.md` remain.
-6. `extractCompanyName` in folderManager is exported but unused — company name now comes from the model.
-7. `validateAndFixSkills` has two `while (...) { break; }` no-op loops; min bounds are never actually enforced, only reported via `needsFix`.
-8. `showUserInfoModal`, `setupTab`, `main.js` are dead.
-9. `renderCvMarkdown` (server) and `renderCvHtml` (client) are two independent renderers of the same `cv` object — changes to CV structure need both.
-10. CORS is `*` on all Vercel endpoints; no auth check on any API route — the Firebase user is never verified server-side.
+1. **`api/process-pdf.js` missing from `vercel.json` functions config** — runs at the 10s default while PDF+GPT easily exceeds it.
+2. **`getConfig()` is duplicated** in `optimizeHandler.js` and `pdfHandler.js`, and only the optimize copy has `sanitizeEnv`.
+3. **`require('firebase-functions')` inside ESM** in both `getConfig()` Firebase branches — would throw if that branch ever executed.
+4. **OCR is dead** but `tesseract.js`, `canvas`, `eng.traineddata` (5MB) and the whole OCR half of `PDF_EXTRACTION_CONFIG.md` remain.
+5. `extractCompanyName` in folderManager is exported but unused — company name now comes from the model.
+6. `validateAndFixSkills` has two `while (...) { break; }` no-op loops; min bounds are never actually enforced.
+7. `showUserInfoModal`, `setupTab`, `main.js` are dead.
+8. `renderCvMarkdown` (server) and `renderCvHtml` (client) are two independent renderers of the same `cv` object — changes to CV structure need both.
+9. CORS is `*` on all Vercel endpoints; no auth check on any API route — the Firebase user is never verified server-side.
