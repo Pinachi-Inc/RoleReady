@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Clock, Download, FileText, Lock, Sparkles } from 'lucide-react';
 import { listHistory, getHistoryRun } from '../services/history.js';
-import { buildCvPdf, buildCoverLetterPdf } from '../src/cvPdf.js';
+import { downloadBlob } from '../utils/download.js';
+
+const loadDocuments = () => import('../src/documents/index.js');
 
 // Past runs, newest first. Every plan's runs are saved; free can open its newest few
 // (visibleLimit) and sees the rest as greyed, blurred rows with an unlock prompt. The server
@@ -45,7 +47,7 @@ const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
   const withRun = async (id, fn) => {
     setBusyId(id);
     try {
-      fn(await getHistoryRun(id));
+      await fn(await getHistoryRun(id));
     } catch (err) {
       if (err.code === 'upgrade_required') onUpgrade();
       else alert(err.message || 'Could not load that run.');
@@ -54,16 +56,18 @@ const HistoryPage = ({ onBack, onOpenRun, onUpgrade }) => {
     }
   };
 
-  const downloadCv = (id) => withRun(id, (run) => {
+  const downloadCv = (id) => withRun(id, async (run) => {
     if (!run.cv) return alert('This run has no CV to download.');
     const base = [filePart(run.cv.name) || 'Roleberry_CV', filePart(run.companyName)].filter(Boolean).join('_');
-    buildCvPdf(run.cv).save(`${base}.pdf`);
+    const { renderCvPdf } = await loadDocuments();
+    downloadBlob(await renderCvPdf(run.cv), `${base}.pdf`);
   });
 
-  const downloadLetter = (id) => withRun(id, (run) => {
+  const downloadLetter = (id) => withRun(id, async (run) => {
     if (!run.coverLetter) return alert('This run has no cover letter.');
     const base = [filePart(run.cv?.name) || 'Roleberry', filePart(run.companyName)].filter(Boolean).join('_');
-    buildCoverLetterPdf(run.coverLetter, run.cv).save(`${base}_Cover_Letter.pdf`);
+    const { renderLetterPdf } = await loadDocuments();
+    downloadBlob(await renderLetterPdf(run.coverLetter, run.cv), `${base}_Cover_Letter.pdf`);
   });
 
   const open = (id) => withRun(id, onOpenRun);
