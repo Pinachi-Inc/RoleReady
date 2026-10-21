@@ -1,6 +1,11 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "git": {
+    "deploymentEnabled": {
+      "gh-readonly-queue/**": false
+    }
+  },
   "functions": {
     "api/optimize.js": {
       "maxDuration": 300,
