@@ -6,8 +6,13 @@ import FeedbackWidget from '../components/FeedbackWidget.jsx'
 import { installErrorCapture } from '../services/feedback.js'
 import './index.css'
 import { initMetaPixel } from './metaPixel.js'
+import { initRedditPixel } from './redditPixel.js'
+import { captureFirstTouch } from './attribution.js'
 
+// Remember where this visitor came from before anything else touches the URL.
+captureFirstTouch()
 initMetaPixel()
+initRedditPixel()
 
 // The app has no router. The legal pages are the only other URLs, and Vercel already rewrites
 // every path to index.html, so a pathname check is all they need.

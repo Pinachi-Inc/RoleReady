@@ -7,23 +7,20 @@
 // components/PricingModal.jsx.
 
 export const LEGAL = {
-  product: 'RoleBerry',
+  product: 'Roleberry',
   site: 'https://roleberry.app',
-  // RoleBerry is sold by one person trading on their own account (a sole trader), not by a
-  // company. That person is the seller and the data controller.
-  seller: '[FULL LEGAL NAME]',
-  // Where the seller can be reached by post. GDPR and most consumer law require one.
-  address: '[CITY AND ADDRESS]',
+  // The name the operator is shown under on the legal pages. Contact is by email only.
+  seller: 'Roleberry',
   // One inbox for privacy requests, support and legal notices.
   email: 'support@roleberry.app',
   // The law that governs the Terms, and the courts that hear disputes.
   governingLaw: 'the Republic of Armenia',
   courts: 'the courts of Yerevan, Armenia',
   // Last time either document changed in substance.
-  effectiveDate: '[EFFECTIVE DATE]',
+  effectiveDate: '21 October 2026',
   // How long after an account deletion request everything is gone, backups included.
   deletionDays: 30,
-  // Minimum age to use RoleBerry.
+  // Minimum age to use Roleberry.
   minimumAge: 16,
 };
 
