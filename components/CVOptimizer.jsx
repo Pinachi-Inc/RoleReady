@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Download, FileText, Zap, AlertCircle, Save, Info, Copy, Check, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, Link2, Award, GraduationCap, Briefcase, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Download, FileText, Zap, AlertCircle, Save, Copy, Check, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, Link2, Award, GraduationCap, Briefcase, BarChart3 } from 'lucide-react';
 import { convertMarkdownToHtml } from '../utils/markdown.js';
 import { generateDownloadHtml, downloadHtml } from '../utils/download.js';
 import html2pdf from 'html2pdf.js';
@@ -177,7 +177,6 @@ const CVOptimizer = () => {
   const [optimizedCv, setOptimizedCv] = useState('');
   const [structuredCv, setStructuredCv] = useState(null);
   const [analysis, setAnalysis] = useState(null);
-  const hasUnsupported = (analysis?.unsupported?.length ?? 0) > 0;
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentPage, setCurrentPage] = useState('main'); // 'main' | 'setup'
   const [user, setUser] = useState(null);
@@ -1948,16 +1947,12 @@ const CVOptimizer = () => {
                 <button
                   type="button"
                   onClick={() => setShowAnalysis(true)}
-                  className={`h-12 rounded-xl border font-bold inline-flex items-center justify-center gap-2 ${
-                    hasUnsupported
-                      ? 'border-warn-line bg-warn-bg text-warn-text'
-                      : 'border-line bg-white text-ink hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface'
-                  }`}
-                  aria-label={hasUnsupported ? 'View Analysis (check before sending)' : 'View Analysis'}
-                  title={hasUnsupported ? 'Check before sending: open analysis' : 'View analysis'}
+                  className="h-12 rounded-xl border border-line bg-white text-ink hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface font-bold inline-flex items-center justify-center gap-2"
+                  aria-label="View Analysis"
+                  title="View analysis"
                 >
-                  {hasUnsupported ? <Info className="h-4 w-4" /> : <BarChart3 className="h-4 w-4" />}
-                  {hasUnsupported ? 'Check before sending' : 'View Analysis'}
+                  <BarChart3 className="h-4 w-4" />
+                  View Analysis
                 </button>
               )}
             </div>
@@ -2002,19 +1997,6 @@ const CVOptimizer = () => {
               </button>
             </div>
             <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-              {hasUnsupported && (
-                <div className="p-3 rounded-lg bg-warn-bg border border-warn-line text-warn-text text-sm space-y-2">
-                  <p>Not found in your profile. Make sure you can back these up before sending:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {analysis.unsupported.map((term) => (
-                      <span key={term} className="bg-warn-bg text-warn-text border border-warn-line px-3 py-1 rounded-full text-sm font-medium">
-                        {term}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {analysis && (
                 <div>
                   <h4 className="text-base font-bold text-ink mb-2">Job keyword match</h4>
@@ -2049,6 +2031,20 @@ const CVOptimizer = () => {
                     ))}
                   </div>
                   <p className="text-sm text-ink-muted mt-2">If you have one of these and it's not in your profile, add it there and generate again.</p>
+                </div>
+              )}
+
+              {analysis && analysis.unsupported.length > 0 && (
+                <div>
+                  <h4 className="text-base font-bold text-ink mb-2">Not in your profile</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {analysis.unsupported.map((term) => (
+                      <span key={term} className="bg-blush border border-line text-ink-muted px-3 py-1 rounded-full text-sm font-medium">
+                        {term}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-sm text-ink-muted mt-2">These job terms are in the CV but not in your saved profile.</p>
                 </div>
               )}
             </div>

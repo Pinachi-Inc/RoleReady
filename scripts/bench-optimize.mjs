@@ -30,7 +30,7 @@ if (providers !== null) process.env.MODEL_PROVIDERS = providers === 'none' ? '' 
 
 const { buildCvInstruction, buildCoverLetterPrompt, ...handlerExports } = await import('../server/core/optimizeHandler.js');
 const { reasoningConfig, providerConfig } = await import('../server/core/modelOptions.js');
-const { makeTextMatcher, analyzeCoverage, dropUnbackedSkills } = await import('../server/skillMatch.js');
+const { makeTextMatcher, analyzeCoverage } = await import('../server/skillMatch.js');
 const { buildLetterProfile } = handlerExports;
 
 const key = process.env.OPENAI_API_KEY;
@@ -120,14 +120,8 @@ async function oneRun(n) {
     const rawCats = Array.isArray(cv.coreSkills) ? cv.coreSkills : [];
     const items = rawCats.flatMap((c) => c.items || []);
     row.labels = { jd: 0, base: 0, other: 0 };
-    // Same guard the server applies before labelling: JD skills the profile does not back are removed.
-    const guarded = dropUnbackedSkills(
-      rawCats.map((c) => ({ category: c.category, items: (c.items || []).map((i) => ({ skill: typeof i === 'string' ? i : i?.skill })).filter((i) => i.skill) })),
-      { jobDescription, profileText: `${aiUserInfoRaw}\n${fixedUserInfoRaw}` },
-    );
-    row.removedSkills = guarded.removed;
-    const cats = guarded.coreSkills;
-    const skills = cats.flatMap((c) => c.items.map((i) => i.skill));
+    const cats = rawCats;
+    const skills = items.map((i) => (typeof i === 'string' ? i : i?.skill)).filter(Boolean);
     row.categories = cats.length;
     row.totalSkills = skills.length;
     for (const i of items) {

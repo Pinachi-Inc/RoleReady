@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { validateAndFixSkills, reorderSkills } from '../cvValidation.js';
-import { labelSkills, analyzeCoverage, dropUnbackedSkills } from '../skillMatch.js';
+import { labelSkills, analyzeCoverage } from '../skillMatch.js';
 import { renderCvMarkdown } from '../cvRenderer.js';
 import { requireAuth } from './firebaseAuth.js';
 import { consumeQuota, refundQuota, recordRun } from './firestore.js';
@@ -223,11 +223,11 @@ Third person throughout, no pronouns for the candidate.
 <skills>
 8 or 9 categories, 4 to 6 skills in each, around 36 to 50 skills in total. More categories is better: split broad groupings into specific ones rather than lumping them together.
 Every category carries at least 4. A category holding two or three is not shipped: either fill it out from the candidate's base skills and the JD, or merge it into the nearest category.
-Write every skill the candidate has in the job description's exact spelling wherever the JD names it. A JD skill goes in only when the candidate's base skills or base achievements show it, directly or as the same thing under another name (Argo CD counts as GitOps). A JD skill with no evidence in the profile is left out, even when that means fewer JD terms. The rest come from the candidate's base skills.
-Every skill that appears in both aiUserInfo.coreSkillsBase and the JD stays in coreSkills, written in the JD's spelling.
+Half or more of all skills are lifted literally from the job description in its exact spelling; the rest come from the candidate's base skills.
+Every skill present in both aiUserInfo.coreSkillsBase and the JD stays in coreSkills, written in JD spelling.
 Order inside a category: JD skills first by prominence, then base skills.
 Prefer skills that also appear in the experience bullets; a reader checks the two against each other.
-When these pull against each other, the category and per-category counts win, then the skills shared with the base. Drop base-only skills that the JD does not ask for first.
+When these pull against each other, the category and per-category counts win, then the skills present in both, then the JD share. Drop base skills that are not in the JD first.
 </skills>
 
 <experience>
@@ -240,7 +240,7 @@ Use the JD's literal wording inside bullets wherever it fits the real work.
 </experience>
 
 <hard_limits>
-Only real experience. Naming a task the described work necessarily included is fine, and so is calling Docker work container orchestration. Stating a role, employer, domain or technology the candidate has not touched is not, and a JD priority with no counterpart in their history is left out rather than filled in. Before naming any tool, platform or method in the summary or a bullet, check that aiUserInfo shows it. A JD technology absent from aiUserInfo appears nowhere in the output, not even as "exposure to" or "familiar with".
+Only real experience. Naming a task the described work necessarily included is fine, and so is calling Docker work container orchestration. Stating a role, employer, domain or technology the candidate has not touched is not, and a JD priority with no counterpart in their history is left out rather than filled in.
 Organisation names from the JD stay out of the summary, the skills and the bullets: the hiring company, its customers, partners, parent, competitors, plus req numbers, posting ids and URLs. Technologies are not organisations, so AWS, Kubernetes, Terraform, React and PostgreSQL are used verbatim wherever the JD uses them. The candidate's own employers are rendered separately from saved data, so bullets do not repeat them.
 companyName holds the hiring company's name. It is metadata, never rendered into the CV; empty string if the JD does not say.
 jobTitle holds the title of the advertised role as the JD states it. Also metadata, never rendered; empty string if the JD does not say.
@@ -513,11 +513,7 @@ async function runOptimize(req, res, quota) {
           }
         });
       }
-      const { coreSkills: validSkills, dropped } = validateAndFixSkills(parsed.coreSkills);
-      // The model still lists JD tools the profile never mentions, whatever the prompt says,
-      // so the skills list is enforced here rather than trusted.
-      const { coreSkills, removed } = dropUnbackedSkills(validSkills, { jobDescription, profileText: `${aiUserInfo || ''}\n${fixedUserInfo || ''}` });
-      if (removed.length) console.warn('[optimize] removed unbacked skills: %s', removed.join(', '));
+      const { coreSkills, dropped } = validateAndFixSkills(parsed.coreSkills);
       const orderedSkills = reorderSkills(labelSkills(coreSkills, jobDescription));
       if (dropped && (dropped.items > 0 || dropped.categories > 0)) {
         console.warn('[optimize] over-production trimmed: %s skills (%s), %s categories',
