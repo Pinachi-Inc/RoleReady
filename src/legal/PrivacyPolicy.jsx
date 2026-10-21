@@ -134,8 +134,7 @@ const PrivacyPolicy = () => (
       OpenRouter, which passes each request to a model provider. The provider generates the
       response and returns it to us. Providers may process requests outside your country and,
       under their own terms, some may keep request data for a limited time, for example to
-      monitor for abuse. Generated CVs are also sent to Sapling AI when we estimate how
-      AI-written they read.
+      monitor for abuse.
     </p>
     <p>
       AI output can be wrong. Always check a generated CV or letter before you send it to anyone.
@@ -151,7 +150,6 @@ const PrivacyPolicy = () => (
         <tr><td>Google (Firebase)</td><td>Sign-in and database</td><td>Account details, profiles, history, usage, subscription status</td></tr>
         <tr><td>Vercel</td><td>Hosting and servers</td><td>All requests passing through the app, server logs, IP address</td></tr>
         <tr><td>OpenRouter and the AI model providers it routes to</td><td>Generating CVs, cover letters and profile imports</td><td>Profile content, job postings, imported CV text</td></tr>
-        <tr><td>Sapling AI</td><td>AI-writing estimate</td><td>Generated CV text</td></tr>
         <tr><td>Lemon Squeezy (merchant of record) and its payment processors</td><td>Selling the subscription: payment, sales tax / VAT, receipts, refunds</td><td>Email, name, payment details, billing address, subscription</td></tr>
         <tr><td>Brevo</td><td>Delivering feedback and problem reports to our inbox</td><td>Your message, email address, screenshot and the browser details above</td></tr>
         <tr><td>Meta Platforms (Meta Pixel)</td><td>Measuring our Facebook and Instagram ads</td><td>Pages visited on our site, that a sign-up happened and how (Google, GitHub or email), IP address, browser details and Meta's cookies</td></tr>
