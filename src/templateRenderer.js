@@ -116,6 +116,12 @@ export const renderCvHtml = (cv) => {
     })
     .join('');
 
+  // Same place as in the PDF (src/cvPdf.js): after experience, one line per entry.
+  const educationHtml = (Array.isArray(cv.education) ? cv.education : [])
+    .filter((e) => typeof e === 'string' && e.trim())
+    .map((e) => `<li>${esc(e)}</li>`)
+    .join('');
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -187,6 +193,11 @@ export const renderCvHtml = (cv) => {
     <div class="section-title">PROFESSIONAL EXPERIENCE</div>
     <div class="section-content">${jobsHtml}</div>
   </div>
+
+  ${educationHtml ? `<div class="section">
+    <div class="section-title">EDUCATION</div>
+    <div class="section-content"><ul class="bullets education">${educationHtml}</ul></div>
+  </div>` : ''}
 </body>
 </html>`;
 };
