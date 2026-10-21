@@ -8,7 +8,8 @@ import {
   signOutUser,
   friendlyAuthError,
 } from '../services/auth.js';
-import { Moon, CreditCard, FolderOpen, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Moon, CreditCard, FolderOpen, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, Lock } from 'lucide-react';
+import { ExperimentalBadge } from './PricingModal.jsx';
 import { isFolderApiSupported, getStoredFolderName, pickNewFolder } from '../services/folderManager.js';
 
 const RETURNING_KEY = 'rb_returning';
@@ -54,7 +55,7 @@ export const NoticeBox = ({ children }) => (
   </div>
 );
 
-const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, onToggleFolderMgmt, initialMode, onModeChange, onManageSubscription, manageBusy }) => {
+const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, folderMgmtLocked, planKnown, onFolderMgmtLocked, onToggleFolderMgmt, initialMode, onModeChange, onManageSubscription, manageBusy }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [folderName, setFolderName] = useState(null);
 
@@ -245,41 +246,73 @@ const Auth = ({ user, onAuthChange, onToggleTheme, isDark, folderMgmtEnabled, on
               )}
               {onToggleFolderMgmt && (
                 <>
-                  <div className={`px-4 py-2 flex items-center justify-between gap-3 border-t border-line ${!isFolderApiSupported() ? 'opacity-40' : ''}`}>
-                    <div className="flex items-center gap-2">
-                      <FolderOpen className="h-4 w-4 text-ink-muted" />
-                      <span className="text-sm" title={!isFolderApiSupported() ? 'Not supported in this browser' : ''}>
-                        Folder management
+                  {/* Job folders: a Max feature, marked Experimental. Everyone sees the row;
+                      only Max can switch it on, everyone else gets the upgrade prompt. */}
+                  <div className={`px-4 pt-2 ${folderMgmtLocked || !isFolderApiSupported() ? 'pb-1' : 'pb-2'} flex items-center justify-between gap-3 border-t border-line`}>
+                    <div className={`flex items-center gap-2 min-w-0 ${!isFolderApiSupported() ? 'opacity-40' : ''}`}>
+                      <FolderOpen className="h-4 w-4 shrink-0 text-ink-muted" />
+                      <span className="text-sm whitespace-nowrap" title={!isFolderApiSupported() ? 'Not supported in this browser' : ''}>
+                        Job folders
                       </span>
+                      <ExperimentalBadge />
                     </div>
-                    <button
-                      type="button"
-                      disabled={!isFolderApiSupported()}
-                      onClick={() => onToggleFolderMgmt(!folderMgmtEnabled)}
-                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${folderMgmtEnabled ? 'bg-berry' : 'bg-line'}`}
-                    >
-                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${folderMgmtEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
-                    </button>
-                  </div>
-                  {folderMgmtEnabled && isFolderApiSupported() && (
-                    <div className="px-4 py-2 flex items-center gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={folderName || 'No folder selected'}
-                        className="min-w-0 flex-1 text-xs bg-blush border-line text-ink-muted rounded px-2 py-1 border truncate"
-                        title={folderName || 'No folder selected'}
-                      />
+                    {folderMgmtLocked ? (
                       <button
                         type="button"
-                        onClick={handleChangeFolder}
-                        className="text-xs px-2 py-1 bg-berry-soft text-berry-dark hover:bg-[#F6D3DF] rounded border border-berry-line whitespace-nowrap transition-colors"
+                        disabled={!planKnown}
+                        onClick={() => { setShowDropdown(false); onFolderMgmtLocked?.(); }}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-berry px-2 py-0.5 text-xs font-semibold text-white hover:bg-berry-dark disabled:opacity-50 transition-colors"
+                        title="Job folders come with Max"
                       >
-                        {folderName ? 'Change' : 'Choose'}
+                        <Lock className="h-3 w-3" />
+                        Max
                       </button>
-                    </div>
+                    ) : (
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={Boolean(folderMgmtEnabled)}
+                        aria-label="Job folders"
+                        disabled={!isFolderApiSupported()}
+                        onClick={() => onToggleFolderMgmt(!folderMgmtEnabled)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-40 ${folderMgmtEnabled ? 'bg-berry' : 'bg-line'}`}
+                      >
+                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${folderMgmtEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                      </button>
+                    )}
+                  </div>
+                  {folderMgmtLocked && (
+                    <p className="px-4 pb-2 text-xs text-ink-muted">
+                      Pick a folder once and every CV is filed into its own company folder for you. Included with Max.
+                    </p>
                   )}
-                  {folderMgmtEnabled && folderError && (
+                  {!folderMgmtLocked && !isFolderApiSupported() && (
+                    <p className="px-4 pb-2 text-xs text-ink-muted">Works in Chrome and Edge on desktop.</p>
+                  )}
+                  {!folderMgmtLocked && folderMgmtEnabled && isFolderApiSupported() && (
+                    <>
+                      <div className="px-4 py-2 flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={folderName || 'No folder selected'}
+                          className="min-w-0 flex-1 text-xs bg-blush border-line text-ink-muted rounded px-2 py-1 border truncate"
+                          title={folderName || 'No folder selected'}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleChangeFolder}
+                          className="text-xs px-2 py-1 bg-berry-soft text-berry-dark hover:bg-[#F6D3DF] rounded border border-berry-line whitespace-nowrap transition-colors"
+                        >
+                          {folderName ? 'Change' : 'Choose'}
+                        </button>
+                      </div>
+                      <p className="px-4 pb-2 text-xs text-ink-muted">
+                        Still being tested, so it may not always work. If a save fails, the PDF goes to your usual downloads folder.
+                      </p>
+                    </>
+                  )}
+                  {!folderMgmtLocked && folderMgmtEnabled && folderError && (
                     <div className="px-4 pb-2 text-xs text-danger-text">{folderError}</div>
                   )}
                 </>
