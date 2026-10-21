@@ -19,11 +19,12 @@
     "vercel:deploy": "vercel --prod",
     "vercel:setup": "node scripts/setup-vercel-env.js",
     "showcase": "vite --config vite.showcase.config.js",
-    "test:e2e": "node --import ./scripts/e2e/register.mjs scripts/e2e/history.test.mjs && node --import ./scripts/e2e/register.mjs scripts/e2e/feedback.test.mjs && node scripts/e2e/attribution.test.mjs",
+    "test:e2e": "node --import ./scripts/e2e/register.mjs scripts/e2e/history.test.mjs && node --import ./scripts/e2e/register.mjs scripts/e2e/feedback.test.mjs && node scripts/e2e/attribution.test.mjs && node scripts/e2e/documents.test.mjs",
     "comp": "node scripts/comp.mjs",
     "signups": "node scripts/signups.mjs"
   },
   "dependencies": {
+    "@react-pdf/renderer": "4.9.0",
     "@vercel/speed-insights": "^1.2.0",
     "axios": "^1.7.2",
     "canvas": "^3.2.0",
@@ -33,8 +34,6 @@
     "firebase": "^10.13.0",
     "firebase-admin": "^12.7.0",
     "html2canvas": "^1.4.1",
-    "html2pdf.js": "^0.12.1",
-    "jspdf": "^3.0.3",
     "lucide-react": "^0.453.0",
     "multer": "^1.4.5-lts.1",
     "pdfjs-dist": "^3.11.174",

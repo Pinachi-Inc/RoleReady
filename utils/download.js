@@ -47,3 +47,16 @@ export const downloadHtml = (htmlContent, filename = 'optimized-cv.html') => {
 };
 
 
+
+// Saves a Blob (the CV or cover letter PDF) through the browser's normal download.
+export const downloadBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  // Revoking at once can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+};
