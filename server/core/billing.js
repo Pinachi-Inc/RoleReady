@@ -217,7 +217,7 @@ export async function handleCustomerPortal(req, res) {
 
 /**
  * POST /api/billing/status -> { plan, comped, billingPlan, used, limit, window, fairUse,
- *   billingAvailable, maxAvailable, hasCustomer, subscriptionStatus, renewsAt, cancelAtPeriodEnd }
+ *   extraTemplates, billingAvailable, maxAvailable, hasCustomer, subscriptionStatus, renewsAt, cancelAtPeriodEnd }
  * What the UI needs to decide between an Upgrade button and a Manage button. The client could
  * read most of this from its own user document, but comped accounts live in env vars the
  * browser cannot see, and the limits live here.

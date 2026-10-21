@@ -1,0 +1,10 @@
+Dear Hiring Team,
+
+I am applying for the Senior Platform Engineer role at Example Corp. For the last three years I have run the Kubernetes platform at Brightpath Logistics, where I moved 40 services onto EKS and cut infrastructure cost by about 30%.
+
+Your posting asks for someone who can make deploys boring. At Brightpath I replaced two hours of manual release steps with a GitHub Actions and Argo CD pipeline that ships in 12 minutes, and I wrote the Terraform modules six teams now use to build their own environments.
+
+I would welcome the chance to talk about how I could help your team do the same.
+
+Best regards,
+Alex Morgan

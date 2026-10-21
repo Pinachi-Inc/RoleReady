@@ -25,6 +25,8 @@ import { processPdf, processPdfText } from '../services/pdf.js';
 import { onAuthStateChange, onIdTokenChange, saveUserData, getUserData, needsEmailVerification } from '../services/auth.js';
 import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
 import Auth from './Auth.jsx';
+import TemplatePicker from './TemplatePicker.jsx';
+import { knownStyle, effectiveStyle } from '../src/documents/catalog.js';
 import { recordAppError, openFeedback } from '../services/feedback.js';
 import VerifyEmail from './VerifyEmail.jsx';
 
@@ -206,6 +208,10 @@ const CVOptimizer = () => {
   // The preview draws these PDFs and the download saves them, so the two are the same file.
   const [cvBlob, setCvBlob] = useState(null);
   const [letterBlob, setLetterBlob] = useState(null);
+  const [cvStyle, setCvStyle] = useState('classic'); // saved choice; docStyle is what is drawn
+  const [billing, setBilling] = useState(null); // server's view of plan and allowance, see services/billing.js
+  const extraTemplates = Boolean(billing?.extraTemplates);
+  const docStyle = effectiveStyle(cvStyle, extraTemplates);
 
   useEffect(() => {
     let cancelled = false;
@@ -215,10 +221,10 @@ const CVOptimizer = () => {
     (async () => {
       try {
         const { renderCvPdf, renderLetterPdf } = await loadDocuments();
-        const cvFile = await renderCvPdf(structuredCv);
+        const cvFile = await renderCvPdf(structuredCv, { style: docStyle });
         if (!cancelled) setCvBlob(cvFile);
         if (coverLetter) {
-          const letterPdf = await renderLetterPdf(coverLetter, structuredCv);
+          const letterPdf = await renderLetterPdf(coverLetter, structuredCv, { style: docStyle });
           if (!cancelled) setLetterBlob(letterPdf);
         }
       } catch (err) {
@@ -230,8 +236,7 @@ const CVOptimizer = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [structuredCv, coverLetter]);
-  const [billing, setBilling] = useState(null); // server's view of plan and allowance, see services/billing.js
+  }, [structuredCv, coverLetter, docStyle]);
   const [showPaywall, setShowPaywall] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingNotice, setBillingNotice] = useState('');
@@ -443,7 +448,14 @@ const CVOptimizer = () => {
   // Wipe everything derived from the signed-in account. Called on sign-out and
   // whenever a signed-in account turns out to have no stored profile, so one
   // user's data can never be shown to (or saved under) the next.
+  const handleTemplateChange = async (id) => {
+    setCvStyle(id);
+    if (!user) return;
+    try { await saveUserData(user.uid, { cvStyle: id }); }
+    catch (err) { console.warn('[template] could not save: %s', err?.message || err); }
+  };
   const clearSessionData = () => {
+    setCvStyle('classic');
     setFormData(emptyFormData());
     setAiUserInfo('');
     setFixedUserInfo('');
@@ -481,6 +493,7 @@ const CVOptimizer = () => {
           if (load !== profileLoadRef.current) return;
           console.log('[profile] loaded in %sms', Math.round(performance.now() - t0));
           if (userData) {
+            setCvStyle(knownStyle(userData.cvStyle));
             // Repair role ids on the way in: profiles saved before ids were unique
             // would otherwise optimise into a CV where every job shares one header.
             const storedAi = withUniqueRoleIds(userData.aiUserInfo || '');
@@ -887,7 +900,7 @@ const CVOptimizer = () => {
       let blob = showingLetter ? letterBlob : cvBlob;
       if (!blob) {
         const { renderCvPdf, renderLetterPdf } = await loadDocuments();
-        blob = showingLetter ? await renderLetterPdf(coverLetter, structuredCv) : await renderCvPdf(structuredCv);
+        blob = showingLetter ? await renderLetterPdf(coverLetter, structuredCv, { style: docStyle }) : await renderCvPdf(structuredCv, { style: docStyle });
       }
       const saved = await saveWithPicker(blob);
       if (!saved) {
@@ -1139,6 +1152,7 @@ const CVOptimizer = () => {
             onBack={() => setCurrentPage('main')}
             onOpenRun={handleOpenRun}
             onUpgrade={() => setShowPaywall(true)}
+            cvStyle={docStyle}
           />
         </div>
         {tipsModal}{paywallModal}
@@ -1843,6 +1857,7 @@ const CVOptimizer = () => {
               <h2 className="text-[15px] font-extrabold">CV preview</h2>
             )}
             <div className="flex-1" />
+            <TemplatePicker value={docStyle} extraTemplates={extraTemplates} onChange={handleTemplateChange} onLocked={() => setShowPaywall(true)} disabled={!billing} />
             {folderMgmtActive && (optimizedCv || structuredCv) && (
               <label className="inline-flex items-center gap-1.5 h-[34px] px-2.5 rounded-[9px] border border-line bg-white text-ink-muted dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface">
                 <FolderOpen className="h-4 w-4" />

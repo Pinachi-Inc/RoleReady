@@ -204,6 +204,8 @@ await check('profile and history limits in the entitlement', async () => {
   assert.deepEqual([paid.profileLimit, paid.historyVisible], [3, null]);
   assert.deepEqual([comped.plan, comped.profileLimit, comped.historyVisible, comped.limit], ['max', 100, null, 5000]);
   assert.equal(comped.unlimitedProfiles, true);
+  assert.equal(free.extraTemplates, false);
+  assert.equal(comped.extraTemplates, true);
 });
 
 await check('enforced: a refused free run is not saved', async () => {
@@ -462,6 +464,7 @@ await check('Max limits: unlimited profiles (100 hidden), full history, fair-use
   const max = getEntitlement({ uid: 'x' }, { plan: 'max' });
   assert.equal(max.profileLimit, 100);
   assert.equal(max.unlimitedProfiles, true);
+  assert.equal(max.extraTemplates, true);
   assert.equal(max.historyVisible, null);
   assert.equal(max.fairUse, true);
   assert.equal(max.limit, 5000, 'default fair-use cap');
@@ -474,6 +477,7 @@ await check('Max limits: unlimited profiles (100 hidden), full history, fair-use
   }
   const pro = getEntitlement({ uid: 'x' }, { plan: 'paid' });
   assert.equal(pro.unlimitedProfiles, false);
+  assert.equal(pro.extraTemplates, false);
   assert.equal(pro.fairUse, false);
 });
 
