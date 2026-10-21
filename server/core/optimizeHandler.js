@@ -223,11 +223,11 @@ Third person throughout, no pronouns for the candidate.
 <skills>
 8 or 9 categories, 4 to 6 skills in each, around 36 to 50 skills in total. More categories is better: split broad groupings into specific ones rather than lumping them together.
 Every category carries at least 4. A category holding two or three is not shipped: either fill it out from the candidate's base skills and the JD, or merge it into the nearest category.
-Half or more of all skills are copied from the job description character for character, in its exact spelling. The rest come from the candidate's base skills.
+Write every skill the candidate has in the job description's exact spelling wherever the JD names it. A JD skill goes in only when the candidate's base skills or base achievements show it, directly or as the same thing under another name (Argo CD counts as GitOps). A JD skill with no evidence in the profile is left out, even when that means fewer JD terms. The rest come from the candidate's base skills.
 Every skill that appears in both aiUserInfo.coreSkillsBase and the JD stays in coreSkills, written in the JD's spelling.
 Order inside a category: JD skills first by prominence, then base skills.
 Prefer skills that also appear in the experience bullets; a reader checks the two against each other.
-When these pull against each other, the category and per-category counts win, then the skills shared with the base, then the JD share. Drop base-only skills first.
+When these pull against each other, the category and per-category counts win, then the skills shared with the base. Drop base-only skills that the JD does not ask for first.
 </skills>
 
 <experience>

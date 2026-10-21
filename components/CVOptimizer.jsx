@@ -2003,11 +2003,11 @@ const CVOptimizer = () => {
             </div>
             <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
               {hasUnsupported && (
-                <div className="p-3 rounded-lg bg-danger-bg border border-danger-line text-danger-text text-sm space-y-2">
-                  <p>Some claims aren't in your profile. Check these before sending:</p>
+                <div className="p-3 rounded-lg bg-warn-bg border border-warn-line text-warn-text text-sm space-y-2">
+                  <p>Not found in your profile. Make sure you can back these up before sending:</p>
                   <div className="flex flex-wrap gap-2">
                     {analysis.unsupported.map((term) => (
-                      <span key={term} className="bg-danger-bg text-danger-text border border-danger-line px-3 py-1 rounded-full text-sm font-medium">
+                      <span key={term} className="bg-warn-bg text-warn-text border border-warn-line px-3 py-1 rounded-full text-sm font-medium">
                         {term}
                       </span>
                     ))}
