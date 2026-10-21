@@ -7,6 +7,8 @@ import pdfjsPkg from 'pdfjs-dist/legacy/build/pdf.js';
 const pdfjs = pdfjsPkg;
 import { cvElement, letterElement, STYLES } from '../../src/documents/index.js';
 import { prepareCv } from '../../src/documents/prepare.js';
+import { TEMPLATES, effectiveStyle, knownStyle } from '../../src/documents/catalog.js';
+import { existsSync } from 'node:fs';
 
 const textOf = async (buf) => {
   const doc = await pdfjs.getDocument({ data: new Uint8Array(buf), useSystemFonts: false, disableFontFace: true, verbosity: 0 }).promise;
@@ -44,11 +46,27 @@ await test('prepare: empty sections are left out', () => {
   assert.deepEqual(p.sections.map((s) => s.kind), ['experience']);
 });
 
+await test('catalog: one picker entry per style, each with a thumbnail', () => {
+  assert.deepEqual(TEMPLATES.map((t) => t.id).sort(), Object.keys(STYLES).sort());
+  for (const t of TEMPLATES) assert.ok(existsSync(new URL(`../../public${t.thumb}`, import.meta.url)), `missing ${t.thumb}`);
+});
+
+await test('catalog: extra templates fall back to Classic without the entitlement', () => {
+  assert.equal(effectiveStyle('modern', false), 'classic');
+  assert.equal(effectiveStyle('modern', true), 'modern');
+  assert.equal(effectiveStyle('classic', false), 'classic');
+  assert.equal(effectiveStyle('nonsense', true), 'classic');
+  assert.equal(knownStyle(undefined), 'classic');
+  assert.equal(knownStyle('executive'), 'executive');
+});
+
 for (const style of Object.keys(STYLES)) {
   await test(`${style}: CV PDF has real text for every section`, async () => {
     const { text } = await textOf(await renderToBuffer(cvElement(cv, style)));
     for (const needle of ['TEST PERSON', 'Tbilisi', 'linkedin.com/in/x', 'DevOps engineer', 'Cloud:', 'AWS, Azure',
-      'AZ-104', 'Engineer | Acme', '2020 — Present', 'Cut MTTR by 40%', 'EDUCATION', 'BSc Computer Science, YSU, 2019']) {
+      'AZ-104', 'Engineer | Acme', '2020 — Present', 'Cut MTTR by 40%', 'EDUCATION', 'BSc Computer Science, YSU, 2019',
+      // Whole words: wide letter spacing makes pdf.js (and ATS parsers) read "E D U C A T I O N".
+      'PROFESSIONAL SUMMARY', 'CORE SKILLS', 'PROFESSIONAL EXPERIENCE']) {
       assert.ok(text.includes(needle), `missing "${needle}" in:\n${text}`);
     }
     assert.ok(!text.includes('javascript:'), 'unsafe link printed');

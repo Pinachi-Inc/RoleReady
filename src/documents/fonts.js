@@ -9,8 +9,10 @@ import { Font } from '@react-pdf/renderer';
 const src = (u) => (u.protocol === 'file:' ? decodeURIComponent(u.pathname) : u.href);
 
 let done = false;
-// Use as fontFamily in every style, so any script the fonts cover renders.
+// Use one of these as a style's fontFamily, so any script the fonts cover renders.
 export const BODY_FONTS = ['Arimo', 'NotoSansArmenian'];
+// Tinos is metric-compatible with Times New Roman, the serif every ATS and Word user knows.
+export const SERIF_FONTS = ['Tinos', 'NotoSerifArmenian'];
 
 export function registerFonts() {
   if (done) return;
@@ -28,6 +30,21 @@ export function registerFonts() {
     fonts: [
       { src: src(new URL('./fonts/NotoSansArmenian-Regular.ttf', import.meta.url)), fontWeight: 400 },
       { src: src(new URL('./fonts/NotoSansArmenian-Bold.ttf', import.meta.url)), fontWeight: 700 },
+    ],
+  });
+  // Tinos 1.23 (Apache 2.0), subset to the same ranges as Arimo.
+  Font.register({
+    family: 'Tinos',
+    fonts: [
+      { src: src(new URL('./fonts/Tinos-Regular.ttf', import.meta.url)), fontWeight: 400 },
+      { src: src(new URL('./fonts/Tinos-Bold.ttf', import.meta.url)), fontWeight: 700 },
+    ],
+  });
+  Font.register({
+    family: 'NotoSerifArmenian',
+    fonts: [
+      { src: src(new URL('./fonts/NotoSerifArmenian-Regular.ttf', import.meta.url)), fontWeight: 400 },
+      { src: src(new URL('./fonts/NotoSerifArmenian-Bold.ttf', import.meta.url)), fontWeight: 700 },
     ],
   });
   // Long words (URLs) break anywhere rather than hyphenating English rules into them.
