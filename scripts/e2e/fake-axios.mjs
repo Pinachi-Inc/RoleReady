@@ -21,13 +21,12 @@ const subIdFrom = (url) => decodeURIComponent(url.slice(`${LS_API}/subscriptions
 
 function cvJson() {
   calls += 1;
-  const skills = (prefix) => ['Kubernetes', 'Terraform', 'AWS', 'Go'].map((skill) => ({ skill: `${prefix} ${skill}`, source: 'jd' }));
+  const skills = (prefix) => ['Kubernetes', 'Terraform', 'AWS', 'Go'].map((skill) => `${prefix} ${skill}`);
   return JSON.stringify({
     summary: 'Platform engineer.',
     coreSkills: ['Cloud', 'Infra', 'Delivery', 'Observability', 'Security', 'Languages'].map((category) => ({ category, items: skills(category) })),
     experience: [{ roleId: 'r1', title: 'Engineer', company: 'Acme', achievements: ['Shipped things.'] }],
-    keywordsUsed: ['Kubernetes'],
-    overlapSkills: [],
+    jdKeywords: ['Kubernetes', 'Terraform', 'Rust'],
     companyName: `Company ${calls}`,
     jobTitle: `Role ${calls}`,
   });
