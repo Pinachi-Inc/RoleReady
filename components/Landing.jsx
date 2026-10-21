@@ -14,7 +14,9 @@ const LEAF = '#2F8F5B';
 // The F1 wordmark. The -dark file has a light fill for the ink hero; roleberry-logo.svg is the
 // ink-coloured version for light backgrounds.
 const Wordmark = ({ className = '' }) => (
-  <img src="/roleberry-logo-dark.svg" alt="Roleberry" className={className} />
+  <a href="/" aria-label="Roleberry home" className="inline-block cursor-pointer">
+    <img src="/roleberry-logo-dark.svg" alt="" className={className} />
+  </a>
 );
 
 // The hero visual: one person's CV, reworded for three different jobs. Pick a job to bring its card forward.
