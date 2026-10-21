@@ -35,10 +35,19 @@ export const PROFILE_ALIASES = {
 };
 const ALIASES = new Map(Object.entries(PROFILE_ALIASES).map(([k, v]) => [normalizeTerm(k), v]));
 
-// (term) => boolean against the profile text, alias-aware. Used only for the profile check, not for JD matching.
+// Words that describe an activity rather than name a technology. A phrase is backed by the profile
+// when its full text is there, an alias is there, or any of its other (naming) words is there.
+const GENERIC_WORDS = new Set(['administration','admin','response','management','engineering','engineer','development','developer','design','operations','ops','best','practices','practice','networking','network','fundamentals','security','least','privilege','automation','experience','tools','tooling','platform','systems','system','services','service','support','production','cloud','data','team','teams','and','or','with','of','for','the','in','on','at','to','a','an','strong','hands','advanced','basic','skills']);
+
+// (term) => boolean against the profile text, alias-aware and key-word-aware. Used only for the
+// profile check, not for JD matching.
 export function makeProfileMatcher(profileText) {
   const direct = makeTextMatcher(profileText);
-  return (term) => direct(term) || (ALIASES.get(normalizeTerm(term)) || []).some((a) => direct(a));
+  return (term) => {
+    if (direct(term)) return true;
+    if ((ALIASES.get(normalizeTerm(term)) || []).some((a) => direct(a))) return true;
+    return normalizeTerm(term).split(' ').some((w) => w.length >= 3 && !GENERIC_WORDS.has(w) && direct(w));
+  };
 }
 
 // Removes every skill that the JD names but the profile does not back. A category left empty goes too.
