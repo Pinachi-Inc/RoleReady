@@ -529,3 +529,12 @@ export async function takeFeedbackQuota(keys) {
     return { allowed: true };
   }
 }
+
+// Every account's first-touch source (users/{uid}.signupSource, written by the browser at
+// sign-up, see src/attribution.js). Used by `npm run signups`.
+export async function listSignupSources() {
+  const database = db();
+  if (!database) throw new Error('Firestore is not configured on the server');
+  const snap = await database.collection('users').select('signupSource').get();
+  return snap.docs.map((doc) => ({ uid: doc.id, ...(doc.data().signupSource || {}) }));
+}
