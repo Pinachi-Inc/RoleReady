@@ -29,7 +29,7 @@ export async function sendSupportEmail({ subject, text, html, replyTo = null, at
   }
 
   const body = {
-    sender: { name: 'RoleBerry Feedback', email: process.env.FEEDBACK_FROM_EMAIL || DEFAULT_ADDRESS },
+    sender: { name: 'Roleberry Feedback', email: process.env.FEEDBACK_FROM_EMAIL || DEFAULT_ADDRESS },
     to: [{ email: process.env.FEEDBACK_TO_EMAIL || DEFAULT_ADDRESS }],
     subject,
     textContent: text,
