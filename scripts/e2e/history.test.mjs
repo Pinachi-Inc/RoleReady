@@ -155,6 +155,39 @@ await check('missing run is 404, malformed id is 400', async () => {
   assert.equal((await history('free1', { id: 42 })).statusCode, 400);
 });
 
+await check('a run can be renamed by the id the optimize response carries', async () => {
+  const made = await optimize('rename1');
+  assert.equal(made.statusCode, 200);
+  const { runId } = made.body;
+  assert.ok(runId, 'optimize response has runId');
+  assert.deepEqual(runIds('rename1'), [`users/rename1/history/${runId}`], 'run stored under that id');
+  const stored = fs.get(`users/rename1/history/${runId}`);
+  const res = await history('rename1', { id: runId, companyName: '  Acme   Corp  ' });
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.companyName, 'Acme Corp');
+  const list = await history('rename1');
+  assert.equal(list.body.runs[0].companyName, 'Acme Corp');
+  const after = fs.get(`users/rename1/history/${runId}`);
+  assert.equal(after.jobTitle, stored.jobTitle, 'other fields untouched');
+  assert.deepEqual(after.cv, stored.cv, 'CV untouched');
+  assert.equal((await history('rename1', { id: runId, companyName: '' })).body.companyName, '');
+  assert.equal(fs.get(`users/rename1/history/${runId}`).companyName, null, 'blank clears it');
+});
+
+await check('rename: missing run is 404, bad input is 400, other users cannot reach it', async () => {
+  const before = runIds('rename1').length;
+  assert.equal((await history('rename1', { id: 'doesnotexist', companyName: 'X' })).statusCode, 404);
+  assert.equal(runIds('rename1').length, before, 'a rename never creates a run');
+  assert.equal((await history('rename1', { id: '../x', companyName: 'X' })).statusCode, 400);
+  assert.equal((await history('rename1', { companyName: 'X' })).statusCode, 400);
+  const id = runIds('rename1')[0].split('/').pop();
+  assert.equal((await history('rename1', { id, companyName: 42 })).statusCode, 400);
+  assert.equal((await history('someoneelse', { id, companyName: 'Hijack' })).statusCode, 404);
+  assert.notEqual(fs.get(`users/rename1/history/${id}`).companyName, 'Hijack');
+  const long = 'x'.repeat(200);
+  assert.equal((await history('rename1', { id, companyName: long })).body.companyName.length, 80);
+});
+
 await check('free with 5 or fewer runs has nothing locked', async () => {
   for (let i = 0; i < 3; i += 1) await optimize('free2');
   const res = await history('free2');
