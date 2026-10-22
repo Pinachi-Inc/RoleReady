@@ -1,5 +1,5 @@
 import { requireAuth } from './firebaseAuth.js';
-import { getUserDoc, getEntitlement, listRuns, countRuns, getRun, MAX_HISTORY_VISIBLE } from './firestore.js';
+import { getUserDoc, getEntitlement, listRuns, countRuns, getRun, renameRun, MAX_HISTORY_VISIBLE } from './firestore.js';
 import { renderCvMarkdown } from '../cvRenderer.js';
 
 // Every account's runs are saved. What a plan can see of them is decided here rather than by
@@ -21,7 +21,11 @@ const RUN_ID = /^[A-Za-z0-9_-]{1,64}$/;
  * POST /api/history { id }
  *   -> { run: { id, createdAt, companyName, jobTitle, cv, cvContent, coverLetter } }
  *      402 upgrade_required when the run exists but is beyond the plan's visible window.
+ * POST /api/history { id, companyName }
+ *   -> { ok: true, companyName }   sets the run's company name (trimmed, up to 80 characters)
+ *      404 when the run does not exist.
  */
+const COMPANY_MAX = 80;
 function unavailable(res) {
   console.error('[history] FIREBASE_SERVICE_ACCOUNT is not set; history is unavailable');
   return res.status(503).json({ error: 'History is not available right now.' });
@@ -31,9 +35,24 @@ export async function handleHistory(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
-  const { id } = req.body || {};
+  const { id, companyName } = req.body || {};
 
   try {
+    if (companyName !== undefined) {
+      if (typeof id !== 'string' || !RUN_ID.test(id)) {
+        return res.status(400).json({ error: 'Invalid run id' });
+      }
+      if (typeof companyName !== 'string') {
+        return res.status(400).json({ error: 'Invalid company name' });
+      }
+      const name = companyName.replace(/\s+/g, ' ').trim().slice(0, COMPANY_MAX);
+      const saved = await renameRun(user.uid, id, name);
+      if (saved === null) return unavailable(res);
+      if (!saved) return res.status(404).json({ error: 'That run no longer exists.' });
+      return res.json({ ok: true, companyName: name });
+    }
+
+
     // Everything below is read in parallel: the plan is only known once the user document
     // arrives, so the reads that depend on it are sized for the most any plan could need.
     if (id !== undefined) {
