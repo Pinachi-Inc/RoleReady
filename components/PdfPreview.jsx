@@ -16,7 +16,7 @@ export default function PdfPreview({ blob, title }) {
   const [width, setWidth] = useState(0);
   const [error, setError] = useState('');
 
-  // Redraw at the container's width so text stays sharp at any size.
+  // Redraw whenever the box changes size so text stays sharp at any size.
   useEffect(() => {
     const el = hostRef.current;
     if (!el) return undefined;
@@ -39,24 +39,24 @@ export default function PdfPreview({ blob, title }) {
         for (let n = 1; n <= doc.numPages; n++) {
           const page = await doc.getPage(n);
           const base = page.getViewport({ scale: 1 });
-          const viewport = page.getViewport({ scale: (width / base.width) * dpr });
+          // Show the page at its real size (PDF points to CSS pixels: 96/72), like a
+          // PDF viewer at 100%. Only shrink it when the box is narrower than the page,
+          // so a wide screen never blows the text up.
+          const cssWidth = Math.min(width, Math.round(base.width * (96 / 72)));
+          const viewport = page.getViewport({ scale: (cssWidth / base.width) * dpr });
           const canvas = document.createElement('canvas');
           canvas.width = Math.floor(viewport.width);
           canvas.height = Math.floor(viewport.height);
-          canvas.style.width = '100%';
-          canvas.style.display = 'block';
+          canvas.style.width = `${cssWidth}px`;
+          canvas.style.maxWidth = '100%';
+          canvas.className = 'block mx-auto bg-white ring-1 ring-line sm:shadow-[0_1px_3px_rgba(36,19,28,0.08)]';
           canvas.setAttribute('aria-label', `${title || 'Document'}, page ${n} of ${doc.numPages}`);
           await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
           if (cancelled) return;
           canvases.push(canvas);
         }
         if (cancelled) return;
-        host.replaceChildren(...canvases.flatMap((c, i) => {
-          if (!i) return [c];
-          const gap = document.createElement('div');
-          gap.className = 'h-3 bg-paper dark:bg-night';
-          return [gap, c];
-        }));
+        host.replaceChildren(...canvases);
         setError('');
       } catch (err) {
         console.error('[preview] could not draw the PDF:', err);
@@ -68,7 +68,7 @@ export default function PdfPreview({ blob, title }) {
 
   return (
     <div role="document" aria-label={title} className="w-full">
-      <div ref={hostRef} className="w-full" />
+      <div ref={hostRef} className="flex w-full flex-col gap-3 sm:gap-6 sm:p-6" />
       {error && <p className="p-4 text-[13.5px] text-ink-muted dark:text-night-muted">{error}</p>}
     </div>
   );
