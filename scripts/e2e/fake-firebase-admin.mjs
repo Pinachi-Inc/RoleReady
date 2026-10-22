@@ -62,6 +62,11 @@ class DocRef {
     const next = resolveSentinels(data);
     store.set(this.path, merge ? deepMerge(store.get(this.path) || {}, next) : next);
   }
+  // Like the real update(): fails with NOT_FOUND (code 5) when the document does not exist.
+  async update(data) {
+    if (!store.has(this.path)) throw Object.assign(new Error('NOT_FOUND: no document to update'), { code: 5 });
+    store.set(this.path, deepMerge(store.get(this.path), resolveSentinels(data)));
+  }
 }
 
 class Query {

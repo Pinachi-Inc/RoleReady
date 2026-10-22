@@ -393,7 +393,8 @@ export async function recordRun(uid, run) {
   if (!database) return null;
 
   try {
-    const ref = database.collection('users').doc(uid).collection('history').doc();
+    const runs = database.collection('users').doc(uid).collection('history');
+    const ref = run.id ? runs.doc(run.id) : runs.doc();
     await ref.set({
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       profileId: run.profileId || null,
@@ -452,6 +453,32 @@ export async function countRuns(uid) {
   if (!database) return null;
   const snap = await database.collection('users').doc(uid).collection('history').count().get();
   return Number(snap.data().count || 0);
+}
+
+// A fresh id for a run that is about to be recorded, so the browser can be told it before the
+// write happens. Made locally by the SDK, no network call. Null without Firestore access.
+export function newRunId(uid) {
+  const database = db();
+  if (!database) return null;
+  return database.collection('users').doc(uid).collection('history').doc().id;
+}
+
+/**
+ * Change the company name on a saved run (the user corrects what the model read from the job
+ * post). Only that field changes. Returns true when saved, false when the run does not exist
+ * (yet: it is recorded just after the response goes out), null without Firestore access.
+ */
+export async function renameRun(uid, runId, companyName) {
+  const database = db();
+  if (!database) return null;
+  try {
+    await database.collection('users').doc(uid).collection('history').doc(runId)
+      .update({ companyName: companyName || null });
+    return true;
+  } catch (err) {
+    if (err?.code === 5 || err?.code === 'not-found') return false;
+    throw err;
+  }
 }
 
 // One full run, or null if it does not exist (or Firestore is unavailable).

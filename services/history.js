@@ -26,7 +26,7 @@ const currentUid = () => auth.currentUser?.uid || null;
 
 let listCache = { uid: null, data: null, at: 0 };
 let listInFlight = null;
-const runCache = new Map(); // `${uid}:${runId}` -> run. Runs never change once saved.
+const runCache = new Map(); // `${uid}:${runId}` -> run. Only the company name can change (renameHistoryRun).
 const RUN_CACHE_MAX = 20;
 
 // { runs: [{ id, createdAt, companyName, jobTitle, profileName, hasCoverLetter }],
@@ -70,4 +70,23 @@ export const getHistoryRun = async (id) => {
   if (runCache.size >= RUN_CACHE_MAX) runCache.delete(runCache.keys().next().value);
   runCache.set(key, run);
   return run;
+};
+
+// Saves a new company name on a run and updates the cached list and run to match.
+// Resolves to the name as the server stored it (trimmed, capped).
+export const renameHistoryRun = async (id, companyName) => {
+  const uid = currentUid();
+  const { companyName: saved } = await postHistory({ id, companyName });
+  const key = `${uid}:${id}`;
+  if (runCache.has(key)) runCache.set(key, { ...runCache.get(key), companyName: saved });
+  if (listCache.uid === uid && listCache.data?.runs) {
+    listCache = {
+      ...listCache,
+      data: {
+        ...listCache.data,
+        runs: listCache.data.runs.map((r) => (r.id === id ? { ...r, companyName: saved || null } : r)),
+      },
+    };
+  }
+  return saved;
 };
