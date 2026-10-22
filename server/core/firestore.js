@@ -40,6 +40,10 @@ export function isFirestoreReady() {
   return Boolean(init());
 }
 
+// For admin scripts (server/core/accounts.js): the Admin app and its Firestore, or null.
+export const adminApp = () => init();
+export const adminDb = () => db();
+
 // REST rather than gRPC: on a cold serverless start, opening a gRPC channel adds a second or
 // more before the first read. Plain HTTPS starts fast, and nothing here needs live listeners.
 let cachedDb = null;

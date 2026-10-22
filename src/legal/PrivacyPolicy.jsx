@@ -19,7 +19,7 @@ const PrivacyPolicy = () => (
       <li>We collect what you give us to build your CV, plus your sign-in details and, if you pay, your subscription status.</li>
       <li>Your CV content is sent to third-party AI models to produce your results. That is how the product works.</li>
       <li>We do not sell your data, show ads in the app, or use your content to train our own models.</li>
-      <li>We advertise on Meta (Facebook, Instagram) and Reddit, and their pixels tell them when someone they sent us visits or signs up. They never get your CV content. Details under Cookies below.</li>
+      <li>We advertise on Meta (Facebook, Instagram) and Reddit, and their pixels tell them when someone they sent us visits, signs up or subscribes. They never get your CV content. Details under Cookies below.</li>
       <li>Payments are handled by Lemon Squeezy, our merchant of record. We never see your card details.</li>
       <li>You can ask us for a copy of your data, or to delete it, at any time.</li>
     </ul>
@@ -152,8 +152,8 @@ const PrivacyPolicy = () => (
         <tr><td>OpenRouter and the AI model providers it routes to</td><td>Generating CVs, cover letters and profile imports</td><td>Profile content, job postings, imported CV text</td></tr>
         <tr><td>Lemon Squeezy (merchant of record) and its payment processors</td><td>Selling the subscription: payment, sales tax / VAT, receipts, refunds</td><td>Email, name, payment details, billing address, subscription</td></tr>
         <tr><td>Brevo</td><td>Delivering feedback and problem reports to our inbox</td><td>Your message, email address, screenshot and the browser details above</td></tr>
-        <tr><td>Meta Platforms (Meta Pixel)</td><td>Measuring our Facebook and Instagram ads</td><td>Pages visited on our site, that a sign-up happened and how (Google, GitHub or email), IP address, browser details and Meta's cookies</td></tr>
-        <tr><td>Reddit (Reddit Pixel)</td><td>Measuring our Reddit ads</td><td>Pages visited on our site, that a sign-up happened, IP address, browser details and Reddit's cookies</td></tr>
+        <tr><td>Meta Platforms (Meta Pixel)</td><td>Measuring our Facebook and Instagram ads</td><td>Pages visited on our site, that a sign-up happened and how (Google, GitHub or email), that a subscription was bought and its price, IP address, browser details and Meta's cookies</td></tr>
+        <tr><td>Reddit (Reddit Pixel)</td><td>Measuring our Reddit ads</td><td>Pages visited on our site, that a sign-up happened, that a subscription was bought and its price, IP address, browser details and Reddit's cookies</td></tr>
         <tr><td>jsDelivr (CDN)</td><td>Loading the in-browser text reader for scanned PDFs</td><td>IP address and browser details only; your file stays on your device</td></tr>
       </tbody>
     </table>
@@ -219,7 +219,7 @@ const PrivacyPolicy = () => (
     <p>
       To measure our ads, the site loads the <strong>Meta Pixel</strong> and the{' '}
       <strong>Reddit Pixel</strong>. They set those companies' cookies and tell them which pages
-      you open and, once, that you created an account. Meta and Reddit use this to report how our
+      you open, that you created an account, and that you bought a subscription and at what price. Meta and Reddit use this to report how our
       ads performed and to show them to people likely to find them useful, under their own privacy
       policies (<a href="https://www.facebook.com/privacy/policy/">Meta</a>,{' '}
       <a href="https://www.reddit.com/policies/privacy-policy">Reddit</a>). They do not receive

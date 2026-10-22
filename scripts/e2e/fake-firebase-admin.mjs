@@ -48,6 +48,7 @@ function clone(value) {
 
 const snapshot = (path, id) => ({
   id,
+  get ref() { return new DocRef(path); },
   exists: store.has(path),
   data: () => (store.has(path) ? clone(store.get(path)) : undefined),
 });
@@ -63,6 +64,7 @@ class DocRef {
     store.set(this.path, merge ? deepMerge(store.get(this.path) || {}, next) : next);
   }
   // Like the real update(): fails with NOT_FOUND (code 5) when the document does not exist.
+  async delete() { store.delete(this.path); }
   async update(data) {
     if (!store.has(this.path)) throw Object.assign(new Error('NOT_FOUND: no document to update'), { code: 5 });
     store.set(this.path, deepMerge(store.get(this.path), resolveSentinels(data)));
@@ -109,6 +111,11 @@ class Query {
 
 const db = {
   collection: (name) => new Query(name),
+  getAll: (...refs) => Promise.all(refs.map((r) => r.get())),
+  // The document and everything under it.
+  async recursiveDelete(ref) {
+    for (const key of [...store.keys()]) if (key === ref.path || key.startsWith(`${ref.path}/`)) store.delete(key);
+  },
   async runTransaction(fn) {
     return fn({ get: (ref) => ref.get(), set: (ref, data, opts) => { ref.set(data, opts); } });
   },
@@ -134,6 +141,14 @@ const auth = () => ({
     const record = authRecords.get(uid);
     if (!record) throw Object.assign(new Error('no user record'), { code: 'auth/user-not-found' });
     return clone(record);
+  },
+  async listUsers() {
+    return { users: [...authRecords.values()].map(clone), pageToken: undefined };
+  },
+  async deleteUser(uid) {
+    if (!authRecords.has(uid)) throw Object.assign(new Error('no user record'), { code: 'auth/user-not-found' });
+    authRecords.delete(uid);
+    for (const [email, id] of authUsers) if (id === uid) authUsers.delete(email);
   },
   async updateUser(uid, patch) {
     const record = authRecords.get(uid);
