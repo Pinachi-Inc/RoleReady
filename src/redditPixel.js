@@ -25,3 +25,13 @@ export const trackRedditSignUp = (isNewUser) => {
     console.warn('[reddit pixel] SignUp failed: %s', err?.message || err);
   }
 };
+
+// Purchase once, when a checkout has just turned a free account into a paying one.
+export const trackRedditPurchase = (value) => {
+  if (typeof window === 'undefined' || typeof window.rdt !== 'function') return;
+  try {
+    window.rdt('track', 'Purchase', { value, currency: 'USD', itemCount: 1 });
+  } catch (err) {
+    console.warn('[reddit pixel] Purchase failed: %s', err?.message || err);
+  }
+};

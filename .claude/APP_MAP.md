@@ -74,7 +74,7 @@ Key architectural rule: **never put logic in `api/*.js`, `server/index.js`, or
 | `src/templateRenderer.js` | `renderCvHtml(cv)` — full standalone HTML doc for the preview iframe **and** the PDF source. Print CSS lives here. |
 | `utils/markdown.js` | `convertMarkdownToHtml` — regex markdown, used for the legacy (non-structured) preview |
 | `utils/download.js` | `generateDownloadHtml` (wraps markdown HTML in a printable doc), `downloadHtml` (anchor-blob download) |
-| `static-cv-template.html`, `Untitled-1.html` | Loose design references. Not imported. |
+
 
 ### Backend — shared core (edit here)
 | File | Exports | Notes |
