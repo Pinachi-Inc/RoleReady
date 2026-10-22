@@ -27,7 +27,8 @@ const Mark = ({ children }) => (
 const EXAMPLES = [
   {
     tab: 'Hospital',
-    forLine: 'Clinical Operations Project Manager, Riverside Health',
+    role: 'Clinical Operations Manager',
+    forLine: 'Clinical Operations Manager, Riverside Health',
     bullets: [
       <>Rolled out a new <Mark>patient scheduling</Mark> system across 4 clinics</>,
       <>Cut average <Mark>patient wait time</Mark> by 18%</>,
@@ -37,7 +38,8 @@ const EXAMPLES = [
   },
   {
     tab: 'Retail chain',
-    forLine: 'Store Operations Project Manager, Northgate Retail',
+    role: 'Store Operations Manager',
+    forLine: 'Store Operations Manager, Northgate Retail',
     bullets: [
       <>Rolled out a <Mark>point-of-sale</Mark> upgrade to 140 stores in 6 weeks</>,
       <>Trained 300+ <Mark>store staff</Mark> on the new tills</>,
@@ -47,7 +49,8 @@ const EXAMPLES = [
   },
   {
     tab: 'Software company',
-    forLine: 'Technical Project Manager, Lumen Software',
+    role: 'Technical Program Manager',
+    forLine: 'Technical Program Manager, Lumen Software',
     bullets: [
       <>Ran <Mark>Agile</Mark> delivery for 3 teams shipping every 2 weeks</>,
       <>Led two <Mark>software rollouts</Mark>: 4 clinics and 140 stores</>,
@@ -98,7 +101,7 @@ const CardStack = () => {
                 <div className="text-[11px] font-bold uppercase tracking-wider text-berry">For {ex.forLine}</div>
                 <div>
                   <div className="mt-1 text-xl font-extrabold">Jordan Avery</div>
-                  <div className="text-[13px] text-ink-muted">Project Manager, 8 years</div>
+                  <div className="text-[13px] text-ink-muted">{ex.role}, 8 years</div>
                 </div>
                 <div className={sectionLabel}>EXPERIENCE</div>
                 <ul className="list-disc space-y-1.5 pl-4 text-[13.5px] leading-snug">
