@@ -50,6 +50,16 @@ const axios = {
     }
     throw new Error(`fake axios: unexpected GET ${url}`);
   },
+  // Cancelling a subscription, as server/core/accounts.js does when deleting an account.
+  async delete(url) {
+    if (url.startsWith(`${LS_API}/subscriptions/`)) {
+      const sub = ls.subs.get(subIdFrom(url));
+      if (!sub) throw notFound(url);
+      sub.attributes.status = 'cancelled';
+      return { data: { data: structuredClone(sub) } };
+    }
+    throw new Error(`fake axios: unexpected DELETE ${url}`);
+  },
   async patch(url, body) {
     if (url.startsWith(`${LS_API}/subscriptions/`)) {
       const id = subIdFrom(url);
