@@ -111,7 +111,7 @@ const accountExistsError = async (providerId, error) => {
   const via = (known.length ? known : others).join(' or ');
   const linked = METHOD_LABELS[providerId] || 'this method';
   const err = new Error(
-    `${email || 'This email'} already has a RoleBerry account. Sign in with ${via} and we will link ${linked} to it.`
+    `${email || 'This email'} already has a Roleberry account. Sign in with ${via} and we will link ${linked} to it.`
   );
   err.code = error.code;
   err.friendly = err.message;

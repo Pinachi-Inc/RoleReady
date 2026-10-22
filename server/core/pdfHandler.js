@@ -3,6 +3,11 @@ import axios from 'axios';
 import PDFTextExtractor from './PDFTextExtractor.js';
 import { requireAuth } from './firebaseAuth.js';
 import { reasoningConfig, providerConfig } from './modelOptions.js';
+import { consumeQuota, refundQuota } from './firestore.js';
+
+// A stuck model call must fail well before Vercel stops the function at 300 s, so the
+// import quota is refunded and the user gets an answer instead of a five-minute wait.
+const MODEL_TIMEOUT_MS = 120_000;
 
 // Config getter (same as optimizeHandler). Reads process.env only — this module
 // is ESM, so the old `require('firebase-functions')` branch threw ReferenceError
@@ -227,7 +232,7 @@ Extract all skills organized by categories, work experience with achievements, p
 
   try {
     console.log('🤖 Sending CV text to AI for processing...');
-    const response = await axios.post(`${config.API_BASE_URL}/chat/completions`, requestBody, { headers });
+    const response = await axios.post(`${config.API_BASE_URL}/chat/completions`, requestBody, { headers, timeout: MODEL_TIMEOUT_MS });
     
     const aiResponse = response.data.choices[0]?.message?.content;
     if (!aiResponse) {
@@ -274,8 +279,12 @@ Extract all skills organized by categories, work experience with achievements, p
 
   } catch (error) {
     console.error('AI processing error:', error);
-    if (error.response?.status === 401) {
-      throw new Error('Invalid API key. Please check your OpenAI configuration.');
+    // Problems on our side (bad key, no credit, timeout) are not the user's to fix, so they
+    // get a plain "try again later" rather than the provider's details.
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('The AI service took too long to answer. Please try again.');
+    } else if ([401, 402, 403].includes(error.response?.status)) {
+      throw new Error('The AI service is unavailable right now. Please try again later.');
     } else if (error.response?.status === 429) {
       throw new Error('Rate limit exceeded. Please try again in a moment.');
     } else if (error.response?.status >= 500) {
@@ -288,8 +297,31 @@ Extract all skills organized by categories, work experience with achievements, p
 
 // Main handler for PDF processing
 export async function handlePdfProcessing(req, res) {
-  if (!(await requireAuth(req, res))) return;
+  const user = await requireAuth(req, res);
+  if (!user) return;
 
+  // Every import is a model call, so it is counted like an optimization: free accounts get
+  // PLAN_LIMITS.free.pdfImports in total, paid plans are not limited. Consumed up front so
+  // parallel requests cannot slip past the limit, and given back if the import then fails.
+  const quota = await consumeQuota(user.uid, 'pdfImports', { email: user.email });
+  if (!quota.allowed && quota.enforced) {
+    const unavailable = quota.reason === 'quota_unavailable';
+    return res.status(unavailable ? 503 : 402).json({
+      error: unavailable
+        ? 'Usage tracking is temporarily unavailable. Please try again shortly.'
+        : `You have used all ${quota.limit} free CV imports. Upgrade to import more, or fill in your info by hand.`,
+      code: unavailable ? 'quota_unavailable' : 'upgrade_required',
+    });
+  }
+  const consumed = quota.allowed && quota.used > 0;
+  try {
+    await processPdfRequest(req, res);
+  } finally {
+    if (consumed && res.statusCode >= 400) await refundQuota(user.uid, 'pdfImports');
+  }
+}
+
+async function processPdfRequest(req, res) {
   try {
     // Text already extracted by the client. This is the OCR fallback path: the server
     // refuses image-based PDFs, so the browser OCRs them and posts the text back.

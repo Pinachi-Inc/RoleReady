@@ -17,7 +17,7 @@ export const LEGAL = {
   governingLaw: 'the Republic of Armenia',
   courts: 'the courts of Yerevan, Armenia',
   // Last time either document changed in substance.
-  effectiveDate: '21 October 2026',
+  effectiveDate: '22 October 2026',
   // How long after an account deletion request everything is gone, backups included.
   deletionDays: 30,
   // Minimum age to use Roleberry.

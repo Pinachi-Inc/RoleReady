@@ -23,6 +23,7 @@ import Landing from './Landing.jsx';
 import LoginPage from './LoginPage.jsx';
 import { TopBar, PlanStrip } from './AppShell.jsx';
 import { processPdf, processPdfText } from '../services/pdf.js';
+import { trackPurchase } from '../src/tracking.js';
 import { onAuthStateChange, onIdTokenChange, saveUserData, getUserData, needsEmailVerification } from '../services/auth.js';
 import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
 import Auth from './Auth.jsx';
@@ -561,6 +562,7 @@ const CVOptimizer = () => {
           status = await refreshBilling();
         }
         if (cancelled) return;
+        if (status && status.plan !== 'free' && !status.comped) trackPurchase(status.plan);
         setBillingNotice(status && status.plan !== 'free'
           ? `You are on Roleberry ${status.plan === 'max' ? 'Max' : 'Pro'}. Thanks for subscribing!`
           : 'Payment received. Your plan will update in a moment; refresh the page if it does not.');
@@ -881,7 +883,7 @@ const CVOptimizer = () => {
         if (n) return n;
       } catch {}
       // Fallback
-      return 'RoleBerry_CV';
+      return 'Roleberry_CV';
     };
 
     // The download follows whichever document is on screen.
@@ -1065,7 +1067,10 @@ const CVOptimizer = () => {
         return;
       }
       recordAppError(`Optimize: ${error.message}`);
-      if (error.message.includes('500')) {
+      if (error.status === 504 || error.status === 502 || error.status === 400) {
+        // The server's own sentence: a timeout, the AI service being down, or input too long.
+        notify('Couldn’t generate', error.detail);
+      } else if (error.message.includes('500')) {
         notify('Server error', 'The AI service may be temporarily unavailable. Please try again in a few moments.');
       } else if (error.message.includes('400')) {
         notify('Couldn’t generate', 'Invalid request format. Please check your input and try again.');
