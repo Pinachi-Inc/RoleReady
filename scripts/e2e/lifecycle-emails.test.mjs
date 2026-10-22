@@ -157,6 +157,7 @@ await check('welcome: one email on the first status call, none on the second', a
   assert.equal(body.headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click');
   assert.ok(body.textContent.includes(url), 'text has the unsubscribe URL');
   assert.ok(body.htmlContent.includes(url.replace(/&/g, '&amp;')), 'HTML has the unsubscribe URL');
+  assert.ok(body.htmlContent.includes('src="https://roleberry.test/email/roleberry-logo@2x.png"'), 'HTML shows the logo');
   assert.ok(emailState('newbie').welcomeSentAt);
   await status('newbie');
   assert.equal(mail.length, 1);
