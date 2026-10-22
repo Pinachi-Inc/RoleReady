@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Download, FileText, Zap, AlertCircle, Save, Copy, Check, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, Link2, Award, GraduationCap, Briefcase, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Building2, Download, FileText, Zap, AlertCircle, Save, Copy, Check, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, Link2, Award, GraduationCap, Briefcase, BarChart3 } from 'lucide-react';
 import { convertMarkdownToHtml } from '../utils/markdown.js';
 import { generateDownloadHtml, downloadHtml, downloadBlob } from '../utils/download.js';
 import PdfPreview from './PdfPreview.jsx';
@@ -17,6 +17,7 @@ import { newProfileId, saveProfile, renameProfile, deleteProfile, activateProfil
 import ProfileSwitcher from './ProfileSwitcher.jsx';
 import { useDialog } from './Dialog.jsx';
 import HistoryPage from './HistoryPage.jsx';
+import { renameHistoryRun } from '../services/history.js';
 import PricingModal from './PricingModal.jsx';
 import Landing from './Landing.jsx';
 import LoginPage from './LoginPage.jsx';
@@ -198,6 +199,9 @@ const CVOptimizer = () => {
   const [openedFromHistory, setOpenedFromHistory] = useState(false);
   const [folderMgmtEnabled, setFolderMgmtEnabled] = useState(() => localStorage.getItem('folderMgmtEnabled') === 'true');
   const [companyName, setCompanyName] = useState('');
+  // The History run behind the result on screen, so edits to the company name are saved to it.
+  const [runId, setRunId] = useState(null);
+  const savedCompanyRef = useRef('');
   const [wantsCoverLetter, setWantsCoverLetter] = useState(() => localStorage.getItem('wantsCoverLetter') === 'true');
   const [coverLetter, setCoverLetter] = useState('');
   const [activeDoc, setActiveDoc] = useState('cv'); // 'cv' | 'letter'
@@ -464,6 +468,8 @@ const CVOptimizer = () => {
     setStructuredCv(null);
     setAnalysis(null);
     setCompanyName('');
+    setRunId(null);
+    savedCompanyRef.current = '';
     setCoverLetter('');
     setActiveDoc('cv');
     setJdCollapsed(false);
@@ -667,12 +673,40 @@ const CVOptimizer = () => {
     setStructuredCv(run.cv || null);
     setCoverLetter(run.coverLetter || '');
     setCompanyName(run.companyName || '');
+    setRunId(run.id || null);
+    savedCompanyRef.current = run.companyName || '';
     setAnalysis(null);
     setDownloadNotice('');
     setActiveDoc('cv');
     setJdCollapsed(true);
     setOpenedFromHistory(true);
     setCurrentPage('main');
+  };
+
+  // Saves an edited company name to the run in History (on blur or Enter). The run is recorded
+  // just after the CV arrives, so a very quick edit can find it missing: that is retried once.
+  const saveCompanyName = async () => {
+    const name = companyName.replace(/\s+/g, ' ').trim();
+    const id = runId;
+    if (!id || name === savedCompanyRef.current) return;
+    const previous = savedCompanyRef.current;
+    savedCompanyRef.current = name;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await renameHistoryRun(id, name);
+        return;
+      } catch (err) {
+        if (err?.status === 404 && attempt === 0) {
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+        console.warn('[history] could not save the company name: %s', err?.message || err);
+        if (savedCompanyRef.current === name) savedCompanyRef.current = previous;
+        setDownloadNoticeTone('warn');
+        setDownloadNotice('Could not save the company name to History. Please try again.');
+        return;
+      }
+    }
   };
 
   const saveUserInfo = async () => {
@@ -993,6 +1027,7 @@ const CVOptimizer = () => {
 
     setIsProcessing(true);
     setOpenedFromHistory(false);
+    setRunId(null);
     // Fetch the PDF renderer while the model works, so the preview is ready when it returns.
     loadDocuments().catch(() => {});
     setOptimizedCv('');
@@ -1001,7 +1036,7 @@ const CVOptimizer = () => {
     setActiveDoc('cv');
 
     try {
-      const { cvContent, cv, analysis: an, companyName: cn, coverLetter: cl, quota } = await optimizeCvService({
+      const { cvContent, cv, analysis: an, companyName: cn, coverLetter: cl, runId: newRunId, quota } = await optimizeCvService({
         jobDescription,
         aiUserInfo,
         fixedUserInfo,
@@ -1013,7 +1048,10 @@ const CVOptimizer = () => {
       setOptimizedCv(cvContent);
       setStructuredCv(cv || null);
       setAnalysis(an || null);
-      if (cn) setCompanyName(cn);
+      // Always replaced, so a job post with no company never shows the previous run's name.
+      setCompanyName(cn || '');
+      savedCompanyRef.current = cn || '';
+      setRunId(newRunId || null);
       setCoverLetter(typeof cl === 'string' ? cl : '');
       if (wantsCoverLetter && !cl) {
         setDownloadNotice('The CV is ready, but the cover letter could not be written this time.');
@@ -1858,14 +1896,22 @@ const CVOptimizer = () => {
             )}
             <div className="flex-1" />
             <TemplatePicker value={docStyle} extraTemplates={extraTemplates} onChange={handleTemplateChange} onLocked={() => setShowPaywall(true)} disabled={!billing} />
-            {folderMgmtActive && (optimizedCv || structuredCv) && (
-              <label className="inline-flex items-center gap-1.5 h-[34px] px-2.5 rounded-[9px] border border-line bg-white text-ink-muted dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface">
-                <FolderOpen className="h-4 w-4" />
+            {/* Always shown: the name is saved with the run in History. With job folders on it
+                also names the folder the PDF is saved into. */}
+            {(optimizedCv || structuredCv) && (
+              <label
+                className="inline-flex items-center gap-1.5 h-[34px] px-2.5 rounded-[9px] border border-line bg-white text-ink-muted dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface"
+                title={folderMgmtActive ? 'Saved in History and used as the folder name' : 'Saved with this CV in History'}
+              >
+                {folderMgmtActive ? <FolderOpen className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
                 <input
                   type="text"
-                  aria-label="Company folder"
+                  aria-label="Company name"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
+                  onBlur={saveCompanyName}
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                  maxLength={80}
                   placeholder="Company name"
                   className="w-[150px] border-0 bg-transparent text-[13px] font-semibold text-ink outline-none dark:text-night-text"
                 />
