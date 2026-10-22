@@ -8,6 +8,7 @@ import {
   getEntitlement,
   compMirrorUpdate,
 } from './firestore.js';
+import { maybeSendWelcome, maybeSendCancelled } from './lifecycleEmails.js';
 
 // Billing through Lemon Squeezy, which is the merchant of record: it sells the subscription to
 // the customer, takes the payment, handles sales tax / VAT and the receipt, and pays us out.
@@ -226,6 +227,10 @@ export async function handleBillingStatus(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
+  // Welcome email for a new account; never throws, and finished before the response so a
+  // serverless function is not frozen mid-send.
+  const welcome = maybeSendWelcome(user);
+
   try {
     const stored = await getUserDoc(user.uid);
     // The app loads status on sign-in, so an allowlisted account's profile cap in
@@ -233,6 +238,7 @@ export async function handleBillingStatus(req, res) {
     const mirror = stored !== undefined ? compMirrorUpdate(user, stored) : null;
     if (mirror) await updateUserDoc(user.uid, mirror);
     const entitlement = getEntitlement(user, stored || {});
+    await welcome;
     return res.json({
       ...entitlement,
       billingAvailable: Boolean(billingConfigured() && variantFor('pro')),
@@ -244,6 +250,7 @@ export async function handleBillingStatus(req, res) {
     });
   } catch (err) {
     console.error('[billing] status failed for uid=%s: %s', user.uid, err?.message || err);
+    await welcome;
     return res.status(500).json({ error: 'Could not load your plan.' });
   }
 }
@@ -385,6 +392,7 @@ export async function handleBillingWebhook(req, res) {
       return res.json({ received: true });
     }
     await writeSubscription(uid, sub);
+    if (name === 'subscription_cancelled') await maybeSendCancelled(uid, sub, planForSubscription(sub) === 'max' ? 'Max' : 'Pro');
     return res.json({ received: true });
   } catch (err) {
     // A 500 makes Lemon Squeezy retry, which is what we want for a transient Firestore or API
