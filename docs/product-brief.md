@@ -173,8 +173,9 @@ count, and a warning banner when the result missed the brief.
 `components/CVOptimizer.jsx:1794-1858`, stats assembled at `optimizeHandler.js:545-554`.
 Read the caveat on the job-description share in section 5 before quoting it. *Live: yes.*
 
-**Tips panel.** Static guidance on writing job descriptions and reviewing output.
-`components/CVOptimizer.jsx:1872`. Some of its text is out of date; see section 3. *Live: yes.*
+**Tips popover.** Since 22 October 2026 a small "?" button beside Profiles in the top bar
+opens three short tips (`TipsButton` in `components/AppShell.jsx`). It replaced the Tips nav
+item and its modal. *Live: yes.*
 
 **The job description column collapses after a run** so the result gets the full width, with a
 button to bring it back. `components/CVOptimizer.jsx:882`, `:1910-1920`. Desktop only.
