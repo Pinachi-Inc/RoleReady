@@ -1,12 +1,12 @@
 import React from 'react';
-import { Zap, Clock, UserRound, Lightbulb, Sparkles } from 'lucide-react';
+import { Zap, Clock, UserRound, Sparkles } from 'lucide-react';
 import { prefetchHistory } from '../services/history.js';
 
 const NAV_BASE = 'flex flex-col justify-center sm:flex-row sm:inline-flex items-center gap-1 sm:gap-[7px] h-14 sm:h-9 px-1 sm:px-3 rounded-[10px] text-[12px] sm:text-[13.5px] font-semibold whitespace-nowrap focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25';
 const NAV_ACTIVE = 'bg-white/10 text-white';
 const NAV_IDLE = 'text-white/80 hover:bg-white/10 hover:text-white';
 
-export function TopBar({ page, onNavigate, onTips, profileSwitcher, account }) {
+export function TopBar({ page, onNavigate, profileSwitcher, account }) {
   const items = [
     { id: 'main', label: 'Optimize', Icon: Zap },
     { id: 'history', label: 'History', Icon: Clock },
@@ -22,7 +22,7 @@ export function TopBar({ page, onNavigate, onTips, profileSwitcher, account }) {
       >
         <img src="/roleberry-logo-dark.svg" alt="" className="h-[26px] w-auto" />
       </button>
-      <nav aria-label="App" className="order-last w-full grid grid-cols-4 gap-1 sm:order-none sm:w-auto sm:flex sm:flex-row sm:flex-wrap sm:gap-0.5">
+      <nav aria-label="App" className="order-last w-full grid grid-cols-3 gap-1 sm:order-none sm:w-auto sm:flex sm:flex-row sm:flex-wrap sm:gap-0.5">
         {items.map(({ id, label, Icon }) => {
           const active = page === id;
           return (
@@ -41,10 +41,6 @@ export function TopBar({ page, onNavigate, onTips, profileSwitcher, account }) {
             </button>
           );
         })}
-        <button type="button" onClick={() => onTips()} className={`${NAV_BASE} ${NAV_IDLE}`}>
-          <Lightbulb className="h-4 w-4" />
-          Tips
-        </button>
       </nav>
       <div className="flex-1" />
       {profileSwitcher}
