@@ -21,8 +21,18 @@
     "api/feedback.js": {
       "maxDuration": 15,
       "memory": 512
+    },
+    "api/email.js": {
+      "maxDuration": 60,
+      "memory": 512
     }
   },
+  "crons": [
+    {
+      "path": "/api/email?action=nudge",
+      "schedule": "0 15 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/__/auth/:path*",

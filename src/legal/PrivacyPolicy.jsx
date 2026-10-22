@@ -110,7 +110,7 @@ const PrivacyPolicy = () => (
       <li>To estimate how AI-written a generated CV reads, when that score is shown.</li>
       <li>To take payment, manage your subscription and apply plan limits, including Max's fair-use limit.</li>
       <li>To keep the service secure, prevent abuse, and fix problems.</li>
-      <li>To reply when you contact us, and to tell you about important changes to the service or these terms.</li>
+      <li>To reply when you contact us, to tell you about important changes to the service or these terms, and to send a few emails about your account: a welcome, one reminder if you haven't tried it yet, a notice when your free runs are used up, and a short question if you cancel. Each has an unsubscribe link.</li>
       <li>To meet legal obligations, such as tax and accounting records.</li>
     </ul>
     <p>
@@ -151,7 +151,7 @@ const PrivacyPolicy = () => (
         <tr><td>Vercel</td><td>Hosting and servers</td><td>All requests passing through the app, server logs, IP address</td></tr>
         <tr><td>OpenRouter and the AI model providers it routes to</td><td>Generating CVs, cover letters and profile imports</td><td>Profile content, job postings, imported CV text</td></tr>
         <tr><td>Lemon Squeezy (merchant of record) and its payment processors</td><td>Selling the subscription: payment, sales tax / VAT, receipts, refunds</td><td>Email, name, payment details, billing address, subscription</td></tr>
-        <tr><td>Brevo</td><td>Delivering feedback and problem reports to our inbox</td><td>Your message, email address, screenshot and the browser details above</td></tr>
+        <tr><td>Brevo</td><td>Delivering feedback reports to our inbox, and sending account emails</td><td>Your email address; for feedback, also your message, screenshot and the browser details above</td></tr>
         <tr><td>Meta Platforms (Meta Pixel)</td><td>Measuring our Facebook and Instagram ads</td><td>Pages visited on our site, that a sign-up happened and how (Google, GitHub or email), that a subscription was bought and its price, IP address, browser details and Meta's cookies</td></tr>
         <tr><td>Reddit (Reddit Pixel)</td><td>Measuring our Reddit ads</td><td>Pages visited on our site, that a sign-up happened, that a subscription was bought and its price, IP address, browser details and Reddit's cookies</td></tr>
         <tr><td>jsDelivr (CDN)</td><td>Loading the in-browser text reader for scanned PDFs</td><td>IP address and browser details only; your file stays on your device</td></tr>
