@@ -2,10 +2,11 @@ import axios from 'axios';
 
 // Transactional email through Brevo's HTTP API rather than SMTP: serverless functions cannot
 // keep an SMTP connection open, and one HTTPS call fits inside a short function timeout.
-// Only used for feedback today, so it only knows how to write to our own support inbox.
+// Feedback goes to our own support inbox; lifecycle emails go to the account holder.
 
 const BREVO_URL = 'https://api.brevo.com/v3/smtp/email';
 const DEFAULT_ADDRESS = 'support@roleberry.app';
+const LIFECYCLE_ADDRESS = 'hello@roleberry.app';
 
 let warnedUnconfigured = false;
 
@@ -19,15 +20,6 @@ let warnedUnconfigured = false;
  * @returns {Promise<{ sent: true } | { sent: false, reason: string }>}
  */
 export async function sendSupportEmail({ subject, text, html, replyTo = null, attachment = null }) {
-  const key = process.env.BREVO_API_KEY;
-  if (!key) {
-    if (!warnedUnconfigured) {
-      warnedUnconfigured = true;
-      console.warn('[mailer] BREVO_API_KEY is not set; feedback is stored but not emailed');
-    }
-    return { sent: false, reason: 'not_configured' };
-  }
-
   const body = {
     sender: { name: 'Roleberry Feedback', email: process.env.FEEDBACK_FROM_EMAIL || DEFAULT_ADDRESS },
     to: [{ email: process.env.FEEDBACK_TO_EMAIL || DEFAULT_ADDRESS }],
@@ -37,6 +29,36 @@ export async function sendSupportEmail({ subject, text, html, replyTo = null, at
   };
   if (replyTo) body.replyTo = { email: replyTo };
   if (attachment) body.attachment = [attachment];
+  return postBrevo(body);
+}
+
+/**
+ * One email to a user. Never throws.
+ * @param {{ to: string, subject: string, text: string, html: string, headers?: object, tags?: string[] }} m
+ * @returns {Promise<{ sent: true } | { sent: false, reason: string }>}
+ */
+export async function sendUserEmail({ to, subject, text, html, headers = {}, tags = [] }) {
+  return postBrevo({
+    sender: { name: 'Roleberry', email: process.env.LIFECYCLE_FROM_EMAIL || LIFECYCLE_ADDRESS },
+    to: [{ email: to }],
+    replyTo: { email: DEFAULT_ADDRESS },
+    subject,
+    textContent: text,
+    htmlContent: html,
+    headers,
+    tags,
+  });
+}
+
+async function postBrevo(body) {
+  const key = process.env.BREVO_API_KEY;
+  if (!key) {
+    if (!warnedUnconfigured) {
+      warnedUnconfigured = true;
+      console.warn('[mailer] BREVO_API_KEY is not set; nothing is emailed');
+    }
+    return { sent: false, reason: 'not_configured' };
+  }
 
   try {
     await axios.post(BREVO_URL, body, {
