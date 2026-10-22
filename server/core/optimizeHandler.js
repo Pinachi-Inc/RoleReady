@@ -3,7 +3,7 @@ import { validateAndFixSkills, reorderSkills } from '../cvValidation.js';
 import { labelSkills, analyzeCoverage } from '../skillMatch.js';
 import { renderCvMarkdown } from '../cvRenderer.js';
 import { requireAuth } from './firebaseAuth.js';
-import { consumeQuota, refundQuota, recordRun } from './firestore.js';
+import { consumeQuota, refundQuota, recordRun, newRunId } from './firestore.js';
 import { reasoningConfig, providerConfig } from './modelOptions.js';
 
 // Ensure env values are safe for HTTP headers/URLs
@@ -286,8 +286,10 @@ export async function handleOptimizeRequest(req, res) {
 
   const consumed = quota.allowed && quota.used > 0;
   let result = null;
+  // Picked up front so the browser learns the run's id with its CV and can rename it later.
+  const runId = newRunId(user.uid);
   try {
-    result = await runOptimize(req, res, publicQuota(quota));
+    result = await runOptimize(req, res, publicQuota(quota), runId);
   } finally {
     // Every failure path in runOptimize answers with a 4xx/5xx rather than throwing.
     if (consumed && res.statusCode >= 400) await refundQuota(user.uid, 'optimizations');
@@ -301,6 +303,7 @@ export async function handleOptimizeRequest(req, res) {
     // so it is length-capped rather than trusted.
     const { profileId, profileName } = req.body || {};
     await recordRun(user.uid, {
+      id: runId,
       profileId: typeof profileId === 'string' ? profileId.slice(0, 64) : null,
       profileName: typeof profileName === 'string' ? profileName.slice(0, 80) : null,
       companyName: result.companyName,
@@ -317,7 +320,7 @@ function publicQuota(quota) {
   return { plan: quota.plan, used: quota.used, limit: quota.limit ?? null, remaining, window: quota.window || null };
 }
 
-async function runOptimize(req, res, quota) {
+async function runOptimize(req, res, quota, runId = null) {
   const { jobDescription, aiUserInfo, fixedUserInfo, max_tokens = 4000, temperature = 0.45, includeCoverLetter = false } = req.body || {};
 
   const config = getConfig();
@@ -632,6 +635,7 @@ async function runOptimize(req, res, quota) {
       analysis,
       companyName: companyName || '',
       jobTitle: jobTitle || '',
+      runId,
       quota
     };
     res.json(payload);
