@@ -189,7 +189,6 @@ const CVOptimizer = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showUserInfoModal, setShowUserInfoModal] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
-  const [showTips, setShowTips] = useState(false);
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   const [pdfError, setPdfError] = useState('');
   const [ocrStatus, setOcrStatus] = useState('');
@@ -1094,43 +1093,6 @@ const CVOptimizer = () => {
     />
   );
 
-  const tipsModal = showTips && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={() => setShowTips(false)}></div>
-      <div className="relative bg-white text-ink w-full max-w-2xl mx-4 rounded-2xl shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-line">
-          <h3 className="text-lg font-extrabold text-ink">Optimization Tips</h3>
-          <button
-            type="button"
-            onClick={() => setShowTips(false)}
-            className="text-ink-muted hover:text-ink"
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-          <ul className="list-disc pl-6 text-ink text-sm space-y-1">
-            <li>Use the complete job posting, including requirements and preferred qualifications.</li>
-            <li>Provide detailed CV content with specific achievements and metrics.</li>
-            <li>Review the optimized CV to ensure it accurately represents your experience.</li>
-            <li>The downloaded PDF contains real text, so keep it as-is rather than printing it to a new file.</li>
-            <li>Customize further based on your specific industry and role.</li>
-          </ul>
-        </div>
-        <div className="px-6 py-4 border-t border-line bg-blush text-right">
-          <button
-            type="button"
-            onClick={() => setShowTips(false)}
-            className="px-4 py-2 rounded-lg bg-ink text-white text-sm hover:bg-[#3A2630]"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
   // Password accounts verify their email before they get the app. The server refuses their
   // tokens until then, so nothing behind this would work anyway.
   if (awaitingVerification) {
@@ -1183,7 +1145,7 @@ const CVOptimizer = () => {
   if (user && currentPage === 'history') {
     return (
       <div className={pageRootCls}>
-        <TopBar page="history" onNavigate={setCurrentPage} onTips={() => setShowTips(true)} profileSwitcher={profileSwitcherEl} account={accountEl} />
+        <TopBar page="history" onNavigate={setCurrentPage} profileSwitcher={profileSwitcherEl} account={accountEl} />
         {planStripEl}
         <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 py-8">
           <HistoryPage
@@ -1193,7 +1155,7 @@ const CVOptimizer = () => {
             cvStyle={docStyle}
           />
         </div>
-        {tipsModal}{paywallModal}
+        {paywallModal}
       </div>
     );
   }
@@ -1270,7 +1232,7 @@ const CVOptimizer = () => {
 
     return (
       <div className={pageRootCls}>
-        <TopBar page="setup" onNavigate={setCurrentPage} onTips={() => setShowTips(true)} profileSwitcher={profileSwitcherEl} account={accountEl} />
+        <TopBar page="setup" onNavigate={setCurrentPage} profileSwitcher={profileSwitcherEl} account={accountEl} />
 
         <div className="flex flex-1">
           {/* Section rail */}
@@ -1562,7 +1524,7 @@ const CVOptimizer = () => {
                 <SectionHead
                   icon={Briefcase}
                   title="Experience"
-                  hint="Write what you actually did. Each tailored CV re-angles these toward the job, it never invents new ones."
+                  hint="Write what you actually did, with numbers where you have them. Each tailored CV re-angles these toward the job, it never invents new ones."
                   actions={
                     <button
                       type="button"
@@ -1745,7 +1707,7 @@ const CVOptimizer = () => {
               </div>
             </div>
           </div>
-        {tipsModal}{paywallModal}
+        {paywallModal}
       </div>
     );
   }
@@ -1760,7 +1722,7 @@ const CVOptimizer = () => {
 
   return (
     <div className={pageRootCls}>
-      <TopBar page="main" onNavigate={setCurrentPage} onTips={() => setShowTips(true)} profileSwitcher={profileSwitcherEl} account={accountEl} />
+      <TopBar page="main" onNavigate={setCurrentPage} profileSwitcher={profileSwitcherEl} account={accountEl} />
       {planStripEl}
 
       <main className={`relative flex-1 grid grid-cols-1 ${jdCollapsed ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(420px,1fr)_1.25fr]'}`}>
@@ -2084,7 +2046,6 @@ const CVOptimizer = () => {
         </div>
       )}
 
-      {tipsModal}
       {paywallModal}
 
       {/* Floating restore button when the job posting is collapsed */}

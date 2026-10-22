@@ -236,7 +236,7 @@ Screen switch: `currentPage === 'setup'` → setup form; `!user` → sign-in spl
 | `folderMgmtEnabled` | persisted in `localStorage.folderMgmtEnabled` |
 | `isDark` | toggles `.dark` on `<html>`; not persisted |
 | `jdCollapsed` | auto-set true after a successful optimize (desktop) |
-| `showAnalysis`, `showTips`, `showUserInfoModal`(unused), `setupTab`(only ever `'personal'`) |
+| `showAnalysis`, `showUserInfoModal`(unused), `setupTab`(only ever `'personal'`) |
 
 Input caps enforced client-side only: JD 10k, aiUserInfo 20k, fixedUserInfo 10k chars.
 Express body limit is 1mb.
