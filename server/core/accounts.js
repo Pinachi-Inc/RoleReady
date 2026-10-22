@@ -1,6 +1,6 @@
 import admin from 'firebase-admin';
 import axios from 'axios';
-import { adminApp, adminDb } from './firestore.js';
+import { adminApp, adminDb, setEmailState, deleteEmailState } from './firestore.js';
 
 // Admin-only account tools behind `npm run users` (scripts/users.mjs): list every account, and
 // delete one completely. The Privacy Policy promises that a deleted account is gone within 30
@@ -8,6 +8,7 @@ import { adminApp, adminDb } from './firestore.js';
 //   - the Lemon Squeezy subscription, cancelled so they are not billed again
 //   - users/{uid} with its history subcollection (profiles, usage, plan, every run)
 //   - their feedback reports and the feedback rate-limit counter
+//   - emailState/{uid}, the record of which account emails they were sent
 //   - the Firebase Auth account itself
 // Lemon Squeezy keeps its own payment and tax records, as the Privacy Policy says.
 
@@ -105,6 +106,8 @@ export async function deleteAccount(uid) {
   const data = snap.exists ? snap.data() : {};
 
   const summary = { uid, subscription: 'none', feedbackReports: 0 };
+  // First, so cancelling the subscription below cannot email someone who is deleting their account.
+  await setEmailState(uid, { unsubscribedAt: new Date().toISOString() });
   if (data.billingSubscriptionId && !['expired', 'cancelled'].includes(data.subscriptionStatus)) {
     summary.subscription = await cancelSubscription(data.billingSubscriptionId);
   }
@@ -116,6 +119,7 @@ export async function deleteAccount(uid) {
   for (const doc of reports.docs) await database.recursiveDelete(doc.ref);
   summary.feedbackReports = reports.size;
   await database.collection('feedbackLimits').doc(`uid_${uid}`).delete();
+  await deleteEmailState(uid);
 
   try {
     await auth.deleteUser(uid);

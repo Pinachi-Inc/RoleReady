@@ -4,6 +4,7 @@ import { labelSkills, analyzeCoverage } from '../skillMatch.js';
 import { renderCvMarkdown } from '../cvRenderer.js';
 import { requireAuth } from './firebaseAuth.js';
 import { consumeQuota, refundQuota, recordRun, newRunId } from './firestore.js';
+import { maybeSendOutOfRuns } from './lifecycleEmails.js';
 import { reasoningConfig, providerConfig } from './modelOptions.js';
 
 // A stuck model call must fail well before Vercel stops the function at 300 s: then the run is
@@ -332,6 +333,8 @@ export async function handleOptimizeRequest(req, res) {
       cv: result.cv,
       coverLetter: result.coverLetter,
     });
+    // Last free run used: one email, sent once (server/core/lifecycleEmails.js).
+    if (res.statusCode < 400 && quota.plan === 'free' && quota.limit != null && quota.used >= quota.limit) await maybeSendOutOfRuns(user);
   }
 }
 

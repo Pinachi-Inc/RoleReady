@@ -249,6 +249,7 @@ const CVOptimizer = () => {
   const [profileBusy, setProfileBusy] = useState(false);
   // Read once: Lemon Squeezy's checkout sends people back to /?checkout=success.
   const checkoutReturnRef = useRef(new URLSearchParams(window.location.search).get('checkout'));
+  const upgradeParamRef = useRef(new URLSearchParams(window.location.search).get('upgrade'));
   const downloadingRef = useRef(false);
 
   const handleToggleFolderMgmt = (val) => {
@@ -555,6 +556,13 @@ const CVOptimizer = () => {
         window.history.replaceState(null, '', window.location.pathname);
       }
       let status = await refreshBilling();
+      if (upgradeParamRef.current) {
+        upgradeParamRef.current = null;
+        const url = new URL(window.location.href);
+        url.searchParams.delete('upgrade');
+        window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+        if (status?.plan === 'free' && !cancelled) setShowPaywall(true);
+      }
       if (returned === 'success') {
         setBillingNotice('Payment received. Activating your subscription…');
         for (let i = 0; i < 8 && !cancelled && status?.plan === 'free'; i++) {

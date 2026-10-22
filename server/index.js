@@ -6,6 +6,7 @@ import { handlePdfProcessing, uploadMiddleware } from './core/pdfHandler.js';
 import { handleHistory } from './core/historyHandler.js';
 import { handleFeedback } from './core/feedbackHandler.js';
 import { handleGithubVerify } from './core/githubVerifyHandler.js';
+import { handleEmailEndpoint } from './core/lifecycleEmails.js';
 import { handleCreateCheckout, handleCustomerPortal, handleBillingStatus, handleBillingWebhook } from './core/billing.js';
 
 dotenv.config();
@@ -66,6 +67,9 @@ app.post('/api/feedback', handleFeedback);
 
 // Confirms a GitHub user's email with GitHub after sign-in
 app.post('/api/auth/github-verify', handleGithubVerify);
+
+// Unsubscribe links, the reminder cron and the email preview
+app.all('/api/email', handleEmailEndpoint);
 
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);

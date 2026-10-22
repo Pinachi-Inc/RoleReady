@@ -343,6 +343,75 @@ export async function getAuthUser(uid) {
   }
 }
 
+// Server-only state for lifecycle emails, in emailState/{uid}. Fields (all optional):
+//   welcomeSentAt, nudgeSentAt, outOfRunsSentAt  ISO strings
+//   welcomeSkipped                               'old_account'
+//   cancelSentFor                                id of the last subscription we sent the cancel email for
+//   unsubscribedAt                               ISO string; once set, nothing lifecycle is sent
+// firestore.rules' catch-all already denies the client, so no rule exists for it.
+export async function getEmailState(uid) {
+  const database = db();
+  if (!database) return undefined;
+  const snap = await database.collection('emailState').doc(uid).get();
+  return snap.exists ? snap.data() : {};
+}
+
+export async function setEmailState(uid, fields) {
+  try {
+    const database = db();
+    if (!database) return;
+    await database.collection('emailState').doc(uid).set(fields, { merge: true });
+  } catch (err) {
+    console.error('[firestore] emailState write failed for %s: %s', uid, err?.message || err);
+  }
+}
+
+// Reserve a send: sets `field` to `value` only if it is not already set (for cancelSentFor: only
+// if it is not already this subscription) and the person has not unsubscribed.
+export async function claimEmail(uid, field, value) {
+  try {
+    const database = db();
+    if (!database) return false;
+    const ref = database.collection('emailState').doc(uid);
+    return await database.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const state = snap.exists ? snap.data() : {};
+      if (state.unsubscribedAt) return false;
+      const taken = field === 'cancelSentFor' ? state.cancelSentFor === value : state[field] != null;
+      if (taken) return false;
+      tx.set(ref, { [field]: value }, { merge: true });
+      return true;
+    });
+  } catch (err) {
+    console.error('[firestore] emailState claim failed for %s/%s: %s', uid, field, err?.message || err);
+    return false;
+  }
+}
+
+// Undo a claim after the send failed, so the next trigger can retry.
+export async function releaseEmail(uid, field) {
+  try {
+    const database = db();
+    if (!database) return;
+    await database.collection('emailState').doc(uid).set({ [field]: admin.firestore.FieldValue.delete() }, { merge: true });
+  } catch (err) {
+    console.error('[firestore] emailState release failed for %s/%s: %s', uid, field, err?.message || err);
+  }
+}
+
+export async function deleteEmailState(uid) {
+  const database = db();
+  if (!database) return;
+  await database.collection('emailState').doc(uid).delete();
+}
+
+// One page of Firebase Auth accounts: { users, pageToken }.
+export async function listAuthUsersPage(pageToken) {
+  const app = init();
+  if (!app) throw new Error('Firestore is not configured on the server');
+  return admin.auth(app).listUsers(1000, pageToken || undefined);
+}
+
 // Mark an account's email as verified, once something we trust (GitHub) has vouched for it.
 export async function markEmailVerified(uid) {
   const app = init();
