@@ -9,7 +9,7 @@ const Mail = () => <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a>;
 const TermsOfService = () => (
   <>
     <p>
-      These terms are the agreement between you and {LEGAL.seller}, a sole trader ("we", "us"), for your use of{' '}
+      These terms are the agreement between you and {LEGAL.seller} ("we", "us"), for your use of{' '}
       {LEGAL.product} at {LEGAL.site}. By signing in you accept them. If you do not agree, do not
       use {LEGAL.product}. How we handle personal data is described in our{' '}
       <a href="/privacy">Privacy Policy</a>.
@@ -179,7 +179,7 @@ const TermsOfService = () => (
 
     <h2>15. Contact</h2>
     <p>
-      {LEGAL.seller} (sole trader), {LEGAL.address}. Email <Mail />.
+      {LEGAL.seller}. Email <Mail />.
     </p>
   </>
 );

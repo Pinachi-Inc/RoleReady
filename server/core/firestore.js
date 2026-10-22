@@ -1,4 +1,5 @@
 import admin from 'firebase-admin';
+import { initializeFirestore } from 'firebase-admin/firestore';
 
 // The server could verify Firebase tokens (server/core/firebaseAuth.js, node:crypto against
 // Google's public certs) but had no way to WRITE Firestore. That is fine while everything is
@@ -39,9 +40,15 @@ export function isFirestoreReady() {
   return Boolean(init());
 }
 
+// REST rather than gRPC: on a cold serverless start, opening a gRPC channel adds a second or
+// more before the first read. Plain HTTPS starts fast, and nothing here needs live listeners.
+let cachedDb = null;
 function db() {
+  if (cachedDb) return cachedDb;
   const app = init();
-  return app ? admin.firestore(app) : null;
+  if (!app) return null;
+  cachedDb = initializeFirestore(app, { preferRest: true });
+  return cachedDb;
 }
 
 // Plan limits live here rather than in the client so the numbers cannot drift between what
@@ -65,11 +72,17 @@ function db() {
 // model bill, and profiles 100, mirrored in firestore.rules, so the user document stays well
 // inside Firestore's 1 MiB limit. `fairUse` / `unlimitedProfiles` tell the UI to say
 // "Unlimited" rather than show either number. Comped accounts get exactly Max, cap included.
+// `extraTemplates`: Modern and Executive CV templates (src/documents/catalog.js).
 export const PLAN_LIMITS = {
   free: { window: 'lifetime', optimizations: 5, pdfImports: 10, profiles: 1, historyVisible: 5 },
   paid: { window: 'month', optimizations: 1000, pdfImports: null, profiles: 3, historyVisible: null },
-  max: { window: 'month', optimizations: 5000, pdfImports: null, profiles: 100, historyVisible: null, fairUse: true, unlimitedProfiles: true },
+  max: { window: 'month', optimizations: 5000, pdfImports: null, profiles: 100, historyVisible: null, fairUse: true, unlimitedProfiles: true, extraTemplates: true },
 };
+
+// The most runs any limited plan can open, so history can be read before the plan is known.
+export const MAX_HISTORY_VISIBLE = Math.max(
+  0, ...Object.values(PLAN_LIMITS).map((p) => p.historyVisible ?? 0),
+);
 
 export function maxMonthlyRuns() {
   const n = Number.parseInt(String(process.env.MAX_MONTHLY_RUNS || '').trim(), 10);
@@ -178,6 +191,7 @@ export function getEntitlement(user, data, kind = 'optimizations') {
     historyVisible: limits.historyVisible,
     fairUse: Boolean(limits.fairUse),
     unlimitedProfiles: Boolean(limits.unlimitedProfiles),
+    extraTemplates: Boolean(limits.extraTemplates),
     enforced: enforcementOn(),
   };
 }
@@ -379,7 +393,8 @@ export async function recordRun(uid, run) {
   if (!database) return null;
 
   try {
-    const ref = database.collection('users').doc(uid).collection('history').doc();
+    const runs = database.collection('users').doc(uid).collection('history');
+    const ref = run.id ? runs.doc(run.id) : runs.doc();
     await ref.set({
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       profileId: run.profileId || null,
@@ -412,9 +427,12 @@ function isoTime(value) {
 export async function listRuns(uid, limit = 50) {
   const database = db();
   if (!database) return null;
+  // select() asks Firestore for these fields only. Without it every document arrives with its
+  // whole CV and cover letter, which made the list slow to load.
   const snap = await database.collection('users').doc(uid).collection('history')
     .orderBy('createdAt', 'desc')
     .limit(limit)
+    .select('createdAt', 'companyName', 'jobTitle', 'profileName', 'hasCoverLetter')
     .get();
   return snap.docs.map((doc) => {
     const d = doc.data();
@@ -435,6 +453,32 @@ export async function countRuns(uid) {
   if (!database) return null;
   const snap = await database.collection('users').doc(uid).collection('history').count().get();
   return Number(snap.data().count || 0);
+}
+
+// A fresh id for a run that is about to be recorded, so the browser can be told it before the
+// write happens. Made locally by the SDK, no network call. Null without Firestore access.
+export function newRunId(uid) {
+  const database = db();
+  if (!database) return null;
+  return database.collection('users').doc(uid).collection('history').doc().id;
+}
+
+/**
+ * Change the company name on a saved run (the user corrects what the model read from the job
+ * post). Only that field changes. Returns true when saved, false when the run does not exist
+ * (yet: it is recorded just after the response goes out), null without Firestore access.
+ */
+export async function renameRun(uid, runId, companyName) {
+  const database = db();
+  if (!database) return null;
+  try {
+    await database.collection('users').doc(uid).collection('history').doc(runId)
+      .update({ companyName: companyName || null });
+    return true;
+  } catch (err) {
+    if (err?.code === 5 || err?.code === 'not-found') return false;
+    throw err;
+  }
 }
 
 // One full run, or null if it does not exist (or Firestore is unavailable).
@@ -528,4 +572,13 @@ export async function takeFeedbackQuota(keys) {
     console.error('[firestore] feedback rate limit check failed: %s', err?.message || err);
     return { allowed: true };
   }
+}
+
+// Every account's first-touch source (users/{uid}.signupSource, written by the browser at
+// sign-up, see src/attribution.js). Used by `npm run signups`.
+export async function listSignupSources() {
+  const database = db();
+  if (!database) throw new Error('Firestore is not configured on the server');
+  const snap = await database.collection('users').select('signupSource').get();
+  return snap.docs.map((doc) => ({ uid: doc.id, ...(doc.data().signupSource || {}) }));
 }

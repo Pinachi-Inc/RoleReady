@@ -3,7 +3,6 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { handleOptimizeRequest } from './core/optimizeHandler.js';
 import { handlePdfProcessing, uploadMiddleware } from './core/pdfHandler.js';
-import { handleAiDetect } from './core/aiDetectHandler.js';
 import { handleHistory } from './core/historyHandler.js';
 import { handleFeedback } from './core/feedbackHandler.js';
 import { handleGithubVerify } from './core/githubVerifyHandler.js';
@@ -53,9 +52,6 @@ app.post('/api/optimize', handleOptimizeRequest);
 
 // PDF processing endpoint
 app.post('/api/process-pdf', uploadMiddleware, handlePdfProcessing);
-
-// AI detection endpoint
-app.post('/api/detect-ai', handleAiDetect);
 
 // Billing
 app.post('/api/billing/checkout', handleCreateCheckout);

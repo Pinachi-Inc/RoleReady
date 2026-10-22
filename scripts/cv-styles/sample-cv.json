@@ -1,0 +1,33 @@
+{
+  "note": "Synthetic sample CV for template thumbnails and sample renders. Not a real person.",
+  "name": "Alex Morgan",
+  "contact": { "location": "Berlin, Germany", "phone": "+49 30 1234 5678", "email": "alex.morgan@example.com", "links": ["linkedin.com/in/alexmorgan", "github.com/alexmorgan"] },
+  "summary": "Senior DevOps engineer with 7 years of experience running cloud platforms on AWS and Kubernetes. Cut infrastructure cost by 30% and deploy time from hours to minutes by building self-service CI/CD and infrastructure as code. Comfortable owning reliability end to end, from on-call to capacity planning.",
+  "coreSkills": [
+    { "category": "Cloud", "items": ["AWS", "EC2", "S3", "IAM", "RDS", "CloudFront"] },
+    { "category": "Containers", "items": ["Docker", "Kubernetes", "Helm", "EKS"] },
+    { "category": "Infrastructure as Code", "items": ["Terraform", "Ansible", "CloudFormation"] },
+    { "category": "CI/CD", "items": ["GitHub Actions", "Jenkins", "Argo CD"] },
+    { "category": "Observability", "items": ["Prometheus", "Grafana", "ELK", "PagerDuty"] },
+    { "category": "Languages", "items": ["Python", "Bash", "Go"] }
+  ],
+  "certifications": ["AWS Certified Solutions Architect – Associate", "Certified Kubernetes Administrator (CKA)"],
+  "experience": [
+    { "title": "Senior DevOps Engineer", "company": "Brightpath Logistics", "location": "Remote", "start": "Mar 2022", "end": "Present", "achievements": [
+      "Migrated 40 services from EC2 VMs to EKS with Helm charts, cutting infrastructure cost by about 30%",
+      "Built a GitHub Actions and Argo CD pipeline that took deploys from 2 hours of manual steps to 12 minutes",
+      "Wrote Terraform modules for networking, RDS and IAM now used by 6 product teams",
+      "Led the on-call rotation and post-mortems; mean time to recovery fell from 70 to 25 minutes"
+    ] },
+    { "title": "DevOps Engineer", "company": "Nordlicht Media", "location": "Berlin", "start": "Jun 2019", "end": "Feb 2022", "achievements": [
+      "Moved monitoring from Nagios to Prometheus and Grafana with 120 alert rules tied to SLOs",
+      "Automated server provisioning with Ansible, removing a 3-day manual setup for new environments",
+      "Introduced blue-green releases for the video platform, ending release-night downtime"
+    ] },
+    { "title": "Systems Administrator", "company": "Kappa Hosting", "location": "Yerevan", "start": "Sep 2017", "end": "May 2019", "achievements": [
+      "Ran 300 Linux servers across two data centres with 99.95% uptime",
+      "Scripted backups and restores in Bash and Python, tested monthly"
+    ] }
+  ],
+  "education": ["BSc Computer Science, Yerevan State University, 2017"]
+}
