@@ -1,31 +1,33 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, FileText, Target, Zap, AlertCircle, Save, Info, Copy, Check, Bot, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, ArrowLeft, Link2, Award, GraduationCap, Briefcase, Sparkles, Clock } from 'lucide-react';
+import { ArrowLeft, Building2, Download, FileText, Zap, AlertCircle, Save, Copy, Check, Upload, User, ChevronRight, FolderOpen, Plus, Trash2, X, Link2, Award, GraduationCap, Briefcase, BarChart3 } from 'lucide-react';
 import { convertMarkdownToHtml } from '../utils/markdown.js';
-import { generateDownloadHtml, downloadHtml } from '../utils/download.js';
-import html2pdf from 'html2pdf.js';
-
-function extractBody(htmlString) {
-  try {
-    const match = String(htmlString || '').match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    return match ? match[1] : htmlString;
-  } catch {
-    return htmlString;
-  }
-}
-import { renderCvHtml, renderCoverLetterHtml } from '../src/templateRenderer.js';
-import { buildCvPdf, buildCoverLetterPdf } from '../src/cvPdf.js';
+import { generateDownloadHtml, downloadHtml, downloadBlob } from '../utils/download.js';
+import PdfPreview from './PdfPreview.jsx';
 import { prefetchOcrAssets, ocrPdfInBrowser, isOcrSupported } from '../services/browserOcr.js';
-import { optimizeCv as optimizeCvService, detectAiContent } from '../services/openai.js';
+
+// react-pdf is about 1.2 MB, so it loads only once there is a CV to draw.
+const loadDocuments = () => import('../src/documents/index.js');
+
+const PreviewLoading = () => (
+  <div className="flex min-h-[560px] items-center justify-center p-8 text-[13.5px] text-ink-muted dark:text-night-muted">Preparing preview…</div>
+);
+import { optimizeCv as optimizeCvService } from '../services/openai.js';
 import { getBillingStatus, startCheckout, openBillingPortal } from '../services/billing.js';
 import { newProfileId, saveProfile, renameProfile, deleteProfile, activateProfile } from '../services/profiles.js';
 import ProfileSwitcher from './ProfileSwitcher.jsx';
+import { useDialog } from './Dialog.jsx';
 import HistoryPage from './HistoryPage.jsx';
+import { renameHistoryRun } from '../services/history.js';
 import PricingModal from './PricingModal.jsx';
 import Landing from './Landing.jsx';
+import LoginPage from './LoginPage.jsx';
+import { TopBar, PlanStrip } from './AppShell.jsx';
 import { processPdf, processPdfText } from '../services/pdf.js';
 import { onAuthStateChange, onIdTokenChange, saveUserData, getUserData, needsEmailVerification } from '../services/auth.js';
 import { writePdfWithHandle, getFolderHandle, isFolderApiSupported } from '../services/folderManager.js';
 import Auth from './Auth.jsx';
+import TemplatePicker from './TemplatePicker.jsx';
+import { knownStyle, effectiveStyle } from '../src/documents/catalog.js';
 import { recordAppError, openFeedback } from '../services/feedback.js';
 import VerifyEmail from './VerifyEmail.jsx';
 
@@ -50,6 +52,11 @@ const withUniqueRoleIds = (aiJson) => {
     return aiJson;
   }
 };
+
+// Sign-in and sign-up live at their own paths. There is no router: Vercel rewrites every
+// path to index.html and the signed-out branch picks the page from the pathname.
+const AUTH_PATHS = { '/login': 'signin', '/signup': 'signup' };
+const currentPath = () => window.location.pathname.replace(/\/+$/, '') || '/';
 
 // Setup page sections, ordered low-effort first so the heavy ones come after the
 // user has already invested something. Drives the rail, the counts and the progress meter.
@@ -105,18 +112,19 @@ const emptyFormData = () => ({
 // Shared style tokens and presentational pieces for the setup page. These MUST live
 // at module scope: defined inside the component they would be a new component type on
 // every render, remounting their inputs and dropping focus after each keystroke.
-  const inputCls = 'w-full min-w-0 px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow';
-  const labelCls = 'block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5';
-  const cardCls = 'bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden';
+  const inputCls = 'w-full min-w-0 h-11 px-3.5 text-sm rounded-[10px] border border-line bg-white text-ink placeholder:text-ink-faint focus:outline-none focus:border-berry focus:ring-4 focus:ring-berry/15 dark:bg-night-raised dark:border-night-line dark:text-night-text';
+  const labelCls = 'block text-[13px] font-semibold text-ink mb-1.5 dark:text-night-text';
+  const cardCls = 'bg-white border border-line rounded-2xl overflow-hidden dark:bg-night-raised dark:border-night-line';
+  const addBtnCls = 'inline-flex items-center gap-1.5 h-[34px] px-3 rounded-[9px] border border-line bg-white text-[13px] font-semibold text-ink hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text';
 
   const SectionHead = ({ icon: Icon, title, hint, actions }) => (
     <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-3">
       <div className="min-w-0">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-gray-800 dark:text-gray-100">
-          <Icon className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+        <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-ink dark:text-night-text">
+          <Icon className="h-4 w-4 text-berry shrink-0" />
           {title}
         </h2>
-        {hint && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{hint}</p>}
+        {hint && <p className="mt-1 text-[13.5px] text-ink-muted dark:text-night-muted">{hint}</p>}
       </div>
       {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
     </div>
@@ -124,10 +132,10 @@ const emptyFormData = () => ({
 
   const SimpleList = ({ values, onChange, onAdd, onRemove, placeholder, addLabel, type = 'text' }) => (
     <div className={cardCls}>
-      <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+      <ul className="divide-y divide-line dark:divide-night-line">
         {values.map((value, index) => (
           <li key={index} className="flex items-center gap-2 p-3">
-            <span className="w-6 shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-600 text-center">{index + 1}</span>
+            <span className="w-6 shrink-0 text-xs tabular-nums text-ink-faint dark:text-night-muted text-center">{index + 1}</span>
             <input
               type={type}
               value={value}
@@ -139,7 +147,7 @@ const emptyFormData = () => ({
               <button
                 type="button"
                 onClick={() => onRemove(index)}
-                className="shrink-0 p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                className="shrink-0 p-2 rounded-lg text-ink-faint hover:text-danger-text hover:bg-danger-bg transition-colors"
                 aria-label="Remove"
               >
                 <Trash2 className="h-4 w-4" />
@@ -148,11 +156,11 @@ const emptyFormData = () => ({
           </li>
         ))}
       </ul>
-      <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-2">
+      <div className="border-t border-line bg-blush p-2 dark:bg-night-surface dark:border-night-line">
         <button
           type="button"
           onClick={onAdd}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+          className={addBtnCls}
         >
           <Plus className="h-4 w-4" />
           {addLabel}
@@ -163,17 +171,16 @@ const emptyFormData = () => ({
 
 
 const CVOptimizer = () => {
+  // In-app notice instead of the browser's alert().
+  const dialog = useDialog();
+  const notify = (title, message) => dialog.alert({ title, message });
   const [jobDescription, setJobDescription] = useState('');
   const [aiUserInfo, setAiUserInfo] = useState('');
   const [fixedUserInfo, setFixedUserInfo] = useState('');
   const [optimizedCv, setOptimizedCv] = useState('');
   const [structuredCv, setStructuredCv] = useState(null);
-  const [keywords, setKeywords] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [needsFix, setNeedsFix] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [aiScore, setAiScore] = useState(null);
-  const [aiScoreLoading, setAiScoreLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState('main'); // 'main' | 'setup'
   const [user, setUser] = useState(null);
   // user.reload() updates the same object in place, so bump this to re-render after verifying.
@@ -182,15 +189,19 @@ const CVOptimizer = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showUserInfoModal, setShowUserInfoModal] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
-  const [overlapSkills, setOverlapSkills] = useState([]);
   const [showTips, setShowTips] = useState(false);
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   const [pdfError, setPdfError] = useState('');
   const [ocrStatus, setOcrStatus] = useState('');
   const [setupTab, setSetupTab] = useState('personal');
   const [jdCollapsed, setJdCollapsed] = useState(false); // Desktop-only JD sidebar collapse
+  // True while the result shown is a past run opened from History, so it can offer the way back.
+  const [openedFromHistory, setOpenedFromHistory] = useState(false);
   const [folderMgmtEnabled, setFolderMgmtEnabled] = useState(() => localStorage.getItem('folderMgmtEnabled') === 'true');
   const [companyName, setCompanyName] = useState('');
+  // The History run behind the result on screen, so edits to the company name are saved to it.
+  const [runId, setRunId] = useState(null);
+  const savedCompanyRef = useRef('');
   const [wantsCoverLetter, setWantsCoverLetter] = useState(() => localStorage.getItem('wantsCoverLetter') === 'true');
   const [coverLetter, setCoverLetter] = useState('');
   const [activeDoc, setActiveDoc] = useState('cv'); // 'cv' | 'letter'
@@ -198,7 +209,38 @@ const CVOptimizer = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadNotice, setDownloadNotice] = useState('');
   const [downloadNoticeTone, setDownloadNoticeTone] = useState('warn'); // 'warn' | 'ok'
+  // The preview draws these PDFs and the download saves them, so the two are the same file.
+  const [cvBlob, setCvBlob] = useState(null);
+  const [letterBlob, setLetterBlob] = useState(null);
+  const [cvStyle, setCvStyle] = useState('classic'); // saved choice; docStyle is what is drawn
   const [billing, setBilling] = useState(null); // server's view of plan and allowance, see services/billing.js
+  const extraTemplates = Boolean(billing?.extraTemplates);
+  const docStyle = effectiveStyle(cvStyle, extraTemplates);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCvBlob(null);
+    setLetterBlob(null);
+    if (!structuredCv) return undefined;
+    (async () => {
+      try {
+        const { renderCvPdf, renderLetterPdf } = await loadDocuments();
+        const cvFile = await renderCvPdf(structuredCv, { style: docStyle });
+        if (!cancelled) setCvBlob(cvFile);
+        if (coverLetter) {
+          const letterPdf = await renderLetterPdf(coverLetter, structuredCv, { style: docStyle });
+          if (!cancelled) setLetterBlob(letterPdf);
+        }
+      } catch (err) {
+        console.error('[documents] render failed:', err);
+        if (!cancelled) {
+          setDownloadNoticeTone('warn');
+          setDownloadNotice('Could not build the PDF. Please try again.');
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [structuredCv, coverLetter, docStyle]);
   const [showPaywall, setShowPaywall] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
   const [billingNotice, setBillingNotice] = useState('');
@@ -209,22 +251,15 @@ const CVOptimizer = () => {
   const checkoutReturnRef = useRef(new URLSearchParams(window.location.search).get('checkout'));
   const downloadingRef = useRef(false);
 
-  const detectableWordCount = (cv) => {
-    if (!cv) return 0;
-    const parts = [];
-    if (cv.summary) parts.push(cv.summary);
-    if (Array.isArray(cv.experience)) {
-      for (const job of cv.experience) {
-        if (Array.isArray(job.achievements)) parts.push(...job.achievements);
-      }
-    }
-    return parts.join(' ').trim().split(/\s+/).filter(Boolean).length;
-  };
-
   const handleToggleFolderMgmt = (val) => {
     setFolderMgmtEnabled(val);
     localStorage.setItem('folderMgmtEnabled', val ? 'true' : 'false');
   };
+  // Job folders are a Max feature, marked Experimental. The switch stays visible for everyone,
+  // but only a Max account (paid or complimentary) can turn it on, and it is off until they do.
+  // The stored choice is kept, so it only takes effect while the account is on Max.
+  const folderMgmtAllowed = billing?.plan === 'max';
+  const folderMgmtActive = folderMgmtEnabled && folderMgmtAllowed;
   
   // Structured form data
   const [formData, setFormData] = useState(emptyFormData);
@@ -338,6 +373,10 @@ const CVOptimizer = () => {
   };
 
   const needsSetup = !isValidFormData();
+  // True from sign-in until the stored profile has been read. The form is empty during that
+  // window, so nothing may treat "empty" as "has no profile" until it flips back to false.
+  const [profileLoading, setProfileLoading] = useState(false);
+  const profileLoadRef = useRef(0);
 
   // Theme state must be declared before any conditional returns to keep hook order stable
   const [isDark, setIsDark] = useState(false);
@@ -346,6 +385,11 @@ const CVOptimizer = () => {
     if (isDark) root.classList.add('dark'); else root.classList.remove('dark');
   }, [isDark]);
 
+  // After signing in on /login or /signup (or opening them while signed in), land on the app at /.
+  useEffect(() => {
+    if (user && AUTH_PATHS[currentPath()]) window.history.replaceState(null, '', '/');
+  }, [user]);
+
   // Setup page: section rail state. Declared here, above the early returns, so hook
   // order stays stable regardless of which page is rendering.
   const [activeSection, setActiveSection] = useState(SETUP_SECTIONS[0].id);
@@ -353,18 +397,14 @@ const CVOptimizer = () => {
   const [collapsedRoles, setCollapsedRoles] = useState(() => new Set());
   const [skillDrafts, setSkillDrafts] = useState({});
   const sectionRefs = useRef({});
-  // Bumped whenever a run starts or the session is cleared. A detection response
-  // that resolves after its bump is stale and must not touch state — that is how a
-  // score ended up on a page with no CV on it.
-  const detectRunRef = useRef(0);
 
   // A signed-in user with no profile can only go to the setup page and its CV upload,
   // so start warming the OCR assets now rather than making them wait for a ~7MB
   // download at the moment they pick a scanned file. Never blocks and never throws.
   useEffect(() => {
-    if (!user || !needsSetup || !isOcrSupported()) return;
+    if (!user || profileLoading || !needsSetup || !isOcrSupported()) return;
     prefetchOcrAssets();
-  }, [user, needsSetup]);
+  }, [user, profileLoading, needsSetup]);
 
   // Scroll-spy for the rail. Re-armed whenever the setup page mounts its sections.
   useEffect(() => {
@@ -412,21 +452,24 @@ const CVOptimizer = () => {
   // Wipe everything derived from the signed-in account. Called on sign-out and
   // whenever a signed-in account turns out to have no stored profile, so one
   // user's data can never be shown to (or saved under) the next.
+  const handleTemplateChange = async (id) => {
+    setCvStyle(id);
+    if (!user) return;
+    try { await saveUserData(user.uid, { cvStyle: id }); }
+    catch (err) { console.warn('[template] could not save: %s', err?.message || err); }
+  };
   const clearSessionData = () => {
+    setCvStyle('classic');
     setFormData(emptyFormData());
     setAiUserInfo('');
     setFixedUserInfo('');
     setJobDescription('');
     setOptimizedCv('');
     setStructuredCv(null);
-    setKeywords([]);
-    setStats(null);
-    setNeedsFix(false);
-    setOverlapSkills([]);
-    detectRunRef.current++;
-    setAiScore(null);
-    setAiScoreLoading(false);
+    setAnalysis(null);
     setCompanyName('');
+    setRunId(null);
+    savedCompanyRef.current = '';
     setCoverLetter('');
     setActiveDoc('cv');
     setJdCollapsed(false);
@@ -444,12 +487,19 @@ const CVOptimizer = () => {
   // Auth state management
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (user) => {
+      // A newer auth change (sign-out, another account) makes this load stale.
+      const load = ++profileLoadRef.current;
       setUser(user);
+      setProfileLoading(Boolean(user));
       if (user) {
         // Load user data when signed in
         try {
+          const t0 = performance.now();
           const userData = await getUserData(user.uid);
+          if (load !== profileLoadRef.current) return;
+          console.log('[profile] loaded in %sms', Math.round(performance.now() - t0));
           if (userData) {
+            setCvStyle(knownStyle(userData.cvStyle));
             // Repair role ids on the way in: profiles saved before ids were unique
             // would otherwise optimise into a CV where every job shares one header.
             const storedAi = withUniqueRoleIds(userData.aiUserInfo || '');
@@ -467,6 +517,8 @@ const CVOptimizer = () => {
           }
         } catch (error) {
           console.error('Error loading user data:', error);
+        } finally {
+          if (load === profileLoadRef.current) setProfileLoading(false);
         }
       } else {
         clearSessionData();
@@ -511,7 +563,7 @@ const CVOptimizer = () => {
         }
         if (cancelled) return;
         setBillingNotice(status && status.plan !== 'free'
-          ? `You are on RoleBerry ${status.plan === 'max' ? 'Max' : 'Pro'}. Thanks for subscribing!`
+          ? `You are on Roleberry ${status.plan === 'max' ? 'Max' : 'Pro'}. Thanks for subscribing!`
           : 'Payment received. Your plan will update in a moment; refresh the page if it does not.');
       }
     };
@@ -529,7 +581,7 @@ const CVOptimizer = () => {
         setBillingBusy(false);
         setShowPaywall(false);
         await refreshBilling();
-        setBillingNotice(`You are now on RoleBerry ${result.switched === 'max' ? 'Max' : 'Pro'}.`);
+        setBillingNotice(`You are now on Roleberry ${result.switched === 'max' ? 'Max' : 'Pro'}.`);
       }
     } catch (err) {
       setBillingBusy(false);
@@ -540,7 +592,7 @@ const CVOptimizer = () => {
         setShowPaywall(false);
         setBillingNotice('Your account already has full access.');
       } else {
-        alert(err.message || 'Could not start checkout. Please try again.');
+        notify('Checkout didn’t open', err.message || 'Could not start checkout. Please try again.');
       }
     }
   };
@@ -551,7 +603,7 @@ const CVOptimizer = () => {
       await openBillingPortal();
     } catch (err) {
       setBillingBusy(false);
-      alert(err.message || 'Could not open billing settings. Please try again.');
+      notify('Billing settings didn’t open', err.message || 'Could not open billing settings. Please try again.');
     }
   };
 
@@ -566,9 +618,11 @@ const CVOptimizer = () => {
       await fn();
     } catch (err) {
       console.error('[profiles] %s', err?.message || err);
-      alert(err?.code === 'permission-denied'
-        ? 'Your plan does not allow that. Free keeps 1 saved profile, Pro up to 3, Max unlimited.'
-        : failure);
+      if (err?.code === 'permission-denied') {
+        notify('Profile limit reached', 'Your plan does not allow that. Free keeps 1 saved profile, Pro up to 3, Max unlimited.');
+      } else {
+        notify('Something went wrong', failure);
+      }
     } finally {
       setProfileBusy(false);
     }
@@ -576,7 +630,7 @@ const CVOptimizer = () => {
 
   const handleSaveProfileAs = (name) => runProfileOp(async () => {
     if (!aiUserInfo.trim()) {
-      alert('Set up your info first, then save it as a profile.');
+      notify('Nothing to save yet', 'Set up your info first, then save it as a profile.');
       return;
     }
     const id = newProfileId();
@@ -615,26 +669,49 @@ const CVOptimizer = () => {
 
   // Loads a past run from history into the result view, where the usual download works.
   const handleOpenRun = (run) => {
-    detectRunRef.current++;
-    setAiScore(null);
-    setAiScoreLoading(false);
     setOptimizedCv(run.cvContent || '');
     setStructuredCv(run.cv || null);
     setCoverLetter(run.coverLetter || '');
     setCompanyName(run.companyName || '');
-    setKeywords([]);
-    setStats(null);
-    setNeedsFix(false);
-    setOverlapSkills([]);
+    setRunId(run.id || null);
+    savedCompanyRef.current = run.companyName || '';
+    setAnalysis(null);
     setDownloadNotice('');
     setActiveDoc('cv');
     setJdCollapsed(true);
+    setOpenedFromHistory(true);
     setCurrentPage('main');
+  };
+
+  // Saves an edited company name to the run in History (on blur or Enter). The run is recorded
+  // just after the CV arrives, so a very quick edit can find it missing: that is retried once.
+  const saveCompanyName = async () => {
+    const name = companyName.replace(/\s+/g, ' ').trim();
+    const id = runId;
+    if (!id || name === savedCompanyRef.current) return;
+    const previous = savedCompanyRef.current;
+    savedCompanyRef.current = name;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await renameHistoryRun(id, name);
+        return;
+      } catch (err) {
+        if (err?.status === 404 && attempt === 0) {
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+        console.warn('[history] could not save the company name: %s', err?.message || err);
+        if (savedCompanyRef.current === name) savedCompanyRef.current = previous;
+        setDownloadNoticeTone('warn');
+        setDownloadNotice('Could not save the company name to History. Please try again.');
+        return;
+      }
+    }
   };
 
   const saveUserInfo = async () => {
     if (!user) {
-      alert('Please sign in to save your information.');
+      notify('Sign in to save', 'Please sign in to save your information.');
       return;
     }
 
@@ -667,7 +744,7 @@ const CVOptimizer = () => {
       // Saved successfully
     } catch (error) {
       console.error('Error saving user data:', error);
-      alert('Failed to save user information. Please try again.');
+      notify('Couldn’t save your info', 'Failed to save user information. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -753,9 +830,9 @@ const CVOptimizer = () => {
     let preFetchedFolderHandle = null;
     let filePickerBlocked = false;
     console.log('[download] start: folderMgmt=%s apiSupported=%s doc=%s',
-      folderMgmtEnabled, isFolderApiSupported(), activeDoc);
+      folderMgmtActive, isFolderApiSupported(), activeDoc);
 
-    if (folderMgmtEnabled && isFolderApiSupported()) {
+    if (folderMgmtActive && isFolderApiSupported()) {
       try {
         preFetchedFolderHandle = await getFolderHandle();
         console.log('[download] folder handle acquired: %s', preFetchedFolderHandle?.name);
@@ -814,145 +891,60 @@ const CVOptimizer = () => {
       ? `${getPreferredFilename()}_Cover_Letter`
       : getPreferredFilename();
 
-    // Build full HTML document including styles
-    let fullHtml = '';
-    if (showingLetter) {
-      fullHtml = renderCoverLetterHtml(coverLetter, structuredCv);
-    } else if (structuredCv) {
-      fullHtml = renderCvHtml(structuredCv);
-    } else if (optimizedCv) {
-      fullHtml = generateDownloadHtml(optimizedCv);
-    }
-
-    if (fullHtml) {
-
-      const opt = {
-        margin:       [10, 10, 10, 10],
-        filename:     `${baseFilename}.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak:    { mode: ['css', 'legacy'], avoid: ['li', '.skills-block'] }
-      };
-
-      const saveWithPicker = async (blob) => {
-        if (preFetchedFolderHandle) {
-          try {
-            const where = await writePdfWithHandle(blob, preFetchedFolderHandle, companyName, `${baseFilename}.pdf`);
-            // Each download makes its own numbered folder, so say which one — otherwise
-            // the file looks missing when the user checks the folder they named.
-            if (where?.folder) {
-              console.log('[download] saved to %s/%s/%s', where.root, where.folder, where.filename);
-              setDownloadNoticeTone('ok');
-              setDownloadNotice(`Saved to ${where.root}/${where.folder}/${where.filename}`);
-            }
-            return true;
-          } catch (err) {
-            console.error('[download] writing into the chosen folder failed:', err);
-            setDownloadNoticeTone('warn');
-            setDownloadNotice(`Could not write into "${preFetchedFolderHandle?.name || 'the chosen folder'}" (${err?.name || 'error'}). The PDF went to your usual downloads folder instead.`);
-            return false;
-          }
-        }
-        if (filePickerBlocked || !('showSaveFilePicker' in window)) return false;
+    const saveWithPicker = async (blob) => {
+      if (preFetchedFolderHandle) {
         try {
-          const handle = await window.showSaveFilePicker({
-            suggestedName: `${baseFilename}.pdf`,
-            types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }]
-          });
-          const writable = await handle.createWritable();
-          await writable.write(blob);
-          await writable.close();
+          const where = await writePdfWithHandle(blob, preFetchedFolderHandle, companyName, `${baseFilename}.pdf`);
+          // Each download makes its own numbered folder, so say which one — otherwise
+          // the file looks missing when the user checks the folder they named.
+          if (where?.folder) {
+            console.log('[download] saved to %s/%s/%s', where.root, where.folder, where.filename);
+            setDownloadNoticeTone('ok');
+            setDownloadNotice(`Saved to ${where.root}/${where.folder}/${where.filename}`);
+          }
           return true;
         } catch (err) {
-          // SecurityError here means PDF rendering outlived the click's transient
-          // activation, which is expected for anything but a very small CV.
-          if (err?.name !== 'AbortError') {
-            console.warn('[download] save picker unavailable (%s), using the default download', err?.name || err);
-          }
+          console.error('[download] writing into the chosen folder failed:', err);
+          setDownloadNoticeTone('warn');
+          setDownloadNotice(`Could not write into "${preFetchedFolderHandle?.name || 'the chosen folder'}" (${err?.name || 'error'}). The PDF went to your usual downloads folder instead.`);
           return false;
         }
-      };
-
-      // Both documents are drawn with jsPDF text primitives, not screenshotted. html2pdf
-      // is html2canvas + addImage: it produced a PDF containing JPEGs and zero extractable
-      // text, so an ATS parsing it read nothing at all. Verified with poppler, mupdf and
-      // pdfjs — all returned 0 characters.
-      const buildTextPdf = () => {
-        if (showingLetter) return coverLetter ? buildCoverLetterPdf(coverLetter, structuredCv) : null;
-        return structuredCv ? buildCvPdf(structuredCv) : null;
-      };
-
+      }
+      if (filePickerBlocked || !('showSaveFilePicker' in window)) return false;
       try {
-        const pdf = buildTextPdf();
-        if (pdf) {
-          const blob = pdf.output('blob');
-          const saved = await saveWithPicker(blob);
-          if (!saved) {
-            console.log('[download] falling back to the browser download');
-            pdf.save(`${baseFilename}.pdf`);
-          }
-          return;
-        }
+        const handle = await window.showSaveFilePicker({
+          suggestedName: `${baseFilename}.pdf`,
+          types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return true;
       } catch (err) {
-        // Fall through to the html2pdf path rather than lose the download.
-        console.error('[download] text PDF build failed, falling back to the image renderer:', err);
-      }
-
-      try {
-        const pdf = await html2pdf().set(opt).from(fullHtml).toPdf().get('pdf');
-        const blob = pdf.output('blob');
-        const saved = await saveWithPicker(blob);
-        if (!saved) {
-          console.log('[download] falling back to the browser download');
-          pdf.save(`${baseFilename}.pdf`);
+        // SecurityError here means the click's transient activation ran out before the
+        // picker opened (the PDF is normally ready already, so this should be rare).
+        if (err?.name !== 'AbortError') {
+          console.warn('[download] save picker unavailable (%s), using the default download', err?.name || err);
         }
-        return;
-      } catch (e) {
-        // Fallback to DOM container render
-        const container = document.createElement('div');
-        container.style.position = 'fixed';
-        container.style.top = '0';
-        container.style.left = '0';
-        container.style.opacity = '0';
-        container.style.pointerEvents = 'none';
-        container.style.width = '794px';
-        container.style.background = '#ffffff';
-        container.innerHTML = extractBody(fullHtml);
-        document.body.appendChild(container);
-        try {
-          // Generate blob again from container
-          const pdf = await html2pdf().set(opt).from(container).toPdf().get('pdf');
-          const blob = pdf.output('blob');
-          const saved = await saveWithPicker(blob);
-          if (!saved) {
-            console.log('[download] falling back to the browser download (container)');
-            pdf.save(`${baseFilename}.pdf`);
-          }
-        } catch (inner) {
-          // Both render paths failed. Fall through to the HTML download below rather
-          // than throwing out of downloadCv, which produced no file and no message.
-          console.error('[download] both PDF render paths failed:', e, inner);
-          setDownloadNoticeTone('warn');
-          setDownloadNotice('Could not build the PDF, so an HTML copy was downloaded instead. Open it and print to PDF.');
-          document.body.removeChild(container);
-          const htmlOnly = structuredCv && !(coverLetter && activeDoc === 'letter')
-            ? renderCvHtml(structuredCv)
-            : fullHtml;
-          downloadHtml(htmlOnly, `${baseFilename}.html`);
-          return;
-        }
-        document.body.removeChild(container);
-        return;
+        return false;
       }
-    }
+    };
 
-    // Fallback to HTML download
     if (structuredCv) {
-      const html = renderCvHtml(structuredCv);
-      downloadHtml(html, `${baseFilename}.html`);
+      let blob = showingLetter ? letterBlob : cvBlob;
+      if (!blob) {
+        const { renderCvPdf, renderLetterPdf } = await loadDocuments();
+        blob = showingLetter ? await renderLetterPdf(coverLetter, structuredCv, { style: docStyle }) : await renderCvPdf(structuredCv, { style: docStyle });
+      }
+      const saved = await saveWithPicker(blob);
+      if (!saved) {
+        console.log('[download] falling back to the browser download');
+        downloadBlob(blob, `${baseFilename}.pdf`);
+      }
       return;
     }
+
+    // Runs without a structured CV only have markdown; they download as printable HTML.
     const htmlFallback = generateDownloadHtml(optimizedCv);
     // Try File System Access API for HTML
     if ('showSaveFilePicker' in window) {
@@ -1025,24 +1017,26 @@ const CVOptimizer = () => {
 
   const handleOptimize = async () => {
     if (!jobDescription.trim() || !aiUserInfo.trim()) {
-      alert('Please provide both job description and AI input content.');
+      notify('Missing information', 'Paste a job description and fill in your info first.');
       return;
     }
     if (jobDescription.length > 10000 || aiUserInfo.length > 20000 || fixedUserInfo.length > 10000) {
-      alert('Input text is too long. Please shorten your inputs.');
+      notify('Too long', 'Input text is too long. Please shorten your inputs.');
       return;
     }
 
     setIsProcessing(true);
+    setOpenedFromHistory(false);
+    setRunId(null);
+    // Fetch the PDF renderer while the model works, so the preview is ready when it returns.
+    loadDocuments().catch(() => {});
     setOptimizedCv('');
-    setKeywords([]);
-    detectRunRef.current++;
-    setAiScore(null);
+    setAnalysis(null);
     setCoverLetter('');
     setActiveDoc('cv');
 
     try {
-      const { cvContent, keywords: kws, keywordsFiltered: kf, cv, needsFix: nf, stats: st, overlapSkills: os, companyName: cn, coverLetter: cl, quota } = await optimizeCvService({
+      const { cvContent, cv, analysis: an, companyName: cn, coverLetter: cl, runId: newRunId, quota } = await optimizeCvService({
         jobDescription,
         aiUserInfo,
         fixedUserInfo,
@@ -1053,36 +1047,16 @@ const CVOptimizer = () => {
       if (quota) setBilling((prev) => (prev ? { ...prev, ...quota } : prev));
       setOptimizedCv(cvContent);
       setStructuredCv(cv || null);
-      setKeywords(kf && kf.length ? kf : kws);
-      if (cn) setCompanyName(cn);
-      setNeedsFix(Boolean(nf));
-      setStats(st || null);
-      setOverlapSkills(Array.isArray(os) ? os : []);
+      setAnalysis(an || null);
+      // Always replaced, so a job post with no company never shows the previous run's name.
+      setCompanyName(cn || '');
+      savedCompanyRef.current = cn || '';
+      setRunId(newRunId || null);
       setCoverLetter(typeof cl === 'string' ? cl : '');
       if (wantsCoverLetter && !cl) {
         setDownloadNotice('The CV is ready, but the cover letter could not be written this time.');
       }
 
-      // Non-blocking AI detection — runs after main optimization
-      if (cv) {
-        const parts = [];
-        if (cv.summary) parts.push(cv.summary);
-        if (Array.isArray(cv.experience)) {
-          for (const job of cv.experience) {
-            if (Array.isArray(job.achievements)) parts.push(...job.achievements);
-          }
-        }
-        const detectText = parts.join('\n').trim();
-        if (detectText) {
-          const run = ++detectRunRef.current;
-          setAiScoreLoading(true);
-          detectAiContent(detectText)
-            .then(score => { if (detectRunRef.current === run) setAiScore(score); })
-            .catch(() => {/* silently ignore detection errors */})
-            .finally(() => { if (detectRunRef.current === run) setAiScoreLoading(false); });
-        }
-      }
-      
       // Collapse JD into sidebar after CV is successfully generated (desktop only)
       setJdCollapsed(true);
     } catch (error) {
@@ -1093,17 +1067,17 @@ const CVOptimizer = () => {
       }
       recordAppError(`Optimize: ${error.message}`);
       if (error.message.includes('500')) {
-        alert('Server error occurred. The OpenAI API may be temporarily unavailable. Please try again in a few moments.');
+        notify('Server error', 'The AI service may be temporarily unavailable. Please try again in a few moments.');
       } else if (error.message.includes('400')) {
-        alert('Invalid request format. Please check your input and try again.');
+        notify('Couldn’t generate', 'Invalid request format. Please check your input and try again.');
       } else if (error.message.includes('401')) {
-        alert('Authentication error. Please check your OpenAI API key.');
+        notify('Couldn’t generate', 'Authentication error on our side. Please try again later or send us feedback.');
       } else if (error.message.includes('403')) {
-        alert('Access forbidden. Please check your OpenAI API permissions.');
+        notify('Couldn’t generate', 'Access was refused on our side. Please try again later or send us feedback.');
       } else if (error.message.includes('429')) {
-        alert('Rate limit exceeded. Please wait a moment before trying again.');
+        notify('Too many requests', 'Please wait a moment before trying again.');
       } else {
-        alert(`An error occurred while optimizing your CV: ${error.message}`);
+        notify('Couldn’t generate', `An error occurred while optimizing your CV: ${error.message}`);
       }
     } finally {
       setIsProcessing(false);
@@ -1118,6 +1092,43 @@ const CVOptimizer = () => {
       onCheckout={handleUpgrade}
       onManage={handleManageBilling}
     />
+  );
+
+  const tipsModal = showTips && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={() => setShowTips(false)}></div>
+      <div className="relative bg-white text-ink w-full max-w-2xl mx-4 rounded-2xl shadow-xl overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-line">
+          <h3 className="text-lg font-extrabold text-ink">Optimization Tips</h3>
+          <button
+            type="button"
+            onClick={() => setShowTips(false)}
+            className="text-ink-muted hover:text-ink"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+          <ul className="list-disc pl-6 text-ink text-sm space-y-1">
+            <li>Use the complete job posting, including requirements and preferred qualifications.</li>
+            <li>Provide detailed CV content with specific achievements and metrics.</li>
+            <li>Review the optimized CV to ensure it accurately represents your experience.</li>
+            <li>The downloaded PDF contains real text, so keep it as-is rather than printing it to a new file.</li>
+            <li>Customize further based on your specific industry and role.</li>
+          </ul>
+        </div>
+        <div className="px-6 py-4 border-t border-line bg-blush text-right">
+          <button
+            type="button"
+            onClick={() => setShowTips(false)}
+            className="px-4 py-2 rounded-lg bg-ink text-white text-sm hover:bg-[#3A2630]"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 
   // Password accounts verify their email before they get the app. The server refuses their
@@ -1137,36 +1148,59 @@ const CVOptimizer = () => {
     );
   }
 
+  // Comped accounts have nothing to manage, unless they also still pay for a subscription they may want to cancel.
+  const canManageSubscription = (billing?.plan === 'paid' || billing?.plan === 'max') && billing.hasCustomer
+    && (!billing.comped || (billing.billingPlan && billing.billingPlan !== 'free'));
+  const profileSwitcherEl = (
+    <ProfileSwitcher
+      tone="dark"
+      locked={!profilesUnlocked}
+      upsell={billing?.plan === 'free'}
+      profiles={profiles}
+      activeProfileId={activeProfileId}
+      limit={billing?.unlimitedProfiles ? null : profileLimit}
+      busy={profileBusy}
+      onLocked={() => setShowPaywall(true)}
+      onSwitch={handleSwitchProfile}
+      onSaveAs={handleSaveProfileAs}
+      onRename={handleRenameProfile}
+      onDelete={handleDeleteProfile}
+    />
+  );
+  const accountEl = (
+    <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v => !v)} isDark={isDark} folderMgmtEnabled={folderMgmtActive} folderMgmtLocked={!folderMgmtAllowed} planKnown={Boolean(billing)} onFolderMgmtLocked={() => setShowPaywall(true)} onToggleFolderMgmt={handleToggleFolderMgmt} onManageSubscription={canManageSubscription ? handleManageBilling : undefined} manageBusy={billingBusy} />
+  );
+  const planStripEl = (
+    <PlanStrip
+      billing={billing}
+      billingNotice={billingNotice}
+      onUpgrade={() => setShowPaywall(true)}
+      onPlans={() => setShowPaywall(true)}
+    />
+  );
+  const pageRootCls = 'font-brand min-h-screen flex flex-col bg-white text-ink dark:bg-night dark:text-night-text';
+
   if (user && currentPage === 'history') {
     return (
-      <div className="min-h-screen p-6 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
-        <div className="max-w-7xl mx-auto">
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-lg overflow-hidden relative">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 sm:p-8 dark:from-gray-800 dark:to-gray-700">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <Target className="h-8 w-8" />
-                  <h1 className="text-3xl font-bold">RoleBerry</h1>
-                </div>
-                <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v=>!v)} isDark={isDark} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
-              </div>
-            </div>
-            <div className="p-4 sm:p-8 text-gray-900 dark:text-gray-100">
-              <HistoryPage
-                onBack={() => setCurrentPage('main')}
-                onOpenRun={handleOpenRun}
-                onUpgrade={() => setShowPaywall(true)}
-              />
-            </div>
-            {paywallModal}
-          </div>
+      <div className={pageRootCls}>
+        <TopBar page="history" onNavigate={setCurrentPage} onTips={() => setShowTips(true)} profileSwitcher={profileSwitcherEl} account={accountEl} />
+        {planStripEl}
+        <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 py-8">
+          <HistoryPage
+            onBack={() => setCurrentPage('main')}
+            onOpenRun={handleOpenRun}
+            onUpgrade={() => setShowPaywall(true)}
+            cvStyle={docStyle}
+          />
         </div>
+        {tipsModal}{paywallModal}
       </div>
     );
   }
 
-  // Show setup page
-  if (currentPage === 'setup') {
+  // Show setup page. Held back while the profile loads, so nobody types into an empty
+  // form that the stored profile is about to replace.
+  if (currentPage === 'setup' && !profileLoading) {
     const sectionState = (id) => {
       switch (id) {
         case 'import':
@@ -1235,117 +1269,105 @@ const CVOptimizer = () => {
     });
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4 sm:p-6">
-        <div className="max-w-7xl mx-auto bg-white dark:bg-gray-900 rounded-xl shadow-lg">
-          {/* Gradient header band, matching the main app */}
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-gray-800 dark:to-gray-700 text-white p-5 sm:p-6 rounded-t-xl">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <Target className="h-7 w-7 shrink-0" />
-                <div className="min-w-0">
-                  <h1 className="text-2xl font-bold truncate">Setup Your Profile</h1>
-                  <p className="text-blue-100 dark:text-gray-300 text-sm">This is the raw material every tailored CV is built from</p>
+      <div className={pageRootCls}>
+        <TopBar page="setup" onNavigate={setCurrentPage} onTips={() => setShowTips(true)} profileSwitcher={profileSwitcherEl} account={accountEl} />
+
+        <div className="flex flex-1">
+          {/* Section rail */}
+          <aside className="hidden lg:block w-[280px] shrink-0 border-r border-line bg-blush px-4 py-7 dark:bg-night-surface dark:border-night-line">
+            <div className="sticky top-6">
+              <nav aria-label="Profile sections" className="space-y-0.5">
+                <div className="px-3 pb-3 text-[11px] font-bold tracking-[0.08em] text-ink-faint">SECTIONS</div>
+                {SETUP_SECTIONS.map((s) => {
+                  const state = sectionState(s.id);
+                  const active = activeSection === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => scrollToSection(s.id)}
+                      className={`w-full flex items-center gap-2.5 h-[38px] px-3 rounded-[10px] text-sm font-semibold text-left ${
+                        active
+                          ? 'bg-white text-ink shadow-[0_1px_2px_rgba(36,19,28,0.08)] dark:bg-night-raised dark:text-night-text'
+                          : 'text-ink-muted hover:bg-hover hover:text-ink dark:text-night-muted'
+                      }`}
+                    >
+                      <span
+                        className={`h-2 w-2 rounded-full shrink-0 ${
+                          state.done ? 'bg-leaf' : 'bg-[#D9C9D0] dark:bg-night-line'
+                        }`}
+                      />
+                      <span className="flex-1 text-left truncate">{s.label}</span>
+                      {state.count !== null && state.count > 0 && (
+                        <span className="text-xs tabular-nums text-ink-faint">{state.count}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <div className="mt-5 mx-3 pt-5 border-t border-line dark:border-night-line">
+                <div className="h-1.5 w-full rounded-full bg-line dark:bg-night-line overflow-hidden">
+                  <div className="h-full bg-leaf transition-all duration-500" style={{ width: `${progressPct}%` }} />
                 </div>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
+                <div className="mt-2 flex justify-between text-xs text-ink-muted dark:text-night-muted">
+                  <span>{completed} of {SETUP_SECTIONS.length} complete</span>
+                  <span className="tabular-nums">{progressPct}%</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => { await saveUserInfo(); setCurrentPage('main'); }}
+                  disabled={isSaving || !isValidFormData()}
+                  className="mt-4 w-full h-[46px] rounded-xl bg-berry text-white text-[14.5px] font-bold hover:bg-berry-dark disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                >
+                  {isSaving ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4" />
+                      Save and continue
+                    </>
+                  )}
+                </button>
+                {!isValidFormData() && (
+                  <p className="mt-2 text-[11.5px] text-ink-muted dark:text-night-muted leading-snug">
+                    Needs a name, one skill group and one role before it can be saved.
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => setCurrentPage('main')}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-white/20 text-white text-sm hover:bg-white/30 transition-colors"
+                  className="mt-2 w-full h-10 text-[13.5px] font-semibold text-ink-muted hover:text-ink"
                 >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to app
+                  Back to the app
                 </button>
-                <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v => !v)} isDark={isDark} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
               </div>
             </div>
-          </div>
+          </aside>
 
-          <div className="flex gap-6 p-4 sm:p-6">
-            {/* Section rail */}
-            <aside className="hidden lg:block w-60 shrink-0">
-              <div className="sticky top-6 space-y-4">
-                <nav aria-label="Profile sections" className="space-y-0.5">
-                  <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-600">Sections</div>
-                  {SETUP_SECTIONS.map((s) => {
-                    const state = sectionState(s.id);
-                    const active = activeSection === s.id;
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => scrollToSection(s.id)}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
-                          active
-                            ? 'bg-blue-50 dark:bg-blue-900/25 text-blue-700 dark:text-blue-300 font-medium'
-                            : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-                        }`}
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                            state.done ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
-                          }`}
-                        />
-                        <span className="flex-1 text-left truncate">{s.label}</span>
-                        {state.count !== null && state.count > 0 && (
-                          <span className="text-xs tabular-nums text-gray-400 dark:text-gray-600">{state.count}</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </nav>
-
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
-                  <div>
-                    <div className="h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all duration-500"
-                        style={{ width: `${progressPct}%` }}
-                      />
-                    </div>
-                    <div className="mt-1.5 flex justify-between text-[11px] text-gray-500 dark:text-gray-400">
-                      <span>{completed} of {SETUP_SECTIONS.length} complete</span>
-                      <span className="tabular-nums">{progressPct}%</span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={async () => { await saveUserInfo(); setCurrentPage('main'); }}
-                    disabled={isSaving || !isValidFormData()}
-                    className="w-full px-4 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition-all"
-                  >
-                    {isSaving ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4" />
-                        Save &amp; Continue
-                      </>
-                    )}
-                  </button>
-                  {!isValidFormData() && (
-                    <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
-                      Needs a name, one skill group and one role before it can be saved.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </aside>
-
-            {/* Canvas */}
-            <div className="flex-1 min-w-0 space-y-8">
+          {/* Canvas */}
+          <div className="flex-1 min-w-0 max-w-[1080px] px-4 sm:px-10 pt-8 pb-24 space-y-8">
+            <div>
+              <h1 className="text-[28px] font-extrabold tracking-tight">Your info</h1>
+              <p className="mt-1.5 text-[14.5px] text-ink-muted dark:text-night-muted">
+                The raw material every tailored CV is built from.
+                {activeProfileId && profiles?.[activeProfileId] && (
+                  <> You are editing the <b className="text-ink dark:text-night-text">{profiles[activeProfileId].name}</b> profile.</>
+                )}
+              </p>
+            </div>
               {/* Import */}
               <section id="import" ref={(el) => { sectionRefs.current.import = el; }} className="scroll-mt-6">
                 <SectionHead icon={Upload} title="Import" hint="Fastest way to fill this in. We read the PDF and populate every section below." />
-                <div className="rounded-xl border border-blue-200 dark:border-gray-700 bg-blue-50 dark:bg-gray-800/50 p-5">
+                <div className="rounded-2xl border-[1.5px] border-dashed border-berry-line bg-berry-soft p-5 dark:bg-berry/10">
                   <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                     <label className="cursor-pointer shrink-0">
                       <input type="file" accept=".pdf" onChange={handlePdfUpload} disabled={isProcessingPdf} className="hidden" />
-                      <span className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                        isProcessingPdf ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'
+                      <span className={`inline-flex items-center gap-2 h-11 px-[18px] rounded-[11px] text-sm font-bold text-white ${
+                        isProcessingPdf ? 'bg-ink-faint cursor-not-allowed' : 'bg-berry hover:bg-berry-dark'
                       }`}>
                         {isProcessingPdf ? (
                           <>
@@ -1360,12 +1382,12 @@ const CVOptimizer = () => {
                         )}
                       </span>
                     </label>
-                    <p className="text-sm text-blue-900 dark:text-gray-300">
+                    <p className="text-[13.5px] text-ink-muted dark:text-night-muted">
                       Or fill everything in by hand below. PDFs up to 10MB, including scans.
                     </p>
                   </div>
                   {pdfError && (
-                    <div className="mt-3 flex items-start gap-2 text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 rounded-lg p-2.5">
+                    <div className="mt-3 flex items-start gap-2 text-xs bg-danger-bg border border-danger-line text-danger-text rounded-lg p-2.5">
                       <AlertCircle className="h-4 w-4 mt-px shrink-0" />
                       <span>{pdfError}</span>
                       <button
@@ -1404,7 +1426,7 @@ const CVOptimizer = () => {
                     <div className="sm:col-span-2">
                       <label className={labelCls}>
                         Total years of experience
-                        <span className="ml-2 font-normal text-gray-400 dark:text-gray-600">Calculated from your roles below. Override it here if it is wrong.</span>
+                        <span className="ml-2 font-normal text-ink-faint dark:text-night-muted">Calculated from your roles below. Override it here if it is wrong.</span>
                       </label>
                       <input type="number" min="0" step="0.5" value={formData.yearsOfExperience} onChange={(e) => setFormData(prev => ({ ...prev, yearsOfExperience: e.target.value }))} className={`${inputCls} sm:max-w-[10rem]`} placeholder="8" />
                     </div>
@@ -1436,7 +1458,7 @@ const CVOptimizer = () => {
                     <button
                       type="button"
                       onClick={() => setFormData(prev => ({ ...prev, skills: [...prev.skills, { category: '', items: [] }] }))}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                      className={addBtnCls}
                     >
                       <Plus className="h-3.5 w-3.5" />
                       Add group
@@ -1444,21 +1466,21 @@ const CVOptimizer = () => {
                   }
                 />
                 <div className={cardCls}>
-                  <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                  <div className="divide-y divide-line dark:divide-night-line">
                     {formData.skills.map((skill, skillIndex) => {
                       const open = !collapsedSkills.has(skillIndex);
                       const liveItems = skill.items.filter(i => i.trim());
                       return (
                         <article key={skillIndex} className="flex">
                           <div className="w-10 shrink-0 pt-4 text-center">
-                            <span className="text-xs tabular-nums text-gray-400 dark:text-gray-600">{skillIndex + 1}</span>
+                            <span className="text-xs tabular-nums text-ink-faint dark:text-night-muted">{skillIndex + 1}</span>
                           </div>
                           <div className="flex-1 min-w-0 p-4 pl-0 pr-4">
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() => toggleRecord(setCollapsedSkills, skillIndex)}
-                                className="p-1 -ml-1 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 shrink-0"
+                                className="p-1 -ml-1 rounded text-ink-faint hover:text-ink dark:hover:text-night-text shrink-0"
                                 aria-expanded={open}
                                 aria-label={open ? 'Collapse group' : 'Expand group'}
                               >
@@ -1471,11 +1493,11 @@ const CVOptimizer = () => {
                                   const newSkills = formData.skills.map((s, i) => (i === skillIndex ? { ...s, category: e.target.value } : s));
                                   setFormData(prev => ({ ...prev, skills: newSkills }));
                                 }}
-                                className="flex-1 min-w-0 bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none text-sm font-semibold text-gray-800 dark:text-gray-100 placeholder-gray-400 py-1"
+                                className="flex-1 min-w-0 bg-transparent border-0 border-b border-transparent hover:border-line focus:border-berry-line focus:outline-none text-sm font-semibold text-ink dark:text-night-text placeholder:text-ink-faint py-1"
                                 placeholder="Group name, e.g. Cloud & Infrastructure"
                                 aria-label="Category name"
                               />
-                              <span className="text-xs text-gray-400 dark:text-gray-600 shrink-0 tabular-nums">{liveItems.length} skills</span>
+                              <span className="text-xs text-ink-faint dark:text-night-muted shrink-0 tabular-nums">{liveItems.length} skills</span>
                               {formData.skills.length > 1 && (
                                 <button
                                   type="button"
@@ -1483,7 +1505,7 @@ const CVOptimizer = () => {
                                     setFormData(prev => ({ ...prev, skills: prev.skills.filter((_, i) => i !== skillIndex) }));
                                     setCollapsedSkills(new Set());
                                   }}
-                                  className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                  className="shrink-0 p-1.5 rounded-lg text-ink-faint hover:text-danger-text hover:bg-danger-bg transition-colors"
                                   aria-label="Remove group"
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -1492,16 +1514,16 @@ const CVOptimizer = () => {
                             </div>
 
                             {open && (
-                              <div className="mt-3 ml-6 pl-3 border-l-2 border-gray-100 dark:border-gray-800">
+                              <div className="mt-3 ml-6 pl-3 border-l-2 border-berry-soft">
                                 <div className="flex flex-wrap gap-1.5 items-center">
                                   {skill.items.map((item, itemIndex) => (
                                     item.trim() ? (
-                                      <span key={itemIndex} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 text-xs font-medium">
+                                      <span key={itemIndex} className="inline-flex items-center gap-1 pl-3 pr-1 h-[30px] rounded-full bg-berry-soft text-berry-dark text-[13px] font-semibold">
                                         {item}
                                         <button
                                           type="button"
                                           onClick={() => removeSkillToken(skillIndex, itemIndex)}
-                                          className="p-0.5 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                                          className="p-0.5 rounded-full hover:bg-[#F6D3DF] transition-colors"
                                           aria-label={`Remove ${item}`}
                                         >
                                           <X className="h-3 w-3" />
@@ -1520,7 +1542,7 @@ const CVOptimizer = () => {
                                       }
                                     }}
                                     onBlur={() => addSkillToken(skillIndex)}
-                                    className="flex-1 min-w-[8rem] bg-transparent border-0 focus:outline-none text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600 py-1"
+                                    className="flex-1 min-w-[8rem] bg-transparent border-0 focus:outline-none text-sm text-ink dark:text-night-text placeholder:text-ink-faint dark:placeholder:text-night-muted py-1"
                                     placeholder={liveItems.length ? 'Add another…' : 'Type a skill and press Enter'}
                                     aria-label={`Add skill to ${skill.category || 'group'}`}
                                   />
@@ -1548,7 +1570,7 @@ const CVOptimizer = () => {
                         ...prev,
                         experience: [...prev.experience, { roleId: '', title: '', company: '', location: '', start: '', end: '', achievements: [''] }]
                       }))}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                      className={addBtnCls}
                     >
                       <Plus className="h-3.5 w-3.5" />
                       Add role
@@ -1556,7 +1578,7 @@ const CVOptimizer = () => {
                   }
                 />
                 <div className={cardCls}>
-                  <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                  <div className="divide-y divide-line dark:divide-night-line">
                     {formData.experience.map((exp, expIndex) => {
                       const open = !collapsedRoles.has(expIndex);
                       const achievementCount = exp.achievements.filter(a => a.trim()).length;
@@ -1568,28 +1590,28 @@ const CVOptimizer = () => {
                       return (
                         <article key={expIndex} className="flex">
                           <div className="w-10 shrink-0 pt-4 text-center">
-                            <span className="text-xs tabular-nums text-gray-400 dark:text-gray-600">{expIndex + 1}</span>
+                            <span className="text-xs tabular-nums text-ink-faint dark:text-night-muted">{expIndex + 1}</span>
                           </div>
                           <div className="flex-1 min-w-0 p-4 pl-0 pr-4">
                             <div className="flex items-start gap-2">
                               <button
                                 type="button"
                                 onClick={() => toggleRecord(setCollapsedRoles, expIndex)}
-                                className="p-1 -ml-1 mt-0.5 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 shrink-0"
+                                className="p-1 -ml-1 mt-0.5 rounded text-ink-faint hover:text-ink dark:hover:text-night-text shrink-0"
                                 aria-expanded={open}
                                 aria-label={open ? 'Collapse role' : 'Expand role'}
                               >
                                 <ChevronRight className={`h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`} />
                               </button>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">
-                                  {exp.title || <span className="text-gray-400 font-normal">Untitled role</span>}
+                                <div className="text-sm font-semibold text-ink dark:text-night-text truncate">
+                                  {exp.title || <span className="text-ink-faint font-normal">Untitled role</span>}
                                 </div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                <div className="text-xs text-ink-muted dark:text-night-muted truncate">
                                   {[exp.company, exp.location].filter(Boolean).join(' · ') || 'No company yet'}
                                 </div>
                               </div>
-                              <span className="hidden sm:block text-xs text-gray-400 dark:text-gray-600 shrink-0 text-right">
+                              <span className="hidden sm:block text-xs text-ink-faint dark:text-night-muted shrink-0 text-right">
                                 {dates && <span className="tabular-nums">{dates}</span>}
                                 {dates && achievementCount > 0 && <span> · </span>}
                                 {achievementCount > 0 && <span>{achievementCount} achievements</span>}
@@ -1601,7 +1623,7 @@ const CVOptimizer = () => {
                                     setFormData(prev => ({ ...prev, experience: prev.experience.filter((_, i) => i !== expIndex) }));
                                     setCollapsedRoles(new Set());
                                   }}
-                                  className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                  className="shrink-0 p-1.5 rounded-lg text-ink-faint hover:text-danger-text hover:bg-danger-bg transition-colors"
                                   aria-label="Remove role"
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -1610,7 +1632,7 @@ const CVOptimizer = () => {
                             </div>
 
                             {open && (
-                              <div className="mt-4 ml-6 pl-3 border-l-2 border-gray-100 dark:border-gray-800 space-y-4">
+                              <div className="mt-4 ml-6 pl-3 border-l-2 border-berry-soft space-y-4">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div>
                                     <label className={labelCls}>Job title</label>
@@ -1628,7 +1650,7 @@ const CVOptimizer = () => {
                                     <label className={labelCls}>Dates</label>
                                     <div className="flex items-center gap-2">
                                       <input type="text" value={exp.start} onChange={(e) => setExp({ start: e.target.value })} className={inputCls} placeholder="2021-03" />
-                                      <span className="text-xs text-gray-400 shrink-0">to</span>
+                                      <span className="text-xs text-ink-faint shrink-0">to</span>
                                       <input type="text" value={exp.end} onChange={(e) => setExp({ end: e.target.value })} className={inputCls} placeholder="Present" />
                                     </div>
                                   </div>
@@ -1639,7 +1661,7 @@ const CVOptimizer = () => {
                                   <div className="space-y-2">
                                     {exp.achievements.map((achievement, achIndex) => (
                                       <div key={achIndex} className="flex items-start gap-2">
-                                        <span className="mt-3 h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600 shrink-0" />
+                                        <span className="mt-3 h-1 w-1 rounded-full bg-line dark:bg-night-line shrink-0" />
                                         <textarea
                                           value={achievement}
                                           onChange={(e) => setExp({ achievements: exp.achievements.map((a, j) => (j === achIndex ? e.target.value : a)) })}
@@ -1651,7 +1673,7 @@ const CVOptimizer = () => {
                                           <button
                                             type="button"
                                             onClick={() => setExp({ achievements: exp.achievements.filter((_, j) => j !== achIndex) })}
-                                            className="shrink-0 mt-1 p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                            className="shrink-0 mt-1 p-2 rounded-lg text-ink-faint hover:text-danger-text hover:bg-danger-bg transition-colors"
                                             aria-label="Remove achievement"
                                           >
                                             <Trash2 className="h-4 w-4" />
@@ -1663,7 +1685,7 @@ const CVOptimizer = () => {
                                   <button
                                     type="button"
                                     onClick={() => setExp({ achievements: [...exp.achievements, ''] })}
-                                    className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                    className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-berry font-bold hover:text-berry-dark rounded-lg"
                                   >
                                     <Plus className="h-4 w-4" />
                                     Add achievement
@@ -1707,15 +1729,15 @@ const CVOptimizer = () => {
 
               {/* Mobile save bar (the rail is hidden below lg) */}
               <div className="lg:hidden sticky bottom-4 z-10">
-                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-900/95 backdrop-blur p-3 shadow-lg">
-                  <div className="mb-2 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                    <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all duration-500" style={{ width: `${progressPct}%` }} />
+                <div className="rounded-2xl border border-line bg-white/95 dark:bg-night-raised/95 dark:border-night-line backdrop-blur p-3 shadow-lg">
+                  <div className="mb-2 h-1.5 w-full rounded-full bg-line dark:bg-night-line overflow-hidden">
+                    <div className="h-full bg-leaf transition-all duration-500" style={{ width: `${progressPct}%` }} />
                   </div>
                   <button
                     type="button"
                     onClick={async () => { await saveUserInfo(); setCurrentPage('main'); }}
                     disabled={isSaving || !isValidFormData()}
-                    className="w-full px-4 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                    className="w-full h-11 rounded-xl bg-berry text-white text-sm font-bold hover:bg-berry-dark disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                   >
                     {isSaving ? 'Saving...' : <><Save className="h-4 w-4" /> Save &amp; Continue</>}
                   </button>
@@ -1723,528 +1745,365 @@ const CVOptimizer = () => {
               </div>
             </div>
           </div>
-        </div>
+        {tipsModal}{paywallModal}
       </div>
     );
   }
 
-  // Signed-out home: what RoleBerry is, an example and pricing, with sign-in above the fold
+  // Signed-out: the landing page, or the sign-in / sign-up page on /login and /signup
   if (!user) {
-    return (
-      <Landing
-        signIn={
-          <>
-            <Auth user={user} onAuthChange={setUser} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
-            <p className="mt-6 border-t border-line pt-4 text-center text-xs leading-relaxed text-ink-muted">
-              By continuing you agree to the{' '}
-              <a href="/terms" className="font-medium text-ink underline underline-offset-2 hover:text-berry">Terms of Service</a>
-              {' '}and acknowledge the{' '}
-              <a href="/privacy" className="font-medium text-ink underline underline-offset-2 hover:text-berry">Privacy Policy</a>.
-            </p>
-          </>
-        }
-      />
-    );
+    const authMode = AUTH_PATHS[currentPath()];
+    if (authMode) return <LoginPage mode={authMode} onAuthChange={setUser} />;
+    return <Landing />;
   }
 
+
   return (
-    <div className="min-h-screen p-6 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-lg overflow-hidden relative">
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 sm:p-8 dark:from-gray-800 dark:to-gray-700">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-              <div className="flex items-center gap-3">
-              <Target className="h-8 w-8" />
-              <h1 className="text-3xl font-bold">RoleBerry</h1>
-              </div>
-              <Auth user={user} onAuthChange={setUser} onToggleTheme={() => setIsDark(v=>!v)} isDark={isDark} folderMgmtEnabled={folderMgmtEnabled} onToggleFolderMgmt={handleToggleFolderMgmt} />
-            </div>
-            <p className="text-blue-100 text-lg dark:text-gray-300">Maximize your ATS compatibility while maintaining professional readability</p>
-          </div>
+    <div className={pageRootCls}>
+      <TopBar page="main" onNavigate={setCurrentPage} onTips={() => setShowTips(true)} profileSwitcher={profileSwitcherEl} account={accountEl} />
+      {planStripEl}
 
-          <div className="p-4 sm:p-8 space-y-8 text-gray-900 dark:text-gray-100">
-            {/* Buttons Section - Full Width */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                {billing && billing.plan === 'free' && billing.limit != null && (
-                  <span>{billing.remaining} of {billing.limit} free optimizations left</span>
-                )}
-                {billing && billing.plan === 'paid' && (
-                  <span>
-                    Pro{billing.limit != null ? ` · ${billing.remaining} of ${billing.limit.toLocaleString()} optimizations left this month` : ''}
-                    {billing.cancelAtPeriodEnd && billing.renewsAt ? ` · ends ${new Date(billing.renewsAt).toLocaleDateString()}` : ''}
-                  </span>
-                )}
-                {billing && billing.plan === 'max' && (
-                  <span>
-                    {billing.comped ? 'Max (complimentary)' : 'Max'} · unlimited optimizations
-                    {billing.cancelAtPeriodEnd && billing.renewsAt ? ` · ends ${new Date(billing.renewsAt).toLocaleDateString()}` : ''}
-                  </span>
-                )}
-                {billingNotice && (
-                  <span className="ml-2 text-green-700 dark:text-green-400">{billingNotice}</span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                  {billing?.plan === 'free' && billing.billingAvailable && (
-                    <button
-                      type="button"
-                      onClick={() => setShowPaywall(true)}
-                      className="px-3 py-1.5 rounded-md text-sm font-medium bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 flex items-center gap-1"
-                    >
-                      <Sparkles className="h-3 w-3" />
-                      Upgrade
-                    </button>
-                  )}
-                  {user && (
-                    <ProfileSwitcher
-                      locked={!profilesUnlocked}
-                      upsell={billing?.plan === 'free'}
-                      profiles={profiles}
-                      activeProfileId={activeProfileId}
-                      limit={billing?.unlimitedProfiles ? null : profileLimit}
-                      busy={profileBusy}
-                      onLocked={() => setShowPaywall(true)}
-                      onSwitch={handleSwitchProfile}
-                      onSaveAs={handleSaveProfileAs}
-                      onRename={handleRenameProfile}
-                      onDelete={handleDeleteProfile}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage('history')}
-                    className="px-3 py-1.5 rounded-md text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 flex items-center gap-1"
-                  >
-                    <Clock className="h-3 w-3" />
-                    History
-                  </button>
-                  {(billing?.plan === 'paid' || billing?.plan === 'max') && (
-                    <button
-                      type="button"
-                      onClick={() => setShowPaywall(true)}
-                      className="px-3 py-1.5 rounded-md text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 flex items-center gap-1"
-                    >
-                      <Sparkles className="h-3 w-3" />
-                      Plans
-                    </button>
-                  )}
-                  {/* Comped accounts have nothing to manage, unless they also still pay for a subscription they may want to cancel. */}
-                  {(billing?.plan === 'paid' || billing?.plan === 'max') && billing.hasCustomer
-                    && (!billing.comped || (billing.billingPlan && billing.billingPlan !== 'free')) && (
-                    <button
-                      type="button"
-                      onClick={handleManageBilling}
-                      disabled={billingBusy}
-                      className="px-3 py-1.5 rounded-md text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800 disabled:opacity-50"
-                    >
-                      Manage subscription
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage('setup')}
-                    className="px-3 py-1.5 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1"
-                  >
-                    <FileText className="h-3 w-3" />
-                    Setup User Info
-                  </button>
-                <button
-                  type="button"
-                  onClick={() => setShowTips(true)}
-                  className="px-3 py-1.5 rounded-md text-sm font-medium bg-gray-800 text-white hover:bg-gray-700"
-                >
-                  Optimization Tips
-                </button>
-              </div>
-                </div>
-
-            {/* Responsive Layout: Single column on mobile, JD collapses on desktop */}
-            <div className={`relative grid grid-cols-1 ${jdCollapsed ? 'lg:grid-cols-1' : 'lg:grid-cols-2'} gap-8 min-h-[70vh] transition-all duration-700 ease-in-out`}>
-              {needsSetup && (
-                <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage('setup')}
-                    className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700"
-                  >
-                    Setup User Info
-                  </button>
-                </div>
-              )}
-              
-              {/* Left Column: Job Description (collapsible on desktop) */}
-              <div className={`flex flex-col gap-6 h-full transition-all duration-700 ease-in-out overflow-hidden ${jdCollapsed ? 'lg:absolute lg:opacity-0 lg:pointer-events-none lg:-left-full' : 'lg:relative lg:opacity-100'}`}>
-                <div className="flex-1 flex flex-col min-h-[40vh]">
-                  <div className="flex items-center gap-2 mb-3">
-                    <FileText className="h-5 w-5 text-gray-600" />
-                    <label className="text-lg font-semibold text-gray-700">Job Description</label>
-                  </div>
-                  <textarea
-                    value={jobDescription}
-                    onChange={(e) => setJobDescription(e.target.value)}
-                    placeholder="Paste the complete job posting here..."
-                    className="w-full flex-1 p-4 border border-gray-300 dark:border-gray-700 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-auto bg-white dark:bg-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-                  />
-                </div>
-
-                {/* Cover letter switch, welded to the top edge of the action so the two
-                    read as one block: this modifies the thing you are about to press. */}
-                <div className="mt-auto">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={wantsCoverLetter}
-                    onClick={() => {
-                      const next = !wantsCoverLetter;
-                      setWantsCoverLetter(next);
-                      localStorage.setItem('wantsCoverLetter', next ? 'true' : 'false');
-                    }}
-                    className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-t-lg border border-b-0 text-sm transition-colors ${
-                      wantsCoverLetter
-                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200'
-                        : 'bg-gray-50 dark:bg-gray-800/60 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
-                    }`}
-                  >
-                    <span className="font-medium">Also write a cover letter</span>
-                    <span className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                      wantsCoverLetter ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
-                    }`}>
-                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                        wantsCoverLetter ? 'translate-x-5' : 'translate-x-1'
-                      }`} />
-                    </span>
-                  </button>
-                  <button
-                    onClick={handleOptimize}
-                    disabled={isProcessing}
-                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-6 rounded-b-lg font-semibold inline-flex items-center justify-center gap-2 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                  >
-                    {isProcessing ? (
-                      <>
-                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                        Optimizing...
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="h-5 w-5" />
-                        Optimize CV
-                        {wantsCoverLetter && (
-                          <span className="ml-1 text-xs font-medium px-2 py-0.5 rounded-full bg-white/20">+ cover letter</span>
-                        )}
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Right Column: Results */}
-              <div className={`flex flex-col gap-6 h-full transition-all duration-700 ease-in-out`}>
-                {/* JD share warning moved into Analysis modal */}
-                <div className="flex-1 flex flex-col min-h-[40vh]">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Target className="h-5 w-5 text-gray-600" />
-                      <label className="text-lg font-semibold text-gray-700">
-                        {activeDoc === 'letter' ? 'Cover Letter Preview' : 'Optimized CV Preview'}
-                      </label>
-                      {aiScoreLoading && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">AI detecting…</span>
-                      )}
-                      {!aiScoreLoading && aiScore !== null && (() => {
-                        const pct = Math.round(aiScore * 100);
-                        const color = pct >= 70 ? 'bg-red-50 text-red-700 border-red-200' : pct >= 40 ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-green-50 text-green-700 border-green-200';
-                        return <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${color}`}>{pct}% AI</span>;
-                      })()}
-                    </div>
-                    {folderMgmtEnabled && (optimizedCv || structuredCv) && (
-                      <div className="flex items-center gap-2">
-                        <FolderOpen className="h-4 w-4 text-gray-400 shrink-0" />
-                        <input
-                          type="text"
-                          value={companyName}
-                          onChange={(e) => setCompanyName(e.target.value)}
-                          placeholder="Company name"
-                          className="text-sm px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 w-40 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  {/* Document stepper. Only exists once there is a second document; sizes
-                      to its content rather than stretching across the column. */}
-                  {coverLetter && (
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                    <div
-                      role="tablist"
-                      aria-label="Document"
-                      className="w-fit inline-flex items-center gap-px p-0.5 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
-                    >
-                      <button
-                        type="button"
-                        aria-label="Previous document"
-                        onClick={() => setActiveDoc(activeDoc === 'cv' ? 'letter' : 'cv')}
-                        className="grid place-items-center h-5 w-5 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-gray-700 transition-colors"
-                      >
-                        <ChevronRight className="h-3 w-3 rotate-180" />
-                      </button>
-                      {[['cv', 'CV'], ['letter', 'Cover letter']].map(([id, label]) => (
-                        <button
-                          key={id}
-                          type="button"
-                          role="tab"
-                          aria-selected={activeDoc === id}
-                          onClick={() => setActiveDoc(id)}
-                          className={`px-2.5 py-1 rounded-full text-[11.5px] font-semibold whitespace-nowrap transition-colors ${
-                            activeDoc === id
-                              ? 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-300 shadow-sm'
-                              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        aria-label="Next document"
-                        onClick={() => setActiveDoc(activeDoc === 'cv' ? 'letter' : 'cv')}
-                        className="grid place-items-center h-5 w-5 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-gray-700 transition-colors"
-                      >
-                        <ChevronRight className="h-3 w-3" />
-                      </button>
-                    </div>
-
-                    {/* Cover letters get pasted into a form or an email far more often than
-                        they get attached, so copying is worth reaching from either tab —
-                        no need to switch documents just to grab the text. */}
-                    <button
-                      type="button"
-                      onClick={() => copyCoverLetter()}
-                      title="Copy the cover letter text to the clipboard"
-                      className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                        letterCopied
-                          ? 'bg-green-50 dark:bg-green-900/25 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300'
-                          : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                      }`}
-                      aria-live="polite"
-                    >
-                      {letterCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      {letterCopied ? 'Copied' : 'Copy cover letter'}
-                    </button>
-                    </div>
-                  )}
-                  <div id="cv-preview" className="flex-1 p-0 border border-gray-300 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 overflow-auto">
-                    {coverLetter && activeDoc === 'letter' ? (
-                      <iframe
-                        title="Cover Letter Preview"
-                        style={{ width: '100%', height: '100%', minHeight: '40vh', border: '0' }}
-                        srcDoc={renderCoverLetterHtml(coverLetter, structuredCv)}
-                      />
-                    ) : structuredCv ? (
-                      <iframe
-                        title="CV Preview"
-                        style={{ width: '100%', height: '100%', minHeight: '40vh', border: '0' }}
-                        srcDoc={renderCvHtml(structuredCv)}
-                      />
-                    ) : optimizedCv ? (
-                      <div className="p-4 prose prose-sm max-w-none min-h-[40vh]" dangerouslySetInnerHTML={{ __html: convertMarkdownToHtml(optimizedCv) }} />
-                    ) : (
-                      <p className="p-4 text-gray-500 italic">Optimized CV will appear here after processing...</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Keywords moved to Analysis modal */}
-
-                {/* AI Stats moved to Analysis modal */}
-
-                {(optimizedCv || stats || (keywords && keywords.length > 0)) && (
-                  <div className="mt-auto grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
-                    <button
-                      type="button"
-                      onClick={downloadCv}
-                      disabled={!optimizedCv || isDownloading}
-                      className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-lg font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
-                    >
-                      <Download className="h-4 w-4" />
-                      {isDownloading
-                        ? 'Downloading...'
-                        : (coverLetter && activeDoc === 'letter' ? 'Download cover letter' : 'Download PDF')}
-                    </button>
-                    {(stats || (keywords && keywords.length > 0)) && (
-                      <button
-                        type="button"
-                        onClick={() => setShowAnalysis(true)}
-                        className={`w-full py-3 px-6 rounded-lg font-semibold inline-flex items-center justify-center gap-2 transition-colors duration-200 ${needsFix ? 'bg-yellow-400 hover:bg-yellow-500 text-black' : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700'}`}
-                        aria-label={needsFix ? 'View Analysis (issues detected)' : 'View Analysis'}
-                        title={needsFix ? 'Issues detected: open analysis' : 'View analysis'}
-                      >
-                        {needsFix && <Info className="h-4 w-4" />}
-                        View Analysis
-                      </button>
-                    )}
-                    </div>
-                )}
-
-                {downloadNotice && (
-                  <div className={`flex items-start gap-2 text-sm px-3 py-2 rounded-md border ${
-                    downloadNoticeTone === 'ok'
-                      ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300'
-                      : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300'
-                  }`}>
-                    {downloadNoticeTone === 'ok'
-                      ? <Check className="h-4 w-4 mt-0.5 shrink-0" />
-                      : <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />}
-                    <span className="flex-1 break-all">{downloadNotice}</span>
-                    <button
-                      type="button"
-                      onClick={() => setDownloadNotice('')}
-                      className="shrink-0 opacity-70 hover:opacity-100"
-                      aria-label="Dismiss"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-                  </div>
-            </div>
-
-            {/* Modals */}
-            {showAnalysis && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center">
-                <div className="absolute inset-0 bg-black/50" onClick={() => setShowAnalysis(false)}></div>
-                <div className="relative bg-white w-full max-w-3xl mx-4 rounded-lg shadow-xl overflow-hidden">
-                  <div className="flex items-center justify-between px-6 py-4 border-b">
-                    <h3 className="text-xl font-semibold text-gray-800">Result Analysis</h3>
-                    <button
-                      type="button"
-                      onClick={() => setShowAnalysis(false)}
-                      className="text-gray-500 hover:text-gray-800"
-                      aria-label="Close"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-                    {needsFix && (
-                      <div className="p-3 rounded-md bg-red-50 border border-red-200 text-red-800 text-sm">
-                        The result may not fully meet the constraints (e.g., JD keyword share or category sizes). You can still download, but consider refining the inputs.
-                      </div>
-                    )}
-                    {keywords.length > 0 && (
-                <div>
-                        <h4 className="text-lg font-semibold text-gray-700 mb-2">Keywords Integrated</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {keywords.map((keyword, index) => (
-                            <span key={index} className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
-                              {keyword}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {stats && (
-                      <div>
-                        <h4 className="text-lg font-semibold text-gray-700 mb-2">AI Stats</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <div className="bg-gray-50 border border-gray-200 rounded p-3">JD Share: {(stats.jdShare * 100).toFixed(0)}%</div>
-                          <div className="bg-gray-50 border border-gray-200 rounded p-3">Categories: {stats.categories}</div>
-                          <div className="bg-gray-50 border border-gray-200 rounded p-3">Total Skills: {stats.totalSkills}</div>
-                          <div className="sm:col-span-3 bg-gray-50 border border-gray-200 rounded p-3">Overlap Skills: {stats.overlapCount ?? 0}</div>
-                          <div className="sm:col-span-3 bg-gray-50 border border-gray-200 rounded p-3">AI-detectable words (summary + bullets): {detectableWordCount(structuredCv)}</div>
-                          {Array.isArray(stats.categorySizeViolations) && stats.categorySizeViolations.length > 0 && (
-                            <div className="sm:col-span-3 bg-yellow-50 border border-yellow-200 rounded p-3">
-                              Category size issues: {stats.categorySizeViolations.join(', ')}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {Array.isArray(overlapSkills) && overlapSkills.length > 0 && (
-                <div>
-                        <h4 className="text-lg font-semibold text-gray-700 mb-2">Skills Overlap (JD ∩ Base)</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {overlapSkills.map((s, i) => (
-                            <span key={i} className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">
-                              {s}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="px-6 py-4 border-t bg-gray-50 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setShowAnalysis(false)}
-                      className="px-4 py-2 rounded-md bg-gray-800 text-white text-sm hover:bg-gray-700"
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {paywallModal}
-
-            {showTips && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center">
-                <div className="absolute inset-0 bg-black/50" onClick={() => setShowTips(false)}></div>
-                <div className="relative bg-white w-full max-w-2xl mx-4 rounded-lg shadow-xl overflow-hidden">
-                  <div className="flex items-center justify-between px-6 py-4 border-b">
-                    <h3 className="text-xl font-semibold text-gray-800">Optimization Tips</h3>
-                    <button
-                      type="button"
-                      onClick={() => setShowTips(false)}
-                      className="text-gray-500 hover:text-gray-800"
-                      aria-label="Close"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                    <ul className="list-disc pl-6 text-gray-700 text-sm space-y-1">
-                      <li>Use the complete job posting, including requirements and preferred qualifications.</li>
-                      <li>Provide detailed CV content with specific achievements and metrics.</li>
-                      <li>Review the optimized CV to ensure it accurately represents your experience.</li>
-                      <li>The downloaded PDF contains real text, so keep it as-is rather than printing it to a new file.</li>
-                      <li>Customize further based on your specific industry and role.</li>
-                  </ul>
-                </div>
-                  <div className="px-6 py-4 border-t bg-gray-50 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setShowTips(false)}
-                      className="px-4 py-2 rounded-md bg-gray-800 text-white text-sm hover:bg-gray-700"
-                    >
-                      Close
-                    </button>
-              </div>
-            </div>
-              </div>
-            )}
-
-            {/* Floating restore button when JD is collapsed - positioned relative to the card */}
-            {jdCollapsed && (
+      <main className={`relative flex-1 grid grid-cols-1 ${jdCollapsed ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(420px,1fr)_1.25fr]'}`}>
+        {needsSetup && !profileLoading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 backdrop-blur-[1px] dark:bg-night/80">
+            <div className="max-w-sm rounded-2xl border border-line bg-white p-6 text-center shadow-xl dark:bg-night-raised dark:border-night-line">
+              <h2 className="text-lg font-extrabold">Set up your info first</h2>
+              <p className="mt-1.5 text-sm text-ink-muted dark:text-night-muted">Add your experience once. Every tailored CV is built from it.</p>
               <button
                 type="button"
-                onClick={() => setJdCollapsed(false)}
-                className="hidden lg:flex absolute left-4 top-1/2 -translate-y-1/2 items-center justify-center rounded-full shadow-2xl bg-blue-600 text-white p-4 hover:bg-blue-700 z-50"
-                aria-label="Expand Job Description"
-                title="Expand Job Description"
+                onClick={() => setCurrentPage('setup')}
+                className="mt-4 h-11 px-5 rounded-xl bg-berry text-white font-bold hover:bg-berry-dark"
               >
-                <ChevronRight className="h-8 w-8" />
+                Set up your info
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Left column: job posting */}
+        <section aria-label="Job posting" className={`flex flex-col gap-3.5 p-4 sm:p-6 pb-20 lg:border-r border-line dark:border-night-line dark:bg-night-surface ${jdCollapsed ? 'lg:hidden' : ''}`}>
+          <div className="flex items-baseline gap-2.5 flex-wrap">
+            <label htmlFor="jd-input" className="text-[17px] font-extrabold tracking-tight">Job posting</label>
+            <span className="text-[13px] text-ink-muted dark:text-night-muted">Paste the whole thing, requirements included</span>
+            <div className="flex-1" />
+            {jobDescription && (
+              <button
+                type="button"
+                onClick={() => setJobDescription('')}
+                className="text-[13px] font-semibold text-ink-muted hover:text-ink"
+              >
+                Clear
               </button>
             )}
           </div>
+          <textarea
+            id="jd-input"
+            value={jobDescription}
+            onChange={(e) => setJobDescription(e.target.value)}
+            placeholder="Paste a job posting here"
+            className="w-full flex-1 min-h-[420px] resize-none rounded-xl border border-line bg-white px-[18px] py-4 text-sm leading-relaxed text-ink placeholder:text-ink-faint focus:border-berry focus:ring-4 focus:ring-berry/15 focus:outline-none dark:bg-night-raised dark:border-night-line dark:text-night-text"
+          />
+
+          {/* Cover letter switch, welded to the top edge of the action so the two
+              read as one block: this modifies the thing you are about to press. */}
+          <div className="mt-auto overflow-hidden rounded-xl border border-line dark:border-night-line">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={wantsCoverLetter}
+              onClick={() => {
+                const next = !wantsCoverLetter;
+                setWantsCoverLetter(next);
+                localStorage.setItem('wantsCoverLetter', next ? 'true' : 'false');
+              }}
+              className={`w-full flex items-center justify-between px-4 py-3 text-sm font-semibold ${
+                wantsCoverLetter
+                  ? 'bg-berry-soft text-ink dark:bg-berry/20 dark:text-night-text'
+                  : 'bg-blush text-ink-muted dark:bg-night-raised dark:text-night-muted'
+              }`}
+            >
+              <span>Also write a cover letter</span>
+              <span className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                wantsCoverLetter ? 'bg-berry' : 'bg-line'
+              }`}>
+                <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                  wantsCoverLetter ? 'translate-x-5' : 'translate-x-1'
+                }`} />
+              </span>
+            </button>
+            <button
+              onClick={handleOptimize}
+              disabled={isProcessing || profileLoading}
+              className="w-full h-[52px] inline-flex items-center justify-center gap-2 bg-berry text-white text-[15px] font-bold hover:bg-berry-dark disabled:opacity-60"
+            >
+              {isProcessing ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                  Optimizing...
+                </>
+              ) : profileLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                  Loading your info...
+                </>
+              ) : (
+                <>
+                  <Zap className="h-5 w-5" />
+                  Optimize CV
+                  {wantsCoverLetter && (
+                    <span className="ml-1 text-xs font-medium px-2 py-0.5 rounded-full bg-white/20">+ cover letter</span>
+                  )}
+                </>
+              )}
+            </button>
+          </div>
+        </section>
+
+        {/* Right column: result */}
+        <section aria-label="Result" className="flex flex-col gap-3.5 p-4 sm:p-6 pb-20 bg-paper dark:bg-night">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {openedFromHistory && (
+              <button
+                type="button"
+                onClick={() => setCurrentPage('history')}
+                className="h-[30px] px-3 rounded-lg text-[13px] font-semibold border border-line text-ink hover:bg-hover dark:border-night-line dark:text-night-text dark:hover:bg-night-surface inline-flex items-center gap-1.5"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to history
+              </button>
+            )}
+            {coverLetter ? (
+              <div role="tablist" aria-label="Document" className="inline-flex p-[3px] rounded-[10px] bg-[#EADDE2] dark:bg-night-raised">
+                {[['cv', 'CV'], ['letter', 'Cover letter']].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeDoc === id}
+                    onClick={() => setActiveDoc(id)}
+                    className={`h-[30px] px-3.5 rounded-lg text-[13px] whitespace-nowrap ${
+                      activeDoc === id
+                        ? 'bg-white text-ink font-bold shadow-sm'
+                        : 'text-ink-muted font-semibold dark:text-night-muted'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <h2 className="text-[15px] font-extrabold">CV preview</h2>
+            )}
+            <div className="flex-1" />
+            <TemplatePicker value={docStyle} extraTemplates={extraTemplates} onChange={handleTemplateChange} onLocked={() => setShowPaywall(true)} disabled={!billing} />
+            {/* Always shown: the name is saved with the run in History. With job folders on it
+                also names the folder the PDF is saved into. */}
+            {(optimizedCv || structuredCv) && (
+              <label
+                className="inline-flex items-center gap-1.5 h-[34px] px-2.5 rounded-[9px] border border-line bg-white text-ink-muted dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface"
+                title={folderMgmtActive ? 'Saved in History and used as the folder name' : 'Saved with this CV in History'}
+              >
+                {folderMgmtActive ? <FolderOpen className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
+                <input
+                  type="text"
+                  aria-label="Company name"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  onBlur={saveCompanyName}
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                  maxLength={80}
+                  placeholder="Company name"
+                  className="w-[150px] border-0 bg-transparent text-[13px] font-semibold text-ink outline-none dark:text-night-text"
+                />
+              </label>
+            )}
+            {/* Cover letters get pasted into a form or an email far more often than
+                they get attached, so copying is worth reaching from either tab. */}
+            {coverLetter && (
+              <button
+                type="button"
+                onClick={() => copyCoverLetter()}
+                title="Copy the cover letter text to the clipboard"
+                className={`inline-flex items-center gap-1.5 h-[34px] px-3 rounded-[9px] border text-[13px] font-semibold ${
+                  letterCopied
+                    ? 'bg-leaf-soft text-leaf-text border-[#CFE7D8]'
+                    : 'border-line bg-white text-ink hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface'
+                }`}
+                aria-live="polite"
+              >
+                {letterCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {letterCopied ? 'Copied' : 'Copy cover letter'}
+              </button>
+            )}
+          </div>
+
+          <div id="cv-preview" className="flex-1 min-h-[560px] overflow-auto rounded-[10px] bg-white shadow-[0_1px_2px_rgba(36,19,28,0.08),0_12px_32px_rgba(36,19,28,0.10)] dark:bg-night-surface">
+            {coverLetter && activeDoc === 'letter' ? (
+              letterBlob ? <PdfPreview blob={letterBlob} title="Cover letter preview" /> : <PreviewLoading />
+            ) : structuredCv ? (
+              cvBlob ? <PdfPreview blob={cvBlob} title="CV preview" /> : <PreviewLoading />
+            ) : optimizedCv ? (
+              <div className="p-4 prose prose-sm max-w-none min-h-[40vh]" dangerouslySetInnerHTML={{ __html: convertMarkdownToHtml(optimizedCv) }} />
+            ) : (
+              <div className="flex h-full min-h-[560px] flex-col items-center justify-center gap-2 p-8 text-center">
+                <FileText className="h-7 w-7 text-ink-faint" />
+                <p className="text-[15px] font-bold text-ink dark:text-night-text">Your tailored CV appears here</p>
+                <p className="text-[13.5px] text-ink-muted dark:text-night-muted">Paste a job posting on the left and press Optimize CV.</p>
+              </div>
+            )}
+          </div>
+
+          {(optimizedCv || analysis) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={downloadCv}
+                disabled={!optimizedCv || isDownloading}
+                className="h-12 rounded-xl bg-ink text-white text-[14.5px] font-bold hover:bg-[#3A2630] dark:bg-white dark:text-ink inline-flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" />
+                {isDownloading
+                  ? 'Downloading...'
+                  : (coverLetter && activeDoc === 'letter' ? 'Download cover letter' : 'Download PDF')}
+              </button>
+              {analysis && (
+                <button
+                  type="button"
+                  onClick={() => setShowAnalysis(true)}
+                  className="h-12 rounded-xl border border-line bg-white text-ink hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text dark:hover:bg-night-surface font-bold inline-flex items-center justify-center gap-2"
+                  aria-label="View Analysis"
+                  title="View analysis"
+                >
+                  <BarChart3 className="h-4 w-4" />
+                  View Analysis
+                </button>
+              )}
+            </div>
+          )}
+
+          {downloadNotice && (
+            <div className={`flex items-start gap-2 text-sm px-3 py-2 rounded-lg border ${
+              downloadNoticeTone === 'ok'
+                ? 'bg-leaf-soft border-[#CFE7D8] text-leaf-text'
+                : 'bg-warn-bg border-warn-line text-warn-text'
+            }`}>
+              {downloadNoticeTone === 'ok'
+                ? <Check className="h-4 w-4 mt-0.5 shrink-0" />
+                : <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+              <span className="flex-1 break-all">{downloadNotice}</span>
+              <button
+                type="button"
+                onClick={() => setDownloadNotice('')}
+                className="shrink-0 opacity-70 hover:opacity-100"
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </section>
+      </main>
+
+      {showAnalysis && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowAnalysis(false)}></div>
+          <div className="relative bg-white text-ink w-full max-w-3xl mx-4 rounded-2xl shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-line">
+              <h3 className="text-lg font-extrabold text-ink">Result Analysis</h3>
+              <button
+                type="button"
+                onClick={() => setShowAnalysis(false)}
+                className="text-ink-muted hover:text-ink"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              {analysis && (
+                <div>
+                  <h4 className="text-base font-bold text-ink mb-2">Job keyword match</h4>
+                  {analysis.total === 0 ? (
+                    <p className="text-sm text-ink-muted">Couldn't read key requirements from this job description.</p>
+                  ) : (
+                    <>
+                      <p className="text-lg font-extrabold text-ink mb-3">
+                        Matches {analysis.matched.length} of {analysis.total} key requirements ({Math.round((analysis.coverage ?? 0) * 100)}%)
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {analysis.matched.map((term) => (
+                          <span key={term} className="bg-berry-soft text-berry-dark px-3 py-1 rounded-full text-sm font-medium">
+                            {term}
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {analysis && analysis.missing.length > 0 && (
+                <div>
+                  <h4 className="text-base font-bold text-ink mb-2">Missing from this CV</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {analysis.missing.map(({ term, inProfile }) => (
+                      <span key={term} className="bg-blush border border-line text-ink px-3 py-1 rounded-full text-sm font-medium">
+                        {term}
+                        {inProfile && <span className="text-ink-muted font-normal"> · in your profile</span>}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-sm text-ink-muted mt-2">If you have one of these and it's not in your profile, add it there and generate again.</p>
+                </div>
+              )}
+
+              {analysis && analysis.unsupported.length > 0 && (
+                <div>
+                  <h4 className="text-base font-bold text-ink mb-2">Not in your profile</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {analysis.unsupported.map((term) => (
+                      <span key={term} className="bg-blush border border-line text-ink-muted px-3 py-1 rounded-full text-sm font-medium">
+                        {term}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-sm text-ink-muted mt-2">These job terms are in the CV but not in your saved profile.</p>
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-line bg-blush text-right">
+              <button
+                type="button"
+                onClick={() => setShowAnalysis(false)}
+                className="px-4 py-2 rounded-lg bg-ink text-white text-sm hover:bg-[#3A2630]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {tipsModal}
+      {paywallModal}
+
+      {/* Floating restore button when the job posting is collapsed */}
+      {jdCollapsed && (
+        <button
+          type="button"
+          onClick={() => setJdCollapsed(false)}
+          className="hidden lg:flex fixed left-4 top-1/2 -translate-y-1/2 z-40 rounded-full bg-berry p-3 text-white shadow-xl hover:bg-berry-dark"
+          aria-label="Expand Job Description"
+          title="Expand Job Description"
+        >
+          <ChevronRight className="h-6 w-6" />
+        </button>
+      )}
     </div>
   );
 };
 
 export default CVOptimizer;
+
 
 

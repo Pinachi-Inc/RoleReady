@@ -62,6 +62,11 @@ class DocRef {
     const next = resolveSentinels(data);
     store.set(this.path, merge ? deepMerge(store.get(this.path) || {}, next) : next);
   }
+  // Like the real update(): fails with NOT_FOUND (code 5) when the document does not exist.
+  async update(data) {
+    if (!store.has(this.path)) throw Object.assign(new Error('NOT_FOUND: no document to update'), { code: 5 });
+    store.set(this.path, deepMerge(store.get(this.path), resolveSentinels(data)));
+  }
 }
 
 class Query {
@@ -70,6 +75,8 @@ class Query {
   where(field, op, value) { return new Query(this.path, { ...this.ops, where: [field, op, value] }); }
   orderBy(field, dir = 'asc') { return new Query(this.path, { ...this.ops, orderBy: [field, dir] }); }
   limit(n) { return new Query(this.path, { ...this.ops, limit: n }); }
+  // Field mask, as the real select(): documents come back with only these fields.
+  select(...fields) { return new Query(this.path, { ...this.ops, select: fields }); }
   count() { return { get: async () => { const n = this.#docs().length; return { data: () => ({ count: n }) }; } }; }
   #docs() {
     const prefix = `${this.path}/`;
@@ -89,7 +96,13 @@ class Query {
     return this.ops.limit != null ? docs.slice(0, this.ops.limit) : docs;
   }
   async get() {
-    const docs = this.#docs().map((d) => snapshot(d.path, d.id));
+    const fields = this.ops.select;
+    if (this.path.endsWith('/history')) globalThis.__E2E_HISTORY_SELECT = fields || null;
+    const docs = this.#docs().map((d) => {
+      const snap = snapshot(d.path, d.id);
+      if (!fields) return snap;
+      return { ...snap, data: () => Object.fromEntries(Object.entries(snap.data()).filter(([k]) => fields.includes(k))) };
+    });
     return { empty: docs.length === 0, size: docs.length, docs };
   }
 }
@@ -102,6 +115,13 @@ const db = {
 };
 
 const firestore = () => db;
+
+// firebase-admin/firestore's initializeFirestore(app, settings). Settings are recorded so a test
+// can see what the server asked for.
+export function initializeFirestore(_app, settings = {}) {
+  globalThis.__E2E_FS_SETTINGS = settings;
+  return db;
+}
 firestore.FieldValue = { serverTimestamp: () => SERVER_TIMESTAMP, delete: () => DELETE_FIELD };
 
 const auth = () => ({

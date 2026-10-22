@@ -231,10 +231,10 @@ const FeedbackWidget = () => {
 
   const segment = (active) => (
     active
-      ? 'bg-blue-600 text-white border-blue-600 dark:bg-blue-500 dark:border-blue-500'
-      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700'
+      ? 'bg-berry text-white border-berry'
+      : 'bg-white text-ink border-line hover:bg-hover dark:bg-night-raised dark:text-night-text dark:border-night-line dark:hover:bg-night-surface'
   );
-  const secondaryButton = 'inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800';
+  const secondaryButton = 'inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm text-ink hover:bg-hover dark:border-night-line dark:text-night-text dark:hover:bg-night-surface';
 
   return (
     <>
@@ -245,10 +245,10 @@ const FeedbackWidget = () => {
           onClick={() => setOpen(true)}
           title="Report a problem or share feedback"
           aria-label="Report a problem or share feedback"
-          className="fixed bottom-4 right-4 z-40 inline-flex items-center gap-2 rounded-full shadow-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 text-sm font-medium dark:bg-blue-500 dark:hover:bg-blue-600 print:hidden"
+          className="fixed bottom-4 right-4 z-40 inline-flex items-center justify-center gap-2 h-11 w-11 px-0 sm:h-[38px] sm:w-auto sm:px-3.5 rounded-full border border-line bg-white text-[13px] font-semibold text-ink shadow-[0_6px_18px_rgba(36,19,28,0.14)] hover:bg-blush dark:bg-night-raised dark:border-night-line dark:text-night-text print:hidden"
         >
           <MessageSquare className="h-4 w-4" />
-          Feedback
+          <span className="hidden sm:inline">Feedback</span>
         </button>
       )}
 
@@ -261,24 +261,24 @@ const FeedbackWidget = () => {
             role="dialog"
             aria-modal="true"
             aria-labelledby="feedback-title"
-            className="max-w-lg w-full max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-t-xl sm:rounded-xl shadow-xl p-5 sm:p-6"
+            className="font-brand max-w-lg w-full max-h-[90vh] overflow-y-auto bg-white dark:bg-night-surface text-ink dark:text-night-text rounded-t-xl sm:rounded-xl shadow-xl p-5 sm:p-6"
           >
             {result ? (
               <div className="text-center py-4">
-                <CheckCircle2 className="h-12 w-12 text-green-600 dark:text-green-400 mx-auto" />
+                <CheckCircle2 className="h-12 w-12 text-leaf mx-auto" />
                 <h2 id="feedback-title" className="mt-3 text-lg font-semibold">Thanks, we've got it.</h2>
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                <p className="mt-2 text-sm text-ink-muted dark:text-night-text">
                   {result.email
                     ? `We're on it. We'll get back to you at ${result.email}, usually within a day.`
                     : `We're on it. If you'd like a reply, email us at ${LEGAL.email} and mention your reference.`}
                 </p>
-                <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
-                  Reference: <span className="font-mono text-gray-900 dark:text-gray-100">{result.ref}</span>
+                <p className="mt-3 text-sm text-ink-muted dark:text-night-text">
+                  Reference: <span className="font-mono text-ink dark:text-night-text">{result.ref}</span>
                 </p>
                 <button
                   type="button"
                   onClick={close}
-                  className="mt-5 rounded-lg bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-4 py-2 text-sm font-medium"
+                  className="mt-5 rounded-lg bg-berry hover:bg-berry-dark text-white px-4 py-2 text-sm font-medium"
                 >
                   Done
                 </button>
@@ -286,7 +286,7 @@ const FeedbackWidget = () => {
             ) : (
               <form onSubmit={submit} noValidate>
                 <h2 id="feedback-title" className="text-lg font-semibold">How can we help?</h2>
-                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                <p className="mt-1 text-sm text-ink-muted dark:text-night-text">
                   Something not working, or an idea to make {LEGAL.product} better? Tell us. We read every
                   message personally and usually reply within a day.
                 </p>
@@ -316,17 +316,17 @@ const FeedbackWidget = () => {
                   onChange={(event) => setMessage(event.target.value)}
                   onPaste={onPaste}
                   placeholder={current.placeholder}
-                  className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="mt-1 w-full rounded-lg border border-line dark:border-night-line bg-white dark:bg-night-raised px-3 py-2 text-sm focus:outline-none focus:ring-4 focus:ring-berry/15"
                 />
                 {message.length > 4500 && (
-                  <p className="mt-1 text-right text-xs text-gray-500 dark:text-gray-400">{message.length} / {MAX_MESSAGE}</p>
+                  <p className="mt-1 text-right text-xs text-ink-muted dark:text-night-muted">{message.length} / {MAX_MESSAGE}</p>
                 )}
 
                 <div className="mt-4">
                   <p className="text-sm font-medium">Screenshot (optional)</p>
                   {screenshot ? (
                     <div className="mt-2 flex items-start gap-3">
-                      <img src={screenshot} alt="Attached screenshot" className="max-h-32 rounded border border-gray-200 dark:border-gray-700" />
+                      <img src={screenshot} alt="Attached screenshot" className="max-h-32 rounded border border-line dark:border-night-line" />
                       <button type="button" onClick={() => setScreenshot(null)} aria-label="Remove screenshot" className={secondaryButton}>
                         <X className="h-4 w-4" />
                         Remove
@@ -351,15 +351,15 @@ const FeedbackWidget = () => {
                       />
                     </div>
                   )}
-                  {imageError && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{imageError}</p>}
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {imageError && <p className="mt-1 text-xs text-danger-text">{imageError}</p>}
+                  <p className="mt-1 text-xs text-ink-muted dark:text-night-muted">
                     Screenshots can show your CV details. Only attach one if you're happy for us to see it.
                   </p>
                 </div>
 
                 <div className="mt-4">
                   {verifiedEmail ? (
-                    <p className="text-sm text-gray-600 dark:text-gray-300">We'll reply to {verifiedEmail}.</p>
+                    <p className="text-sm text-ink-muted dark:text-night-text">We'll reply to {verifiedEmail}.</p>
                   ) : (
                     <>
                       <label htmlFor="feedback-email" className="block text-sm font-medium">Your email (optional, so we can reply)</label>
@@ -371,11 +371,11 @@ const FeedbackWidget = () => {
                         onChange={(event) => setEmail(event.target.value)}
                         placeholder="you@example.com"
                         aria-describedby={email.trim() ? undefined : 'feedback-email-note'}
-                        className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="mt-1 w-full rounded-lg border border-line dark:border-night-line bg-white dark:bg-night-raised px-3 py-2 text-sm focus:outline-none focus:ring-4 focus:ring-berry/15"
                       />
                       {/* Sending without an email is fine; this just says what the reporter gives up. */}
                       {!email.trim() && (
-                        <p id="feedback-email-note" className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        <p id="feedback-email-note" className="mt-1 text-xs text-ink-muted dark:text-night-muted">
                           No email? No problem. We'll still look into it and fix it, but we won't be able to reply to you.
                         </p>
                       )}
@@ -394,20 +394,20 @@ const FeedbackWidget = () => {
                   onChange={(event) => setWebsite(event.target.value)}
                 />
 
-                <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                <p className="mt-4 text-xs text-ink-muted dark:text-night-muted">
                   To help us fix things faster, we'll include the page you're on and basic browser details.
                 </p>
 
-                {error && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+                {error && <p role="alert" className="mt-3 text-sm text-danger-text">{error}</p>}
 
                 <div className="mt-4 flex justify-end gap-2">
-                  <button type="button" onClick={close} className="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
+                  <button type="button" onClick={close} className="rounded-lg border border-line dark:border-night-line px-4 py-2 text-sm text-ink dark:text-night-text hover:bg-hover dark:hover:bg-night-surface">
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={sending || message.trim().length < 3}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-berry hover:bg-berry-dark text-white px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Send className="h-4 w-4" />
                     {sending ? 'Sending…' : 'Send'}

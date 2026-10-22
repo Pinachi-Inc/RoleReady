@@ -16,7 +16,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, googleProvider, githubProvider, db } from '../src/firebase.js';
-import { trackSignUp } from '../src/metaPixel.js';
+import { trackSignUp } from '../src/tracking.js';
 
 const METHOD_LABELS = {
   'google.com': 'Google',
@@ -148,7 +148,7 @@ const popupSignIn = async (provider, providerId) => {
     if (provider === googleProvider) googleProvider.setCustomParameters({});
     await linkPendingCredential(result.user);
     if (providerId === 'github.com') await verifyEmailWithGithub(result);
-    trackSignUp(getAdditionalUserInfo(result)?.isNewUser, providerId === 'github.com' ? 'github' : 'google');
+    trackSignUp(getAdditionalUserInfo(result)?.isNewUser, providerId === 'github.com' ? 'github' : 'google', result.user);
     return result.user;
   } catch (error) {
     if (error?.code === 'auth/account-exists-with-different-credential') {
@@ -174,7 +174,7 @@ export const signInWithEmail = async (email, password) => {
 // Create an email and password account and send the verification email.
 export const signUpWithEmail = async (email, password, displayName) => {
   const result = await createUserWithEmailAndPassword(auth, email.trim(), password);
-  trackSignUp(true, 'email');
+  trackSignUp(true, 'email', result.user);
   const name = (displayName || '').trim();
   if (name) await updateProfile(result.user, { displayName: name });
   await sendEmailVerification(result.user);

@@ -10,17 +10,16 @@ const PrivacyPolicy = () => (
   <>
     <p>
       This policy explains what {LEGAL.product} collects when you use it, why, who else handles it,
-      how long it is kept, and what you can do about it. {LEGAL.product} is run by {LEGAL.seller},
-      a sole trader based at {LEGAL.address} ("we", "us"), who is the controller of your personal
-      data. Questions and
-      requests go to <Mail />.
+      how long it is kept, and what you can do about it. {LEGAL.product} ("we", "us") is the
+      controller of your personal data. Questions and requests go to <Mail />.
     </p>
 
     <h2>The short version</h2>
     <ul>
-      <li>We collect what you give us to build your CV, plus your Google sign-in details and, if you pay, your subscription status.</li>
+      <li>We collect what you give us to build your CV, plus your sign-in details and, if you pay, your subscription status.</li>
       <li>Your CV content is sent to third-party AI models to produce your results. That is how the product works.</li>
-      <li>We do not sell your data, show ads, or use your content to train our own models.</li>
+      <li>We do not sell your data, show ads in the app, or use your content to train our own models.</li>
+      <li>We advertise on Meta (Facebook, Instagram) and Reddit, and their pixels tell them when someone they sent us visits or signs up. They never get your CV content. Details under Cookies below.</li>
       <li>Payments are handled by Lemon Squeezy, our merchant of record. We never see your card details.</li>
       <li>You can ask us for a copy of your data, or to delete it, at any time.</li>
     </ul>
@@ -28,9 +27,19 @@ const PrivacyPolicy = () => (
     <h2>What we collect</h2>
     <h3>Your account</h3>
     <p>
-      You sign in with Google. Through Google and Firebase Authentication we receive your name,
-      email address, profile photo link and a Google account identifier. We do not receive your
-      Google password.
+      You sign in with Google, GitHub, or an email address and password. Through Firebase
+      Authentication we receive your email address and, for Google or GitHub, your name, profile
+      photo link and an account identifier from that service. We never receive your Google or
+      GitHub password, and an email password is stored by Firebase only in hashed form.
+    </p>
+    <h3>How you found us</h3>
+    <p>
+      When you first arrive, the app notes where you came from: the campaign tags on the link you
+      followed (such as <code>utm_source=reddit</code>), which kind of ad click it was, the
+      website that linked to us and the page you landed on. This stays in your browser until you
+      sign up, when it is saved on your account with the sign-up date and method, so we can count
+      sign-ups per channel. It is never sent to Meta or Reddit, and it is dropped after 90 days if
+      you do not sign up.
     </p>
 
     <h3>What you put into {LEGAL.product}</h3>
@@ -105,14 +114,15 @@ const PrivacyPolicy = () => (
       <li>To meet legal obligations, such as tax and accounting records.</li>
     </ul>
     <p>
-      We do not sell or rent personal data, we do not use it for advertising, and we do not use
-      your content to train our own AI models.
+      We do not sell or rent personal data, and we do not use your content to train our own AI
+      models. The only advertising use is measuring our own ads, as described under Cookies
+      below; your profile, CVs and job postings are never part of it.
     </p>
 
     <h3>Legal bases (EEA and UK)</h3>
     <ul>
       <li><strong>Contract:</strong> providing the service you signed up for, including AI processing and billing.</li>
-      <li><strong>Legitimate interests:</strong> security, abuse prevention, debugging and improving the service.</li>
+      <li><strong>Legitimate interests:</strong> security, abuse prevention, debugging, improving the service, and counting which channels bring sign-ups.</li>
       <li><strong>Legal obligation:</strong> keeping financial records and responding to lawful requests.</li>
       <li><strong>Consent:</strong> anything optional we ask you to agree to. You can withdraw it at any time.</li>
     </ul>
@@ -124,8 +134,7 @@ const PrivacyPolicy = () => (
       OpenRouter, which passes each request to a model provider. The provider generates the
       response and returns it to us. Providers may process requests outside your country and,
       under their own terms, some may keep request data for a limited time, for example to
-      monitor for abuse. Generated CVs are also sent to Sapling AI when we estimate how
-      AI-written they read.
+      monitor for abuse.
     </p>
     <p>
       AI output can be wrong. Always check a generated CV or letter before you send it to anyone.
@@ -141,9 +150,10 @@ const PrivacyPolicy = () => (
         <tr><td>Google (Firebase)</td><td>Sign-in and database</td><td>Account details, profiles, history, usage, subscription status</td></tr>
         <tr><td>Vercel</td><td>Hosting and servers</td><td>All requests passing through the app, server logs, IP address</td></tr>
         <tr><td>OpenRouter and the AI model providers it routes to</td><td>Generating CVs, cover letters and profile imports</td><td>Profile content, job postings, imported CV text</td></tr>
-        <tr><td>Sapling AI</td><td>AI-writing estimate</td><td>Generated CV text</td></tr>
         <tr><td>Lemon Squeezy (merchant of record) and its payment processors</td><td>Selling the subscription: payment, sales tax / VAT, receipts, refunds</td><td>Email, name, payment details, billing address, subscription</td></tr>
         <tr><td>Brevo</td><td>Delivering feedback and problem reports to our inbox</td><td>Your message, email address, screenshot and the browser details above</td></tr>
+        <tr><td>Meta Platforms (Meta Pixel)</td><td>Measuring our Facebook and Instagram ads</td><td>Pages visited on our site, that a sign-up happened and how (Google, GitHub or email), IP address, browser details and Meta's cookies</td></tr>
+        <tr><td>Reddit (Reddit Pixel)</td><td>Measuring our Reddit ads</td><td>Pages visited on our site, that a sign-up happened, IP address, browser details and Reddit's cookies</td></tr>
         <tr><td>jsDelivr (CDN)</td><td>Loading the in-browser text reader for scanned PDFs</td><td>IP address and browser details only; your file stays on your device</td></tr>
       </tbody>
     </table>
@@ -193,21 +203,40 @@ const PrivacyPolicy = () => (
     <p>
       <strong>California residents:</strong> you have the right to know, delete and correct
       personal information, and not to be discriminated against for using these rights. We do
-      not sell personal information or share it for cross-context behavioural advertising.
+      not sell personal information. The Meta and Reddit pixels described below may count as
+      "sharing" for cross-context behavioural advertising under California law. To opt out,
+      turn on Global Privacy Control in your browser: the app then does not load either pixel.
     </p>
 
     <h2>Cookies and browser storage</h2>
     <p>
-      We do not use advertising or analytics cookies. Your browser stores only what the app needs
-      to work: your sign-in session (Firebase), two preferences (whether you want cover letters and
-      whether folder downloads are on) and, if you choose a download folder, a reference to that
-      folder in IndexedDB. None of this is used to track you, so there is no cookie banner.
+      Your browser stores what the app needs to work: your sign-in session (Firebase), two
+      preferences (whether you want cover letters and whether folder downloads are on) and, if
+      you choose a download folder, a reference to that folder in IndexedDB. It also keeps a note
+      of how you first found us (see "How you found us" above) until you sign up, for up to 90
+      days.
+    </p>
+    <p>
+      To measure our ads, the site loads the <strong>Meta Pixel</strong> and the{' '}
+      <strong>Reddit Pixel</strong>. They set those companies' cookies and tell them which pages
+      you open and, once, that you created an account. Meta and Reddit use this to report how our
+      ads performed and to show them to people likely to find them useful, under their own privacy
+      policies (<a href="https://www.facebook.com/privacy/policy/">Meta</a>,{' '}
+      <a href="https://www.reddit.com/policies/privacy-policy">Reddit</a>). They do not receive
+      your email address, profile, CVs or job postings.
+    </p>
+    <p>
+      The pixels are not loaded at all if your browser sends Global Privacy Control, or if your
+      browser is set to a European time zone, since we do not advertise in Europe and would need
+      your consent there first. You can also block them with any content blocker, and the app
+      works the same without them. Meta and Reddit let you limit ad personalisation in your
+      account settings with them.
     </p>
 
     <h2>Security</h2>
     <p>
       Data is encrypted in transit and at rest by our providers. Every request to our servers is
-      checked against a signed Google sign-in token, each account can reach only its own data,
+      checked against a signed sign-in token, each account can reach only its own data,
       and payment details never touch our servers. No system is perfectly secure, so if you think
       your account has been misused, tell us at <Mail />.
     </p>
@@ -226,7 +255,7 @@ const PrivacyPolicy = () => (
 
     <h2>Contact</h2>
     <p>
-      {LEGAL.seller} (sole trader), {LEGAL.address}. Email <Mail />.
+      {LEGAL.seller}. Email <Mail />.
     </p>
   </>
 );
