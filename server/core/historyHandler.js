@@ -70,7 +70,7 @@ export async function handleHistory(req, res) {
       if (historyVisible != null) {
         const visible = (newest || []).slice(0, historyVisible);
         if (!visible.some((r) => r.id === id)) {
-          return res.status(402).json({ error: 'Older runs are part of RoleBerry Pro.', code: 'upgrade_required' });
+          return res.status(402).json({ error: 'Older runs are part of Roleberry Pro.', code: 'upgrade_required' });
         }
       }
       return res.json({

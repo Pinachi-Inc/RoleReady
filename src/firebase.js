@@ -11,12 +11,6 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-console.log('🔥 Firebase Configuration:');
-console.log('📋 Config object:', firebaseConfig);
-console.log('🔑 API Key present:', !!firebaseConfig.apiKey);
-console.log('🏠 Auth Domain:', firebaseConfig.authDomain);
-console.log('🆔 Project ID:', firebaseConfig.projectId);
-
 // Check for missing config
 const missingKeys = Object.entries(firebaseConfig)
   .filter(([key, value]) => !value)
@@ -28,9 +22,7 @@ if (missingKeys.length > 0) {
 }
 
 // Initialize Firebase
-console.log('🚀 Initializing Firebase...');
 const app = initializeApp(firebaseConfig);
-console.log('✅ Firebase initialized successfully');
 
 // Initialize Firebase Authentication and get a reference to the service
 export const auth = getAuth(app);

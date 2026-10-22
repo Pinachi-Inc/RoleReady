@@ -36,3 +36,9 @@ export const trackSignUp = (isNewUser, method) => {
   if (!isNewUser) return;
   track('CompleteRegistration', method ? { content_name: method } : undefined);
 };
+
+// Fire Purchase once, when a checkout has just turned a free account into a paying one.
+// `value` is the plan's monthly price in USD, so Meta can report cost per paying customer.
+export const trackPurchase = (plan, value) => {
+  track('Purchase', { value, currency: 'USD', content_name: plan });
+};
