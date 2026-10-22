@@ -28,7 +28,7 @@ function normalise(email) {
 async function requireAccount(email) {
   const record = await getAuthUserByEmail(email);
   if (!record) {
-    throw new Error(`${email} has not signed in to RoleBerry yet. Ask them to sign in once, or add them to COMP_MAX_EMAILS instead.`);
+    throw new Error(`${email} has not signed in to Roleberry yet. Ask them to sign in once, or add them to COMP_MAX_EMAILS instead.`);
   }
   return record;
 }
