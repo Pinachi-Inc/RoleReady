@@ -29,7 +29,7 @@ export async function sendSupportEmail({ subject, text, html, replyTo = null, at
   }
 
   const body = {
-    sender: { name: 'RoleBerry Feedback', email: process.env.FEEDBACK_FROM_EMAIL || DEFAULT_ADDRESS },
+    sender: { name: 'Roleberry Feedback', email: process.env.FEEDBACK_FROM_EMAIL || DEFAULT_ADDRESS },
     to: [{ email: process.env.FEEDBACK_TO_EMAIL || DEFAULT_ADDRESS }],
     subject,
     textContent: text,
@@ -47,7 +47,18 @@ export async function sendSupportEmail({ subject, text, html, replyTo = null, at
   } catch (err) {
     const status = err?.response?.status;
     const reason = status ? `brevo_${status}` : 'network';
-    console.error('[mailer] send failed: %s', reason);
+    // Brevo's own words ("Key not found", "unrecognised IP address") tell a wrong key from a
+    // blocked IP; the status alone does not.
+    console.error('[mailer] send failed: %s %s', reason, brevoDetail(err));
     return { sent: false, reason };
   }
+}
+
+// Brevo's error code and message, or the network error, short and with anything key-shaped masked.
+function brevoDetail(err) {
+  const data = err?.response?.data;
+  const detail = data && typeof data === 'object'
+    ? [data.code, data.message].filter(Boolean).join(': ')
+    : String(data || err?.code || err?.message || '');
+  return detail.replace(/x(keysib|smtpsib)-[\w-]+/gi, 'x$1-***').slice(0, 200);
 }

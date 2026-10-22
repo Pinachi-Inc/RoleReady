@@ -7,22 +7,31 @@ const NAV_ACTIVE = 'bg-white/10 text-white';
 const NAV_IDLE = 'text-white/80 hover:bg-white/10 hover:text-white';
 
 export function TopBar({ page, onNavigate, profileSwitcher, account }) {
+  // The logo and Optimize both open the main page, so they are one button: a single hover and
+  // active state covers both, with a thin divider between the logo and the label.
   const items = [
-    { id: 'main', label: 'Optimize', Icon: Zap },
     { id: 'history', label: 'History', Icon: Clock },
     { id: 'setup', label: 'Your info', Icon: UserRound }
   ];
+  const homeActive = page === 'main';
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-ink px-4 sm:px-6 py-2.5">
       <button
         type="button"
         onClick={() => onNavigate('main')}
-        aria-label="Roleberry home"
-        className="mr-2 sm:mr-4 cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25"
+        aria-label="Optimize"
+        aria-current={homeActive ? 'page' : undefined}
+        className={`group inline-flex items-center h-11 sm:h-10 pl-2.5 pr-2.5 sm:pr-3 rounded-xl ring-1 ring-inset transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25 ${homeActive ? 'bg-white/10 ring-white/15 text-white' : 'ring-white/10 text-white/80 hover:bg-white/10 hover:ring-white/15 hover:text-white'}`}
       >
-        <img src="/roleberry-logo-dark.svg" alt="" className="h-[26px] w-auto" />
+        <img src="/roleberry-logo-dark.svg" alt="" className="h-[24px] sm:h-[26px] w-auto" />
+        <span aria-hidden="true" className={`mx-2.5 sm:mx-3 h-5 w-px transition-colors ${homeActive ? 'bg-white/30' : 'bg-white/20 group-hover:bg-white/30'}`} />
+        <span className="inline-flex items-center gap-[7px] text-[13.5px] font-semibold whitespace-nowrap">
+          <Zap className="h-4 w-4" />
+          {/* Phones show the bolt only, so the profile switcher and avatar still fit on the row. */}
+          <span className="hidden sm:inline">Optimize</span>
+        </span>
       </button>
-      <nav aria-label="App" className="order-last w-full grid grid-cols-3 gap-1 sm:order-none sm:w-auto sm:flex sm:flex-row sm:flex-wrap sm:gap-0.5">
+      <nav aria-label="App" className="order-last w-full grid grid-cols-2 gap-1 sm:order-none sm:w-auto sm:flex sm:flex-row sm:flex-wrap sm:gap-0.5">
         {items.map(({ id, label, Icon }) => {
           const active = page === id;
           return (

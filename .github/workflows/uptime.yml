@@ -1,0 +1,52 @@
+name: Uptime
+# Checks roleberry.app every hour. On failure it opens one issue (assigned to the owner, so
+# GitHub emails them) and closes it again when the site is back. No outside account needed.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  issues: write
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the site and the API
+        id: probe
+        run: |
+          fail=""
+          # The app shell must load.
+          code=$(curl -s -o page.html -w '%{http_code}' --max-time 20 https://roleberry.app/ || echo 000)
+          if [ "$code" != "200" ] || ! grep -q 'id="root"' page.html; then fail="$fail home page answered $code;"; fi
+          # The API must be up: an unsigned request is refused with 401, not 404 or 5xx.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST -H 'Content-Type: application/json' -d '{}' https://roleberry.app/api/optimize || echo 000)
+          if [ "$code" != "401" ]; then fail="$fail /api/optimize answered $code (expected 401);"; fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST -H 'Content-Type: application/json' -d '{}' https://roleberry.app/api/billing/status || echo 000)
+          if [ "$code" != "401" ]; then fail="$fail /api/billing/status answered $code (expected 401);"; fi
+          echo "fail=$fail" >> "$GITHUB_OUTPUT"
+          if [ -n "$fail" ]; then echo "::error::$fail"; fi
+      - name: Open or close the outage issue
+        uses: actions/github-script@v7
+        env:
+          FAIL: ${{ steps.probe.outputs.fail }}
+        with:
+          script: |
+            const title = 'roleberry.app is down';
+            const { data: open } = await github.rest.issues.listForRepo({ ...context.repo, state: 'open', labels: 'outage' });
+            const existing = open.find((i) => i.title === title);
+            const fail = process.env.FAIL;
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            if (fail && !existing) {
+              await github.rest.issues.create({ ...context.repo, title, labels: ['outage'], assignees: ['yavrumian'],
+                body: `The hourly uptime check failed: ${fail}\n\nRun: ${run}\n\nThis issue closes itself when the site answers again.` });
+            } else if (fail && existing) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: existing.number, body: `Still failing: ${fail}\n\n${run}` });
+            } else if (!fail && existing) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: existing.number, body: `Back up. ${run}` });
+              await github.rest.issues.update({ ...context.repo, issue_number: existing.number, state: 'closed' });
+            }
+            if (fail) core.setFailed(fail);
