@@ -69,6 +69,13 @@ const axios = {
     }
     if (url.endsWith('/chat/completions')) {
       globalThis.__E2E_LAST_MODEL = body?.model;
+      globalThis.__E2E_LAST_MODEL_BODY = body;
+      globalThis.__E2E_LAST_MODEL_TIMEOUT = config?.timeout;
+      // Set __E2E_MODEL_FAIL to { status } (a provider HTTP error) or { code } (e.g. a timeout).
+      const fail = globalThis.__E2E_MODEL_FAIL;
+      if (fail) {
+        throw Object.assign(new Error('fake model failure'), fail.status ? { response: { status: fail.status, data: { error: { message: 'provider says no' } } } } : { code: fail.code });
+      }
       return { data: { choices: [{ message: { content: cvJson() }, finish_reason: 'stop' }], usage: {} } };
     }
     if (url === 'https://api.brevo.com/v3/smtp/email') {
