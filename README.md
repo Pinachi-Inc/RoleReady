@@ -113,7 +113,6 @@ AI Input (sent to AI)
 
 ### Rendering template
 - Runtime renderer: `src/templateRenderer.js`
-- Standalone reference: `static-cv-template.html`
 - Sections: Summary, Core Skills (category: item, item…), Certifications, Professional Experience (Title | Company | Location; Start — End; bullets), Education
 - Header (name + contact) centered, no borders; section headers with subtle background
 
@@ -152,7 +151,6 @@ encver/
   server/cvValidation.js            # skills validation + JD share
   server/cvRenderer.js              # markdown fallback renderer
   src/templateRenderer.js           # HTML template renderer
-  static-cv-template.html           # reference template
   utils/markdown.js, utils/download.js
   vite.config.js                    # dev proxy + host allowances
 ```
