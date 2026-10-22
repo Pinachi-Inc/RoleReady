@@ -10,7 +10,6 @@
     "server": "node server/index.js",
     "start": "concurrently -k -n server,client -c red,blue \"npm run server\" \"npm run dev\"",
     "postinstall": "node scripts/patch-pdfjs.cjs",
-    "vercel-build": "node scripts/patch-pdfjs.cjs && npm run build",
     "firebase:emulators": "firebase emulators:start",
     "firebase:deploy": "node scripts/deploy-firebase.js",
     "firebase:functions:deploy": "firebase deploy --only functions",
