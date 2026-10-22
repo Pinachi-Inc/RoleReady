@@ -1,13 +1,15 @@
 import { PLAN_LIMITS } from './firestore.js';
 
 // The four account emails (see server/core/lifecycleEmails.js). Each template is a subject and a
-// list of blocks, rendered to plain text and to deliberately plain HTML so it reads like a
-// personal email: no images, no logo, no tracking pixels.
+// list of blocks, rendered to plain text and to light HTML: the Roleberry logo on top (served from
+// public/email/), short paragraphs and one berry button. No tracking pixels.
 //   { p: 'text' }               paragraph
 //   { ol: ['a', 'b'] }          numbered list
 //   { cta: 'Label', url }       link
 
 const APP = (process.env.APP_URL || 'https://roleberry.app').replace(/\/+$/, '');
+// 400x102 PNG, shown at 140x36. Kept at a fixed path so emails already sent keep their logo.
+const LOGO_URL = `${APP}/email/roleberry-logo@2x.png`;
 
 const FREE_RUNS = PLAN_LIMITS.free.optimizations;
 const PRO_RUNS = PLAN_LIMITS.paid.optimizations.toLocaleString('en-US');
@@ -124,11 +126,14 @@ export function renderEmail({ subject, blocks }, { unsubscribeUrl }) {
 
   const body = blocks.map((b) => {
     if (b.ol) return `<ol style="margin:0 0 14px;padding-left:22px">${b.ol.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ol>`;
-    if (b.cta) return `<p style="margin:0 0 14px"><a href="${escapeHtml(b.url)}" style="color:#B8174F;font-weight:bold">${escapeHtml(b.cta)}</a></p>`;
+    if (b.cta) {
+      return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 20px"><tr><td style="background:#B8174F;border-radius:8px"><a href="${escapeHtml(b.url)}" style="display:inline-block;padding:11px 22px;color:#ffffff;font-weight:bold;font-size:15px;text-decoration:none;border-radius:8px">${escapeHtml(b.cta)}</a></td></tr></table>`;
+    }
     return `<p style="margin:0 0 14px">${escapeHtml(b.p)}</p>`;
   }).join('\n');
 
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#24131C;max-width:560px">
+<p style="margin:0 0 24px"><a href="${APP}/"><img src="${LOGO_URL}" width="140" height="36" alt="Roleberry" style="display:block;border:0;width:140px;height:36px"></a></p>
 ${body}
 <hr style="border:0;border-top:1px solid #eee;margin:24px 0 12px">
 <p style="margin:0;font-size:12px;color:#6b5a63">You're getting this because you have a Roleberry account. Don't want these emails? <a href="${escapeHtml(unsubscribeUrl)}" style="color:#6b5a63">Unsubscribe</a></p>
