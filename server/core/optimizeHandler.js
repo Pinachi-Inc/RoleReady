@@ -6,6 +6,21 @@ import { requireAuth } from './firebaseAuth.js';
 import { consumeQuota, refundQuota, recordRun, newRunId } from './firestore.js';
 import { reasoningConfig, providerConfig } from './modelOptions.js';
 
+// A stuck model call must fail well before Vercel stops the function at 300 s: then the run is
+// refunded and the user is told, instead of waiting five minutes and losing a free run.
+const MODEL_TIMEOUT_MS = 90_000;
+
+// Request size limits. The browser always sends max_tokens 4000 and temperature 0.45; the caps
+// only stop a hand-made request from asking for a huge (and expensive) output.
+const MAX_OUTPUT_TOKENS = 6000;
+const MAX_JOB_DESCRIPTION_CHARS = 30_000;
+const MAX_PROFILE_CHARS = 150_000;
+
+const clampNumber = (value, min, max, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+};
+
 // Ensure env values are safe for HTTP headers/URLs
 function sanitizeEnv(value) {
   if (typeof value !== 'string') return '';
@@ -143,7 +158,7 @@ async function generateCoverLetter({ config, model, jobDescription, profile, tem
       { role: 'system', content: buildCoverLetterPrompt() },
       { role: 'user', content: JSON.stringify({ jobDescription, myProfile: profile }) }
     ]
-  }, { headers });
+  }, { headers, timeout: MODEL_TIMEOUT_MS });
 
   logModelCall('cover-letter', result, 900);
 
@@ -255,9 +270,15 @@ export async function handleOptimizeRequest(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
-  const { jobDescription, aiUserInfo } = req.body || {};
+  const { jobDescription, aiUserInfo, fixedUserInfo } = req.body || {};
   if (!jobDescription || !aiUserInfo) {
-    return res.status(400).json({ error: 'jobDescription and aiUserInfo are required' });
+    return res.status(400).json({ error: 'Please paste a job description and fill in your info first.' });
+  }
+  if (String(jobDescription).length > MAX_JOB_DESCRIPTION_CHARS) {
+    return res.status(400).json({ error: `That job posting is too long. Please paste just the job description (under ${MAX_JOB_DESCRIPTION_CHARS.toLocaleString('en-US')} characters).` });
+  }
+  if (String(aiUserInfo).length + String(fixedUserInfo || '').length > MAX_PROFILE_CHARS) {
+    return res.status(400).json({ error: 'Your saved info is too long to send. Please shorten it and try again.' });
   }
 
   // Consumed before the model call rather than after, so ten parallel requests from a free
@@ -321,7 +342,9 @@ function publicQuota(quota) {
 }
 
 async function runOptimize(req, res, quota, runId = null) {
-  const { jobDescription, aiUserInfo, fixedUserInfo, max_tokens = 4000, temperature = 0.45, includeCoverLetter = false } = req.body || {};
+  const { jobDescription, aiUserInfo, fixedUserInfo, includeCoverLetter = false } = req.body || {};
+  const max_tokens = Math.round(clampNumber(req.body?.max_tokens, 500, MAX_OUTPUT_TOKENS, 4000));
+  const temperature = clampNumber(req.body?.temperature, 0, 1, 0.45);
 
   const config = getConfig();
   const model = config.DEFAULT_MODEL;
@@ -335,7 +358,7 @@ async function runOptimize(req, res, quota, runId = null) {
   );
 
   if (!jobDescription || !aiUserInfo) {
-    return res.status(400).json({ error: 'jobDescription and aiUserInfo are required' });
+    return res.status(400).json({ error: 'Please paste a job description and fill in your info first.' });
   }
 
   if (!config.OPENAI_API_KEY) {
@@ -419,7 +442,7 @@ async function runOptimize(req, res, quota, runId = null) {
       JSON.stringify(userPayload).length,
       JSON.stringify(userPayload).slice(0, 400)
     );
-    const result = await axios.post(url, initialBody, { headers });
+    const result = await axios.post(url, initialBody, { headers, timeout: MODEL_TIMEOUT_MS });
     const cvMs = Date.now() - startedAt;
 
     logModelCall('cv', result, max_tokens);
@@ -641,10 +664,19 @@ async function runOptimize(req, res, quota, runId = null) {
     res.json(payload);
     return payload;
   } catch (err) {
-    const status = err.response?.status || 500;
+    const upstream = err.response?.status || null;
     const data = err.response?.data || err.message;
-    console.error('[optimize] error status=%s message=%s data=%j', status, err.message, data);
-    res.status(status).json({ error: data });
+    console.error('[optimize] error status=%s code=%s message=%s data=%j', upstream, err.code, err.message, data);
+    // The provider's own status is never passed on. Its 402 means our OpenRouter credit ran
+    // out, and the app reads any 402 as "upgrade your plan"; its 401 would read as the
+    // user's session expiring. The user only needs to know whether to retry now or later.
+    if (err.code === 'ECONNABORTED') {
+      return res.status(504).json({ error: 'The AI service took too long to answer. Please try again.' });
+    }
+    if (upstream === 429) {
+      return res.status(429).json({ error: 'The AI service is busy. Please wait a moment and try again.' });
+    }
+    return res.status(502).json({ error: 'The AI service is temporarily unavailable. Please try again in a few moments.' });
   }
 }
 

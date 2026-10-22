@@ -18,8 +18,17 @@ export const optimizeCv = async ({ jobDescription, aiUserInfo, fixedUserInfo, ma
   }
 
   if (!response.ok) {
+    // The server answers { error: '<sentence for the user>' }; fall back to the raw text.
     const errorText = await response.text();
-    throw new Error(`API request failed: ${response.status} - ${errorText}`);
+    let detail = errorText;
+    try {
+      const parsed = JSON.parse(errorText);
+      if (typeof parsed?.error === 'string') detail = parsed.error;
+    } catch {}
+    const error = new Error(`API request failed: ${response.status} - ${detail}`);
+    error.status = response.status;
+    error.detail = detail;
+    throw error;
   }
 
   const data = await response.json();
