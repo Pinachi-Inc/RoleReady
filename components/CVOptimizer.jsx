@@ -1529,7 +1529,7 @@ const CVOptimizer = () => {
                 <SectionHead
                   icon={Briefcase}
                   title="Experience"
-                  hint="Write what you actually did, with numbers where you have them. Each tailored CV re-angles these toward the job, it never invents new ones."
+                  hint="Write what you actually did. Each tailored CV re-angles these toward the job, it never invents new ones."
                   actions={
                     <button
                       type="button"

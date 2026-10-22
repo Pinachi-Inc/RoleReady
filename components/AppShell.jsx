@@ -1,5 +1,5 @@
-import React from 'react';
-import { Zap, Clock, UserRound, Sparkles } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Zap, Clock, UserRound, Sparkles, HelpCircle } from 'lucide-react';
 import { prefetchHistory } from '../services/history.js';
 
 const NAV_BASE = 'flex flex-col justify-center sm:flex-row sm:inline-flex items-center gap-1 sm:gap-[7px] h-14 sm:h-9 px-1 sm:px-3 rounded-[10px] text-[12px] sm:text-[13.5px] font-semibold whitespace-nowrap focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25';
@@ -31,7 +31,7 @@ export function TopBar({ page, onNavigate, profileSwitcher, account }) {
           <span className="hidden sm:inline">Optimize</span>
         </span>
       </button>
-      <nav aria-label="App" className="order-last w-full grid grid-cols-2 gap-1 sm:order-none sm:w-auto sm:flex sm:flex-row sm:flex-wrap sm:gap-0.5">
+      <nav aria-label="App" className="order-last w-full grid grid-cols-[1fr_1fr_auto] gap-1 sm:order-none sm:w-auto sm:flex sm:flex-row sm:flex-wrap sm:gap-0.5">
         {items.map(({ id, label, Icon }) => {
           const active = page === id;
           return (
@@ -50,11 +50,62 @@ export function TopBar({ page, onNavigate, profileSwitcher, account }) {
             </button>
           );
         })}
+        {/* Below md the top row has no room beside Profiles, so the "?" ends the nav instead. */}
+        <TipsButton className="md:hidden" buttonClassName="h-14 w-12 rounded-[10px] sm:h-9 sm:w-9 sm:rounded-full" />
       </nav>
-      <div className="flex-1" />
-      {profileSwitcher}
-      {account}
+      {/* One group, pushed right with ml-auto rather than a spacer (a spacer costs two gaps), so
+          the avatar never wraps onto a line of its own. */}
+      <div className="ml-auto flex items-center gap-x-4">
+        <TipsButton className="hidden md:block" buttonClassName="h-9 w-9 rounded-full" />
+        {profileSwitcher}
+        {account}
+      </div>
     </header>
+  );
+}
+
+// A small "?" beside Profiles (at the end of the nav on narrower screens). Opens three short tips; closes on
+// an outside click or Escape.
+function TipsButton({ className = '', buttonClassName = '' }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  return (
+    <div className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Tips"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        title="Tips"
+        className={`grid place-items-center ${buttonClassName} focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/25 ${open ? 'bg-white/10 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'}`}
+      >
+        <HelpCircle className="h-5 w-5" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)}></div>
+          <div
+            role="dialog"
+            aria-label="Tips"
+            className="absolute right-0 top-full mt-2 z-20 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-line bg-white p-4 text-left text-[13px] font-normal text-ink shadow-xl dark:bg-night-raised dark:border-night-line dark:text-night-text"
+          >
+            <div className="mb-2 font-extrabold">Getting better results</div>
+            <ul className="list-disc space-y-1 pl-4 text-ink-muted dark:text-night-muted">
+              <li>Paste the whole job posting, requirements included.</li>
+              <li>Add numbers to your experience where you can.</li>
+              <li>Read the CV before you send it.</li>
+            </ul>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
