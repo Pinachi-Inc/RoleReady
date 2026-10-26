@@ -33,8 +33,7 @@ const RefundPolicy = () => (
   <>
     <p>
       This policy covers paid {LEGAL.product} plans (Pro at $12 per month and Max at $49 per month).
-      Orders are processed by {LEGAL.merchant}, {LEGAL.merchantNames}, whichever is named at checkout
-      and on your receipt. It is the merchant of record for all orders and issues any refund. The
+      Orders are processed by {LEGAL.merchant}, {LEGAL.merchantNames}. It is the merchant of record for all orders and issues any refund. The
       full rules for plans and payment are in our <a href="/terms">Terms of Service</a>.
     </p>
     <h2>Cancelling</h2>

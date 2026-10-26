@@ -23,10 +23,9 @@ export const LEGAL = {
   // Minimum age to use Roleberry.
   minimumAge: 16,
   // The merchant of record that resells the subscription. Lemon Squeezy declined Roleberry in
-  // October 2026; Dodo Payments and Paddle are being applied to. Once one approves, put only its
-  // name in merchantNames.
+  // October 2026; Polar was chosen next.
   merchant: 'our reseller',
-  merchantNames: 'Dodo Payments or Paddle.com',
+  merchantNames: 'Polar',
 };
 
 export const isDraft = () => Object.values(LEGAL).some((v) => typeof v === 'string' && /^\[.*\]$/.test(v));
