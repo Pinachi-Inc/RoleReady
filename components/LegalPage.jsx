@@ -4,13 +4,15 @@ import { LEGAL, isDraft } from '../src/legal/config.js';
 import { openFeedback } from '../services/feedback.js';
 import PrivacyPolicy from '../src/legal/PrivacyPolicy.jsx';
 import TermsOfService from '../src/legal/TermsOfService.jsx';
+import RefundPolicy from '../src/legal/RefundPolicy.jsx';
 
-// /privacy and /terms. Rendered outside the app (no sign-in needed) because Lemon Squeezy, Google's
-// OAuth consent screen and anyone deciding whether to sign up all need to read them first.
+// /privacy, /terms and /refunds. Rendered outside the app (no sign-in needed) because payment
+// providers' reviewers, Google's OAuth consent screen and anyone deciding whether to sign up all need to read them first.
 
 export const LEGAL_PAGES = {
   '/privacy': { title: 'Privacy Policy', Body: PrivacyPolicy },
   '/terms': { title: 'Terms of Service', Body: TermsOfService },
+  '/refunds': { title: 'Refund and Cancellation Policy', Body: RefundPolicy },
 };
 
 // Prose styling scoped to this page, so the policy text stays plain JSX.
@@ -33,7 +35,7 @@ const LegalPage = ({ path }) => {
   }, [page.title]);
 
   const { Body } = page;
-  const other = path === '/privacy' ? ['/terms', 'Terms of Service'] : ['/privacy', 'Privacy Policy'];
+  const others = Object.entries(LEGAL_PAGES).filter(([p]) => p !== path);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
@@ -58,7 +60,9 @@ const LegalPage = ({ path }) => {
         </article>
 
         <footer className="mt-12 pt-6 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400 flex flex-wrap gap-4">
-          <a href={other[0]} className="hover:text-gray-900 dark:hover:text-gray-100">{other[1]}</a>
+          {others.map(([p, { title }]) => (
+            <a key={p} href={p} className="hover:text-gray-900 dark:hover:text-gray-100">{title}</a>
+          ))}
           <a href={`mailto:${LEGAL.email}`} className="hover:text-gray-900 dark:hover:text-gray-100">Contact</a>
           <button type="button" onClick={() => openFeedback({ type: 'bug' })} className="hover:text-gray-900 dark:hover:text-gray-100">
             Report a problem

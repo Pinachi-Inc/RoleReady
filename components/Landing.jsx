@@ -305,6 +305,10 @@ const Landing = () => (
       <a href="/privacy" className="underline hover:text-ink">Privacy Policy</a>
       <span className="mx-2">·</span>
       <a href="/terms" className="underline hover:text-ink">Terms of Service</a>
+      <span className="mx-2">·</span>
+      <a href="/refunds" className="underline hover:text-ink">Refund Policy</a>
+      <span className="mx-2">·</span>
+      <a href="mailto:support@roleberry.app" className="underline hover:text-ink">Contact: support@roleberry.app</a>
     </footer>
   </div>
 );

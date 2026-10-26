@@ -1,5 +1,6 @@
 import React from 'react';
 import { LEGAL } from './config.js';
+import { Cancelling, Refunds } from './RefundPolicy.jsx';
 
 // Plan facts here must match PLAN_LIMITS in server/core/firestore.js and
 // components/PricingModal.jsx. Change all three together.
@@ -43,36 +44,25 @@ const TermsOfService = () => (
       over to the next month.
     </p>
     <p>
-      <strong>Who you pay.</strong> Subscriptions are sold through Lemon Squeezy, which acts as
-      our reseller and merchant of record. When you subscribe, you buy from Lemon Squeezy: it
-      takes the payment, charges and pays any sales tax or VAT, issues your receipt, and its own
+      <strong>Who you pay.</strong> Orders are processed by our online reseller,
+      {' '}{LEGAL.merchantNames}, whichever is named at checkout and on your receipt. It is the
+      merchant of record for all orders: when you subscribe, you buy from it. It takes the payment,
+      charges and pays any sales tax or VAT, issues your receipt, handles refunds, and its own
       terms apply to the purchase. We provide {LEGAL.product} itself under these terms.
     </p>
-    <p>
-      <strong>Cancelling.</strong> Cancel any time from Manage subscription. You keep your plan
-      until the end of the period you have paid for, then move to Free. Your saved data stays;
-      history beyond the Free limit and extra saved profiles become read-only or locked until you
-      subscribe again.
-    </p>
+    <Cancelling />
     <p>
       <strong>Switching plans.</strong> You can move between Pro and Max from the plans page in
       the app. The charge for the rest of the current period is prorated.
     </p>
     <p>
-      <strong>Failed payments.</strong> If a renewal fails, Lemon Squeezy retries for a short period and
+      <strong>Failed payments.</strong> If a renewal fails, {LEGAL.merchant} retries for a short period and
       you keep access meanwhile. If payment still fails, the subscription ends and the account
       moves to Free.
     </p>
+    <Refunds />
     <p>
-      <strong>Refunds.</strong> If {LEGAL.product} is not for you, ask for a full refund within 7
-      days of your first payment on a plan by writing to <Mail />. We do not refund renewals or
-      partly used months. We do refund charges caused by a billing error on our side, and we
-      refund or credit you for a long outage on our side. Switching between Pro and Max is not a
-      refund: the difference is prorated instead. Approved refunds are issued through Lemon
-      Squeezy to the payment method you used. If you are a consumer in the EU or UK, you
-      also have 14 days from subscribing to withdraw. By using a paid feature during that time
-      you ask us to start straight away, and any refund is reduced in proportion to the period
-      you used. None of this limits other rights you have under consumer law.
+      The same rules are on their own page: <a href="/refunds">Refund and Cancellation Policy</a>.
     </p>
     <p>
       <strong>Price changes.</strong> We will give at least 30 days' notice of a price change,
@@ -127,7 +117,7 @@ const TermsOfService = () => (
       standing. They do not transfer any of our intellectual property to you.
     </p>
     <p>
-      {LEGAL.product} relies on third parties, including Google, Vercel, Lemon Squeezy and AI model
+      {LEGAL.product} relies on third parties, including Google, Vercel, {LEGAL.merchant} and AI model
       providers. Their outages or changes can affect the service, and we are not responsible for
       their services.
     </p>
