@@ -278,23 +278,36 @@ async function readRawBody(req) {
   throw new Error('raw request body is unavailable, so the signature cannot be checked');
 }
 
-// Standard Webhooks: the signed content is `${id}.${timestamp}.${body}`, HMAC-SHA256 under the
-// UTF-8 bytes of the webhook secret, base64. The signature header is a space-separated list of
-// `v1,<base64>` entries and any one of them may match. A timestamp more than five minutes from
-// now is rejected so a captured request cannot be replayed later.
+// Polar signs with Standard Webhooks: the signed content is `${id}.${timestamp}.${body}`,
+// HMAC-SHA256, base64. The key depends on when the secret was made. Secrets from 8 September
+// 2026 on are Standard Webhooks: drop the `whsec_` prefix and base64-decode the rest. Older
+// Polar secrets use the UTF-8 bytes of the whole string. Like Polar's own SDKs we accept either.
+// The signature header is a space-separated list of `v1,<base64>` entries and any one may match.
+// A timestamp more than five minutes from now is rejected so a captured request cannot be
+// replayed later.
+function signingKeys(secret) {
+  const keys = [];
+  if (secret.startsWith('whsec_')) {
+    const decoded = Buffer.from(secret.slice('whsec_'.length), 'base64');
+    if (decoded.length) keys.push(decoded);
+  }
+  keys.push(Buffer.from(secret, 'utf8'));
+  return keys;
+}
+
 export function validSignature({ id, timestamp, signature }, raw, secret, now = Date.now()) {
   if (!id || !timestamp || !signature || !secret) return false;
   const ts = Number(timestamp);
   if (!Number.isFinite(ts) || Math.abs(now / 1000 - ts) > 300) return false;
-  const expected = crypto.createHmac('sha256', Buffer.from(secret, 'utf8'))
+  const expected = signingKeys(String(secret)).map((key) => crypto.createHmac('sha256', key)
     .update(`${id}.${timestamp}.`)
     .update(raw)
-    .digest();
+    .digest());
   return String(signature).split(' ').some((entry) => {
     const [version, value] = entry.split(',');
     if (version !== 'v1' || !value) return false;
     const given = Buffer.from(value, 'base64');
-    return given.length === expected.length && crypto.timingSafeEqual(given, expected);
+    return expected.some((digest) => given.length === digest.length && crypto.timingSafeEqual(given, digest));
   });
 }
 

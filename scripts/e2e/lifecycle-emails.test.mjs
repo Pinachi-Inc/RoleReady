@@ -21,7 +21,7 @@ process.env.POLAR_ACCESS_TOKEN = 'polar_test_token';
 process.env.POLAR_SERVER = 'sandbox';
 process.env.POLAR_PRODUCT_ID_PRO = 'prod_pro';
 process.env.POLAR_PRODUCT_ID_MAX = 'prod_max';
-process.env.POLAR_WEBHOOK_SECRET = 'polar_webhook_secret';
+process.env.POLAR_WEBHOOK_SECRET = 'whsec_cm9sZWJlcnJ5LXRlc3Qtc2lnbmluZy1rZXktMzJieXQ=';
 process.env.APP_URL = 'https://roleberry.test';
 delete process.env.BILLING_ENFORCED;
 delete process.env.VERCEL_ENV;
@@ -106,9 +106,11 @@ function putSubscription(subId, product, statusValue, endsAt) {
   });
 }
 
-// Standard Webhooks signature: HMAC-SHA256 base64 over `${id}.${timestamp}.${body}`.
+// Standard Webhooks signature, as Polar sends it: HMAC-SHA256 base64 over
+// `${id}.${timestamp}.${body}`. A `whsec_` secret's key is the base64-decoded rest of it.
 function signPolar(raw, secret, id, ts) {
-  return `v1,${crypto.createHmac('sha256', Buffer.from(secret, 'utf8')).update(`${id}.${ts}.`).update(raw).digest('base64')}`;
+  const key = secret.startsWith('whsec_') ? Buffer.from(secret.slice(6), 'base64') : Buffer.from(secret, 'utf8');
+  return `v1,${crypto.createHmac('sha256', key).update(`${id}.${ts}.`).update(raw).digest('base64')}`;
 }
 
 async function webhook(eventName, subId, uid) {
