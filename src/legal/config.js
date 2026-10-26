@@ -17,11 +17,16 @@ export const LEGAL = {
   governingLaw: 'the Republic of Armenia',
   courts: 'the courts of Yerevan, Armenia',
   // Last time either document changed in substance.
-  effectiveDate: '22 October 2026',
+  effectiveDate: '26 October 2026',
   // How long after an account deletion request everything is gone, backups included.
   deletionDays: 30,
   // Minimum age to use Roleberry.
   minimumAge: 16,
+  // The merchant of record that resells the subscription. Lemon Squeezy declined Roleberry in
+  // October 2026; Dodo Payments and Paddle are being applied to. Once one approves, put only its
+  // name in merchantNames.
+  merchant: 'our reseller',
+  merchantNames: 'Dodo Payments or Paddle.com',
 };
 
 export const isDraft = () => Object.values(LEGAL).some((v) => typeof v === 'string' && /^\[.*\]$/.test(v));
