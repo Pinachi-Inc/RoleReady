@@ -1,6 +1,6 @@
-// End-to-end checks for saved history, plan limits, Lemon Squeezy billing and complimentary
+// End-to-end checks for saved history, plan limits, Polar billing and complimentary
 // Max, run against the real handlers with an in-memory Firestore, locally signed Firebase
-// tokens, a stubbed model and a stubbed Lemon Squeezy API (see loader.mjs and fake-axios.mjs).
+// tokens, a stubbed model and a stubbed Polar API (see loader.mjs and fake-axios.mjs).
 //
 //   node --import ./scripts/e2e/register.mjs scripts/e2e/history.test.mjs
 //
@@ -17,11 +17,11 @@ process.env.OPENAI_API_KEY = 'test';
 process.env.OPENAI_BASE_URL = 'https://model.invalid/v1';
 process.env.OPENAI_MODEL = 'test/default-model';
 process.env.UNLIMITED_EMAILS = 'comped@example.com';
-process.env.LEMONSQUEEZY_API_KEY = 'ls_test_key';
-process.env.LEMONSQUEEZY_STORE_ID = '11';
-process.env.LEMONSQUEEZY_VARIANT_ID_PRO = '101';
-process.env.LEMONSQUEEZY_VARIANT_ID_MAX = '202';
-process.env.LEMONSQUEEZY_WEBHOOK_SECRET = 'ls_webhook_secret';
+process.env.POLAR_ACCESS_TOKEN = 'polar_test_token';
+process.env.POLAR_SERVER = 'sandbox';
+process.env.POLAR_PRODUCT_ID_PRO = 'prod_pro';
+process.env.POLAR_PRODUCT_ID_MAX = 'prod_max';
+process.env.POLAR_WEBHOOK_SECRET = 'polar_webhook_secret';
 process.env.APP_URL = 'https://roleberry.test';
 delete process.env.BILLING_ENFORCED;
 delete process.env.MAX_MONTHLY_RUNS;
@@ -34,7 +34,7 @@ const { handleHistory } = await import('../../server/core/historyHandler.js');
 const { getEntitlement, getUserDoc } = await import('../../server/core/firestore.js');
 const { handleCreateCheckout, handleBillingStatus, handleBillingWebhook, handleCustomerPortal } = await import('../../server/core/billing.js');
 const fs = globalThis.__E2E_FS;
-const ls = globalThis.__E2E_LS;
+const polar = globalThis.__E2E_POLAR;
 
 const b64url = (v) => Buffer.from(typeof v === 'string' ? v : JSON.stringify(v)).toString('base64url');
 // Defaults to a Google sign-in with a verified email, like most real users.
@@ -254,52 +254,56 @@ await check('enforced: a refused free run is not saved', async () => {
   }
 });
 
-out('\nmax plan and billing (Lemon Squeezy)');
+out('\nmax plan and billing (Polar)');
 
 const checkout = (uid, plan) => call(handleCreateCheckout, uid, plan === undefined ? {} : { plan });
 const status = (uid) => call(handleBillingStatus, uid);
 const portal = (uid) => call(handleCustomerPortal, uid);
-const lastCheckout = () => ls.checkouts[ls.checkouts.length - 1];
+const lastCheckout = () => polar.checkouts[polar.checkouts.length - 1];
 const planOf = (uid) => fs.get(`users/${uid}`)?.plan;
-const PRO = '101';
-const MAX = '202';
+const PRO = 'prod_pro';
+const MAX = 'prod_max';
 const DAY = 24 * 3600 * 1000;
 
-// What Lemon Squeezy holds for a subscription: the API's JSON:API object.
-function putSubscription(subId, variant, statusValue = 'active', { endsAt = null, customer = 7000 } = {}) {
-  ls.subs.set(String(subId), {
-    type: 'subscriptions',
+// What Polar holds for a subscription: the REST API's subscription object.
+function putSubscription(subId, product, statusValue = 'active', { endsAt = null, customer = 'cus_7000', cancelAtPeriodEnd = false } = {}) {
+  polar.subs.set(String(subId), {
     id: String(subId),
-    attributes: {
-      store_id: 11,
-      customer_id: customer,
-      variant_id: Number(variant),
-      status: statusValue,
-      cancelled: statusValue === 'cancelled',
-      renews_at: '2030-01-01T00:00:00.000000Z',
-      ends_at: endsAt,
-      urls: {
-        customer_portal: `https://roleberry.lemonsqueezy.com/billing?sub=${subId}`,
-        update_payment_method: `https://roleberry.lemonsqueezy.com/subscription/${subId}/payment-details`,
-      },
-    },
+    status: statusValue,
+    customer_id: customer,
+    product_id: product,
+    current_period_start: '2029-12-01T00:00:00Z',
+    current_period_end: '2030-01-01T00:00:00Z',
+    cancel_at_period_end: cancelAtPeriodEnd,
+    canceled_at: null,
+    ends_at: endsAt,
+    ended_at: null,
+    metadata: {},
+    customer: { id: customer, external_id: null, email: 'x@example.com' },
   });
 }
 
-// A signed webhook delivery. `uid` goes in meta.custom_data, as Lemon Squeezy echoes the
-// checkout's custom data on that subscription's events. The payload body is deliberately thin:
-// the handler re-reads the subscription from the API.
-async function webhook(eventName, subId, { uid = null, signature = null, payload = null } = {}) {
-  const invoice = eventName.startsWith('subscription_payment_');
+// Standard Webhooks signature: HMAC-SHA256 base64 over `${id}.${timestamp}.${body}`, keyed with
+// the UTF-8 bytes of the secret.
+function signPolar(raw, secret, id, ts) {
+  return `v1,${crypto.createHmac('sha256', Buffer.from(secret, 'utf8')).update(`${id}.${ts}.`).update(raw).digest('base64')}`;
+}
+
+// A signed webhook delivery. `uid` goes in the subscription's metadata, as Polar copies the
+// checkout's metadata onto the subscription. The payload body is deliberately thin: the handler
+// re-reads the subscription from the API.
+async function webhook(type, subId, { uid = null, payload = null, secret = process.env.POLAR_WEBHOOK_SECRET, ts = Math.floor(Date.now() / 1000), signatureHeader = null, id = `msg_${Math.random()}` } = {}) {
+  if (uid && polar.subs.has(String(subId))) polar.subs.get(String(subId)).metadata = { user_id: uid };
   const event = {
-    meta: { event_name: eventName, ...(uid ? { custom_data: { user_id: uid } } : {}) },
-    data: payload || (invoice
-      ? { type: 'subscription-invoices', id: `inv_${Date.now()}`, attributes: { subscription_id: Number(subId) } }
-      : { type: 'subscriptions', id: String(subId), attributes: {} }),
+    type,
+    timestamp: new Date().toISOString(),
+    data: payload || (type.startsWith('order.')
+      ? { id: `ord_${Date.now()}`, subscription_id: subId ? String(subId) : null }
+      : { id: String(subId) }),
   };
   const raw = Buffer.from(JSON.stringify(event));
-  const sig = signature ?? crypto.createHmac('sha256', process.env.LEMONSQUEEZY_WEBHOOK_SECRET).update(raw).digest('hex');
-  const req = { headers: { 'x-signature': sig }, rawBody: raw };
+  const sig = signatureHeader ?? signPolar(raw, secret, id, ts);
+  const req = { headers: { 'webhook-id': id, 'webhook-timestamp': String(ts), 'webhook-signature': sig }, rawBody: raw };
   const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
   await handleBillingWebhook(req, res);
   return res;
@@ -318,107 +322,144 @@ await check('checkout only accepts plan pro or max', async () => {
     const res = await checkout('buyer', bad);
     assert.equal(res.statusCode, 400, `plan=${String(bad)}`);
   }
-  assert.equal(ls.checkouts.length, 0, 'no checkout created for a bad plan');
+  assert.equal(polar.checkouts.length, 0, 'no checkout created for a bad plan');
 });
 
-await check('max checkout: Max variant, store, uid in custom data, email prefilled', async () => {
+await check('max checkout: Max product, uid in metadata, email prefilled', async () => {
   const res = await checkout('buyer', 'max');
   assert.equal(res.statusCode, 200, JSON.stringify(res.body));
-  assert.match(res.body.url, /^https:\/\/roleberry\.lemonsqueezy\.com\/checkout\//);
-  const { data } = lastCheckout();
-  assert.equal(data.type, 'checkouts');
-  assert.equal(data.relationships.variant.data.id, MAX);
-  assert.equal(data.relationships.store.data.id, '11');
-  assert.deepEqual(data.attributes.checkout_data.custom, { user_id: 'buyer', plan: 'max' });
-  assert.equal(data.attributes.checkout_data.email, 'buyer@example.com');
-  assert.equal(data.attributes.product_options.redirect_url, 'https://roleberry.test/?checkout=success');
-  assert.deepEqual(data.attributes.product_options.enabled_variants, [Number(MAX)]);
-  assert.equal(lastCheckout().auth, 'Bearer ls_test_key');
+  assert.match(res.body.url, /^https:\/\/sandbox-api\.polar\.sh\/checkout\//);
+  const sent = lastCheckout();
+  assert.equal(sent.base, 'https://sandbox-api.polar.sh/v1/checkouts/');
+  assert.deepEqual(sent.products, [MAX]);
+  assert.equal(sent.external_customer_id, 'buyer');
+  assert.deepEqual(sent.metadata, { user_id: 'buyer', plan: 'max' });
+  assert.equal(sent.customer_email, 'buyer@example.com');
+  assert.equal(sent.success_url, 'https://roleberry.test/?checkout=success');
+  assert.equal(sent.auth, 'Bearer polar_test_token');
   assert.equal(planOf('buyer'), undefined, 'checkout itself grants nothing');
 });
 
-await check('pro checkout uses the Pro variant', async () => {
+await check('pro checkout uses the Pro product', async () => {
   assert.equal((await checkout('buyer', 'pro')).statusCode, 200);
-  assert.equal(lastCheckout().data.relationships.variant.data.id, PRO);
+  assert.deepEqual(lastCheckout().products, [PRO]);
 });
 
-await check('max checkout is unavailable without LEMONSQUEEZY_VARIANT_ID_MAX', async () => {
-  const saved = process.env.LEMONSQUEEZY_VARIANT_ID_MAX;
-  delete process.env.LEMONSQUEEZY_VARIANT_ID_MAX;
+await check('max checkout is unavailable without POLAR_PRODUCT_ID_MAX', async () => {
+  const saved = process.env.POLAR_PRODUCT_ID_MAX;
+  delete process.env.POLAR_PRODUCT_ID_MAX;
   try {
     assert.equal((await checkout('buyer', 'max')).statusCode, 503);
     assert.equal((await status('buyer')).body.maxAvailable, false);
     assert.equal((await checkout('buyer', 'pro')).statusCode, 200, 'pro still works');
   } finally {
-    process.env.LEMONSQUEEZY_VARIANT_ID_MAX = saved;
+    process.env.POLAR_PRODUCT_ID_MAX = saved;
   }
 });
 
 await check('webhook with a bad or missing signature is rejected and changes nothing', async () => {
   putSubscription(5001, MAX);
-  assert.equal((await webhook('subscription_created', 5001, { uid: 'buyer', signature: 'forged' })).statusCode, 400);
-  assert.equal((await webhook('subscription_created', 5001, { uid: 'buyer', signature: '' })).statusCode, 400);
-  const wrongKey = crypto.createHmac('sha256', 'not-the-secret').update('{}').digest('hex');
-  assert.equal((await webhook('subscription_created', 5001, { uid: 'buyer', signature: wrongKey })).statusCode, 400);
+  assert.equal((await webhook('subscription.created', 5001, { uid: 'buyer', signatureHeader: 'forged' })).statusCode, 400);
+  assert.equal((await webhook('subscription.created', 5001, { uid: 'buyer', signatureHeader: '' })).statusCode, 400);
+  assert.equal((await webhook('subscription.created', 5001, { uid: 'buyer', secret: 'not-the-secret' })).statusCode, 400);
   assert.equal(planOf('buyer'), undefined);
 });
 
-await check('subscription_created maps the Max variant to plan max', async () => {
-  const res = await webhook('subscription_created', 5001, { uid: 'buyer' });
+await check('a timestamp 10 minutes old is rejected, one a minute old is fine', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  assert.equal((await webhook('subscription.created', 5001, { uid: 'buyer', ts: now - 600 })).statusCode, 400);
+  assert.equal((await webhook('subscription.created', 5001, { uid: 'buyer', ts: now + 600 })).statusCode, 400);
+  assert.equal(planOf('buyer'), undefined);
+  assert.equal((await webhook('subscription.created', 5001, { uid: 'buyer', ts: now - 60 })).statusCode, 200);
+  assert.equal(planOf('buyer'), 'max');
+  fs.delete('users/buyer');
+});
+
+await check('a signature header with two entries is accepted when the second is valid', async () => {
+  const id = 'msg_multi';
+  const ts = Math.floor(Date.now() / 1000);
+  const raw = Buffer.from(JSON.stringify({ type: 'subscription.created', timestamp: new Date().toISOString(), data: { id: '5001' } }));
+  const good = signPolar(raw, process.env.POLAR_WEBHOOK_SECRET, id, ts);
+  const bad = signPolar(raw, 'rotated-out-secret', id, ts);
+  polar.subs.get('5001').metadata = { user_id: 'buyer' };
+  const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
+  await handleBillingWebhook({ headers: { 'webhook-id': id, 'webhook-timestamp': String(ts), 'webhook-signature': `${bad} ${good}` }, rawBody: raw }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(planOf('buyer'), 'max');
+  fs.delete('users/buyer');
+});
+
+await check('subscription.created maps the Max product to plan max', async () => {
+  const res = await webhook('subscription.created', 5001, { uid: 'buyer' });
   assert.equal(res.statusCode, 200);
   const doc = fs.get('users/buyer');
   assert.equal(doc.plan, 'max');
   assert.equal(doc.billingSubscriptionId, '5001');
-  assert.equal(doc.billingCustomerId, '7000');
+  assert.equal(doc.billingCustomerId, 'cus_7000');
   assert.equal(doc.subscriptionStatus, 'active');
   assert.equal((await status('buyer')).body.hasCustomer, true);
 });
 
-await check('the Pro variant maps to Pro (stored as paid)', async () => {
-  putSubscription(5002, PRO, 'active', { customer: 7002 });
-  await webhook('subscription_created', 5002, { uid: 'probuyer' });
+await check('the Pro product maps to Pro (stored as paid)', async () => {
+  putSubscription(5002, PRO, 'active', { customer: 'cus_7002' });
+  await webhook('subscription.created', 5002, { uid: 'probuyer' });
   assert.equal(planOf('probuyer'), 'paid');
 });
 
-await check('the event payload is not trusted: the live variant decides', async () => {
-  const lie = { type: 'subscriptions', id: '5002', attributes: { variant_id: Number(MAX), status: 'active' } };
-  await webhook('subscription_updated', 5002, { uid: 'probuyer', payload: lie });
+await check('the event payload is not trusted: the live product decides', async () => {
+  const lie = { id: '5002', product_id: MAX, status: 'active' };
+  await webhook('subscription.updated', 5002, { uid: 'probuyer', payload: lie });
   assert.equal(planOf('probuyer'), 'paid');
 });
 
-await check('events without custom data find the account by subscription id', async () => {
-  putSubscription(5002, PRO, 'past_due', { customer: 7002 });
-  await webhook('subscription_payment_failed', 5002);
+await check('an account is found by external customer id when metadata is missing', async () => {
+  putSubscription(5010, PRO, 'active', { customer: 'cus_7010' });
+  polar.subs.get('5010').customer.external_id = 'extuser';
+  await webhook('subscription.created', 5010);
+  assert.equal(planOf('extuser'), 'paid');
+  fs.delete('users/extuser');
+});
+
+await check('order.paid resolves its subscription_id; events without metadata find the account by subscription id', async () => {
+  putSubscription(5002, PRO, 'past_due', { customer: 'cus_7002' });
+  await webhook('subscription.updated', 5002);
   assert.equal(fs.get('users/probuyer').subscriptionStatus, 'past_due');
   assert.equal(planOf('probuyer'), 'paid', 'past_due keeps access during retries');
-  putSubscription(5002, PRO, 'active', { customer: 7002 });
-  await webhook('subscription_payment_recovered', 5002);
+  putSubscription(5002, PRO, 'active', { customer: 'cus_7002' });
+  const res = await webhook('order.paid', 5002);
+  assert.equal(res.statusCode, 200);
   assert.equal(fs.get('users/probuyer').subscriptionStatus, 'active');
 });
 
+await check('an order without a subscription is acknowledged and ignored', async () => {
+  const res = await webhook('order.paid', null);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { received: true });
+});
+
 await check('subscriber asking for the same plan is sent to the portal; comped has nothing to buy', async () => {
-  const before = ls.checkouts.length;
+  const before = polar.checkouts.length;
   const same = await checkout('probuyer', 'pro');
   assert.equal(same.statusCode, 409);
   assert.equal(same.body.code, 'use_portal');
   const comped = await checkout('comped', 'max');
   assert.equal(comped.statusCode, 409);
   assert.notEqual(comped.body.code, 'use_portal');
-  assert.equal(ls.checkouts.length, before, 'no second checkout');
+  assert.equal(polar.checkouts.length, before, 'no second checkout');
 });
 
-await check('Pro to Max: the subscription variant is changed in place and the plan follows', async () => {
-  const before = ls.checkouts.length;
+await check('Pro to Max: the subscription product is changed in place and the plan follows', async () => {
+  const before = polar.checkouts.length;
   const res = await checkout('probuyer', 'max');
   assert.equal(res.statusCode, 200, JSON.stringify(res.body));
   assert.deepEqual(res.body, { switched: 'max' });
-  const patch = ls.patches[ls.patches.length - 1];
+  const patch = polar.patches[polar.patches.length - 1];
   assert.equal(patch.id, '5002');
-  assert.deepEqual(patch.body.data.attributes, { variant_id: Number(MAX) });
-  assert.equal(ls.checkouts.length, before, 'no second subscription');
+  assert.deepEqual(patch.body, { product_id: MAX, proration_behavior: 'invoice' });
+  assert.equal(polar.checkouts.length, before, 'no second subscription');
   assert.equal(planOf('probuyer'), 'max');
-  // The webhook Lemon Squeezy sends after the change agrees.
-  await webhook('subscription_updated', 5002, { uid: 'probuyer' });
+  // The webhook Polar sends after the change agrees.
+  await webhook('subscription.updated', 5002, { uid: 'probuyer' });
   assert.equal(planOf('probuyer'), 'max');
 });
 
@@ -427,51 +468,71 @@ await check('Max to Pro switches back', async () => {
   assert.equal(planOf('probuyer'), 'paid');
 });
 
-await check('a switch made in the portal lands through subscription_updated', async () => {
-  putSubscription(5002, MAX, 'active', { customer: 7002 });
-  await webhook('subscription_plan_changed', 5002, { uid: 'probuyer' });
+await check('a switch made in the portal lands through subscription.updated', async () => {
+  putSubscription(5002, MAX, 'active', { customer: 'cus_7002' });
+  await webhook('subscription.updated', 5002, { uid: 'probuyer' });
   assert.equal(planOf('probuyer'), 'max');
-  putSubscription(5002, PRO, 'active', { customer: 7002 });
-  await webhook('subscription_updated', 5002, { uid: 'probuyer' });
+  putSubscription(5002, PRO, 'active', { customer: 'cus_7002' });
+  await webhook('subscription.updated', 5002, { uid: 'probuyer' });
   assert.equal(planOf('probuyer'), 'paid');
 });
 
-await check('an unknown variant on a live subscription counts as Pro', async () => {
-  putSubscription(5002, '999', 'active', { customer: 7002 });
-  await webhook('subscription_updated', 5002, { uid: 'probuyer' });
+await check('an unknown product on a live subscription counts as Pro', async () => {
+  putSubscription(5002, 'prod_old', 'active', { customer: 'cus_7002' });
+  await webhook('subscription.updated', 5002, { uid: 'probuyer' });
   assert.equal(planOf('probuyer'), 'paid');
-  putSubscription(5002, PRO, 'active', { customer: 7002 });
+  putSubscription(5002, PRO, 'active', { customer: 'cus_7002' });
 });
 
-await check('manage subscription opens the subscription\'s customer portal link', async () => {
+await check('manage subscription opens a fresh customer portal session', async () => {
+  const before = polar.sessions.length;
   const res = await portal('probuyer');
   assert.equal(res.statusCode, 200);
-  assert.equal(res.body.url, 'https://roleberry.lemonsqueezy.com/billing?sub=5002');
+  assert.match(res.body.url, /^https:\/\/polar\.sh\/roleberry\/portal\?session=/);
+  const session = polar.sessions[polar.sessions.length - 1];
+  assert.equal(polar.sessions.length, before + 1);
+  assert.equal(session.customer_id, 'cus_7002');
+  assert.equal(session.return_url, 'https://roleberry.test/');
   assert.equal((await portal('nobodyhere')).statusCode, 404);
 });
 
-await check('cancelled keeps Max until ends_at, then expired drops to free', async () => {
-  putSubscription(5001, MAX, 'cancelled', { endsAt: new Date(Date.now() + 10 * DAY).toISOString() });
-  await webhook('subscription_cancelled', 5001, { uid: 'buyer' });
+await check('a scheduled cancel keeps the plan and sets cancelAtPeriodEnd; uncancel clears it', async () => {
+  putSubscription(5002, PRO, 'active', { customer: 'cus_7002', cancelAtPeriodEnd: true, endsAt: '2030-01-01T00:00:00Z' });
+  await webhook('subscription.updated', 5002, { uid: 'probuyer' });
+  let doc = fs.get('users/probuyer');
+  assert.equal(doc.plan, 'paid');
+  assert.equal(doc.cancelAtPeriodEnd, true);
+  assert.equal(doc.subscriptionStatus, 'active');
+  assert.equal(doc.planRenewsAt, '2030-01-01T00:00:00Z');
+  putSubscription(5002, PRO, 'active', { customer: 'cus_7002' });
+  await webhook('subscription.uncanceled', 5002, { uid: 'probuyer' });
+  doc = fs.get('users/probuyer');
+  assert.equal(doc.cancelAtPeriodEnd, false);
+  assert.equal(doc.planRenewsAt, '2030-01-01T00:00:00Z');
+});
+
+await check('canceled keeps Max until ends_at, then drops to free', async () => {
+  putSubscription(5001, MAX, 'canceled', { endsAt: new Date(Date.now() + 10 * DAY).toISOString() });
+  await webhook('subscription.canceled', 5001, { uid: 'buyer' });
   let doc = fs.get('users/buyer');
   assert.equal(doc.plan, 'max');
   assert.equal(doc.cancelAtPeriodEnd, true);
   assert.ok(doc.planRenewsAt, 'shows when access ends');
   putSubscription(5001, MAX, 'active');
-  await webhook('subscription_resumed', 5001, { uid: 'buyer' });
+  await webhook('subscription.uncanceled', 5001, { uid: 'buyer' });
   assert.equal(fs.get('users/buyer').cancelAtPeriodEnd, false);
-  putSubscription(5001, MAX, 'cancelled', { endsAt: new Date(Date.now() - DAY).toISOString() });
-  await webhook('subscription_updated', 5001, { uid: 'buyer' });
-  assert.equal(planOf('buyer'), 'free', 'past ends_at means no access even before expired arrives');
-  putSubscription(5001, MAX, 'expired', { endsAt: new Date(Date.now() - DAY).toISOString() });
-  await webhook('subscription_expired', 5001, { uid: 'buyer' });
+  putSubscription(5001, MAX, 'canceled', { endsAt: new Date(Date.now() - DAY).toISOString() });
+  await webhook('subscription.updated', 5001, { uid: 'buyer' });
+  assert.equal(planOf('buyer'), 'free', 'past ends_at means no access even before revoked arrives');
+  putSubscription(5001, MAX, 'canceled', { endsAt: new Date(Date.now() - DAY).toISOString() });
+  await webhook('subscription.revoked', 5001, { uid: 'buyer' });
   doc = fs.get('users/buyer');
   assert.equal(doc.plan, 'free');
-  assert.equal(doc.subscriptionStatus, 'expired');
+  assert.equal(doc.subscriptionStatus, 'canceled');
 });
 
-await check('paused and unpaid have no access; unpaused restores it', async () => {
-  for (const [event, st, plan] of [['subscription_paused', 'paused', 'free'], ['subscription_unpaused', 'active', 'max'], ['subscription_payment_failed', 'unpaid', 'free']]) {
+await check('incomplete and unpaid have no access; active restores it', async () => {
+  for (const [event, st, plan] of [['subscription.updated', 'unpaid', 'free'], ['subscription.active', 'active', 'max'], ['subscription.updated', 'incomplete', 'free']]) {
     putSubscription(5001, MAX, st);
     await webhook(event, 5001, { uid: 'buyer' });
     assert.equal(planOf('buyer'), plan, `${event} -> ${st}`);
@@ -480,16 +541,16 @@ await check('paused and unpaid have no access; unpaused restores it', async () =
 
 await check('a late event about an old subscription does not downgrade a new one', async () => {
   putSubscription(5003, MAX, 'active');
-  await webhook('subscription_created', 5003, { uid: 'buyer' });
+  await webhook('subscription.created', 5003, { uid: 'buyer' });
   assert.equal(planOf('buyer'), 'max');
-  putSubscription(5001, MAX, 'expired', { endsAt: new Date(Date.now() - DAY).toISOString() });
-  await webhook('subscription_expired', 5001, { uid: 'buyer' });
+  putSubscription(5001, MAX, 'canceled', { endsAt: new Date(Date.now() - DAY).toISOString() });
+  await webhook('subscription.revoked', 5001, { uid: 'buyer' });
   assert.equal(planOf('buyer'), 'max');
   assert.equal(fs.get('users/buyer').billingSubscriptionId, '5003');
 });
 
 await check('events that are not about subscriptions are acknowledged and ignored', async () => {
-  const res = await webhook('order_created', 0, { payload: { type: 'orders', id: '1', attributes: {} } });
+  const res = await webhook('customer.created', 0, { payload: { id: 'cus_1' } });
   assert.equal(res.statusCode, 200);
 });
 
@@ -620,27 +681,27 @@ await check('script list shows grants and the allowlist', async () => {
   }
 });
 
-await check('webhook leaves a comped account on Max whatever Lemon Squeezy says', async () => {
+await check('webhook leaves a comped account on Max whatever Polar says', async () => {
   assert.equal((await checkout('pal', 'pro')).statusCode, 409, 'comped cannot start a checkout');
-  // A friend who already paid before being comped: Lemon Squeezy still has their Pro subscription.
-  putSubscription(6001, PRO, 'active', { customer: 7601 });
-  await webhook('subscription_updated', 6001, { uid: 'pal' });
-  assert.equal(fs.get('users/pal').plan, 'paid', 'plan records Lemon Squeezy');
+  // A friend who already paid before being comped: Polar still has their Pro subscription.
+  putSubscription(6001, PRO, 'active', { customer: 'cus_7601' });
+  await webhook('subscription.updated', 6001, { uid: 'pal' });
+  assert.equal(fs.get('users/pal').plan, 'paid', 'plan records Polar');
   assert.equal(fs.get('users/pal').comped, true);
   let s = await ent('pal');
   assert.deepEqual([s.plan, s.comped, s.billingPlan], ['max', true, 'paid']);
-  putSubscription(6001, PRO, 'expired', { customer: 7601, endsAt: new Date(Date.now() - DAY).toISOString() });
-  await webhook('subscription_expired', 6001, { uid: 'pal' });
+  putSubscription(6001, PRO, 'canceled', { customer: 'cus_7601', endsAt: new Date(Date.now() - DAY).toISOString() });
+  await webhook('subscription.revoked', 6001, { uid: 'pal' });
   s = await ent('pal');
   assert.deepEqual([s.plan, s.comped, s.billingPlan], ['max', true, 'free'], 'the subscription ending does not end the comp');
 });
 
-await check('revoke falls back to the Lemon Squeezy plan, and keeps all data', async () => {
-  putSubscription(6001, PRO, 'active', { customer: 7601 });
+await check('revoke falls back to the Polar plan, and keeps all data', async () => {
+  putSubscription(6001, PRO, 'active', { customer: 'cus_7601' });
   for (let i = 0; i < 2; i += 1) await optimize('pal');
   const before = { runs: runIds('pal').length, usage: fs.get('users/pal').lifetimeUsage.optimizations };
   const r = await revokeComp('pal@example.com');
-  assert.equal(r.plan, 'paid', 're-read from Lemon Squeezy');
+  assert.equal(r.plan, 'paid', 're-read from Polar');
   const doc = fs.get('users/pal');
   assert.equal('comped' in doc, false, 'flag removed, not set false');
   assert.equal(doc.plan, 'paid');
@@ -675,12 +736,12 @@ await check('old plan: unlimited still counts as comped; webhook converts it, re
   signUp('legacy');
   fs.set('users/legacy', { plan: 'unlimited' });
   assert.deepEqual([(await ent('legacy')).plan, (await ent('legacy')).comped], ['max', true]);
-  putSubscription(6002, MAX, 'active', { customer: 7602 });
-  await webhook('subscription_created', 6002, { uid: 'legacy' });
+  putSubscription(6002, MAX, 'active', { customer: 'cus_7602' });
+  await webhook('subscription.created', 6002, { uid: 'legacy' });
   assert.equal(fs.get('users/legacy').plan, 'max');
   assert.equal(fs.get('users/legacy').comped, true, 'converted to the flag');
-  putSubscription(6002, MAX, 'expired', { customer: 7602, endsAt: new Date(Date.now() - DAY).toISOString() });
-  await webhook('subscription_expired', 6002, { uid: 'legacy' });
+  putSubscription(6002, MAX, 'canceled', { customer: 'cus_7602', endsAt: new Date(Date.now() - DAY).toISOString() });
+  await webhook('subscription.revoked', 6002, { uid: 'legacy' });
   assert.equal((await ent('legacy')).plan, 'max', 'still comped after cancelling');
   await revokeComp('legacy@example.com');
   assert.equal((await ent('legacy')).plan, 'free');

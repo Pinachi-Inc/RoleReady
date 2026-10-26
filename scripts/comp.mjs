@@ -4,8 +4,8 @@
 //   npm run comp -- revoke friend@example.com
 //   npm run comp -- list
 //
-// Needs FIREBASE_SERVICE_ACCOUNT (read from .env), and LEMONSQUEEZY_API_KEY for revoke to
-// re-read a paying account's plan from Lemon Squeezy. The person must have signed in once; for someone who
+// Needs FIREBASE_SERVICE_ACCOUNT (read from .env), and POLAR_ACCESS_TOKEN for revoke to
+// re-read a paying account's plan from Polar. The person must have signed in once; for someone who
 // has not, add them to COMP_MAX_EMAILS instead. See server/core/comp.js.
 
 import 'dotenv/config';

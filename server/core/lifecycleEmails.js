@@ -110,12 +110,12 @@ export async function maybeSendOutOfRuns(user) {
 }
 
 // billing.js passes planLabel so this module never imports billing.js (which imports this one).
-export async function maybeSendCancelled(uid, sub, planLabel) {
+export async function maybeSendCancelled(uid, subscriptionId, planLabel, endsAt) {
   try {
     if (!lifecycleEnabled()) return;
     const record = await getAuthUser(uid);
     if (!record?.email || !record.emailVerified) return;
-    await send(uid, record.email, cancelledEmail({ planLabel, endsAt: sub.attributes?.ends_at }), 'cancelSentFor', String(sub.id));
+    await send(uid, record.email, cancelledEmail({ planLabel, endsAt }), 'cancelSentFor', String(subscriptionId));
   } catch (err) {
     console.error('[lifecycle] cancel failed uid=%s: %s', uid, err?.message || err);
   }

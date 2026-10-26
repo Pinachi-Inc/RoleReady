@@ -24,7 +24,7 @@ async function postBilling(path, body = {}) {
 // 'paid' is Pro.
 export const getBillingStatus = () => postBilling('status');
 
-// plan: 'pro' | 'max'. For a free account this redirects the tab to Lemon Squeezy's checkout,
+// plan: 'pro' | 'max'. For a free account this redirects the tab to Polar's checkout,
 // which sends the user back to /?checkout=success. For a subscriber switching between Pro and
 // Max the server changes the subscription in place and this resolves to { switched: plan }.
 export const startCheckout = async (plan) => {
@@ -33,7 +33,7 @@ export const startCheckout = async (plan) => {
   return data;
 };
 
-// Lemon Squeezy's customer portal: cancel, card, invoices. Redirects the tab.
+// Polar's customer portal: cancel, card, invoices. Redirects the tab.
 
 export const openBillingPortal = async () => {
   const { url } = await postBilling('portal');

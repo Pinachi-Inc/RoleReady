@@ -12,8 +12,8 @@ import { resyncPlanFromBilling } from './billing.js';
 // the e2e harness can run it against the in-memory Firestore.
 //
 // A comp is the `comped` flag on the user document, next to `plan`, which only ever records
-// what Lemon Squeezy says. Granting sets the flag. Revoking clears it and re-reads the
-// subscription from Lemon Squeezy, so the
+// what Polar says. Granting sets the flag. Revoking clears it and re-reads the
+// subscription from Polar, so the
 // account lands on whatever it actually pays for, free if nothing. Neither touches profiles,
 // history or usage.
 

@@ -17,11 +17,11 @@ process.env.OPENAI_API_KEY = 'test';
 process.env.OPENAI_BASE_URL = 'https://model.invalid/v1';
 process.env.OPENAI_MODEL = 'test/default-model';
 process.env.COMP_MAX_EMAILS = 'comped@example.com';
-process.env.LEMONSQUEEZY_API_KEY = 'ls_test_key';
-process.env.LEMONSQUEEZY_STORE_ID = '11';
-process.env.LEMONSQUEEZY_VARIANT_ID_PRO = '101';
-process.env.LEMONSQUEEZY_VARIANT_ID_MAX = '202';
-process.env.LEMONSQUEEZY_WEBHOOK_SECRET = 'ls_webhook_secret';
+process.env.POLAR_ACCESS_TOKEN = 'polar_test_token';
+process.env.POLAR_SERVER = 'sandbox';
+process.env.POLAR_PRODUCT_ID_PRO = 'prod_pro';
+process.env.POLAR_PRODUCT_ID_MAX = 'prod_max';
+process.env.POLAR_WEBHOOK_SECRET = 'polar_webhook_secret';
 process.env.APP_URL = 'https://roleberry.test';
 delete process.env.BILLING_ENFORCED;
 delete process.env.VERCEL_ENV;
@@ -37,7 +37,7 @@ const { handleBillingStatus, handleBillingWebhook } = await import('../../server
 const { handleEmailEndpoint, unsubscribeToken, unsubscribeUrl } = await import('../../server/core/lifecycleEmails.js');
 const { deleteAccount } = await import('../../server/core/accounts.js');
 const fs = globalThis.__E2E_FS;
-const ls = globalThis.__E2E_LS;
+const polar = globalThis.__E2E_POLAR;
 const mail = globalThis.__E2E_MAIL;
 const authRecords = globalThis.__E2E_AUTH_RECORDS;
 const authByEmail = globalThis.__E2E_AUTH;
@@ -92,23 +92,38 @@ function seed(uid, ageMs, { verified = true } = {}) {
   authRecords.set(uid, { uid, email, emailVerified: verified, metadata: { creationTime: new Date(Date.now() - ageMs).toUTCString() } });
 }
 
-function putSubscription(subId, variant, statusValue, endsAt) {
-  ls.subs.set(String(subId), {
-    type: 'subscriptions',
+function putSubscription(subId, product, statusValue, endsAt) {
+  polar.subs.set(String(subId), {
     id: String(subId),
-    attributes: { store_id: 11, customer_id: 7000 + Number(subId), variant_id: Number(variant), status: statusValue, cancelled: statusValue === 'cancelled', renews_at: null, ends_at: endsAt, urls: {} },
+    status: statusValue,
+    customer_id: `cus_${subId}`,
+    product_id: product,
+    current_period_end: endsAt,
+    cancel_at_period_end: statusValue === 'canceled',
+    ends_at: endsAt,
+    metadata: {},
+    customer: { id: `cus_${subId}`, external_id: null },
   });
+}
+
+// Standard Webhooks signature: HMAC-SHA256 base64 over `${id}.${timestamp}.${body}`.
+function signPolar(raw, secret, id, ts) {
+  return `v1,${crypto.createHmac('sha256', Buffer.from(secret, 'utf8')).update(`${id}.${ts}.`).update(raw).digest('base64')}`;
 }
 
 async function webhook(eventName, subId, uid) {
   const event = {
-    meta: { event_name: eventName, custom_data: { user_id: uid } },
-    data: { type: 'subscriptions', id: String(subId), attributes: {} },
+    type: eventName,
+    timestamp: new Date().toISOString(),
+    data: { id: String(subId) },
   };
+  polar.subs.get(String(subId)).metadata = { user_id: uid };
   const raw = Buffer.from(JSON.stringify(event));
-  const sig = crypto.createHmac('sha256', process.env.LEMONSQUEEZY_WEBHOOK_SECRET).update(raw).digest('hex');
+  const id = `msg_${Math.random()}`;
+  const ts = String(Math.floor(Date.now() / 1000));
+  const sig = signPolar(raw, process.env.POLAR_WEBHOOK_SECRET, id, ts);
   const res = fakeRes();
-  await handleBillingWebhook({ headers: { 'x-signature': sig }, rawBody: raw }, res);
+  await handleBillingWebhook({ headers: { 'webhook-id': id, 'webhook-timestamp': ts, 'webhook-signature': sig }, rawBody: raw }, res);
   return res;
 }
 
@@ -252,14 +267,14 @@ await check('cron and preview refuse a missing or wrong bearer token', async () 
 await check('cancel: one email with the end date, not repeated, not for other events', async () => {
   mail.length = 0;
   seed('leaver', 20 * DAY);
-  putSubscription(7001, '101', 'cancelled', '2026-11-22T00:00:00.000000Z');
-  assert.equal((await webhook('subscription_cancelled', 7001, 'leaver')).statusCode, 200);
+  putSubscription(7001, 'prod_pro', 'canceled', '2026-11-22T00:00:00.000000Z');
+  assert.equal((await webhook('subscription.canceled', 7001, 'leaver')).statusCode, 200);
   assert.equal(mail.length, 1);
   assert.equal(mail[0].body.subject, 'Can I ask why you cancelled?');
   assert.ok(mail[0].body.textContent.includes('November 22, 2026'));
   assert.ok(mail[0].body.textContent.includes('Roleberry Pro subscription'));
-  await webhook('subscription_cancelled', 7001, 'leaver');
-  await webhook('subscription_updated', 7001, 'leaver');
+  await webhook('subscription.canceled', 7001, 'leaver');
+  await webhook('subscription.updated', 7001, 'leaver');
   assert.equal(mail.length, 1);
 });
 
@@ -283,8 +298,8 @@ await check('after unsubscribing, out-of-runs and cancel emails are not sent', a
   mail.length = 0;
   seed('quitter', 20 * DAY);
   for (let i = 0; i < 5; i += 1) await optimize('quitter');
-  putSubscription(7002, '101', 'cancelled', '2026-11-22T00:00:00.000000Z');
-  await webhook('subscription_cancelled', 7002, 'quitter');
+  putSubscription(7002, 'prod_pro', 'canceled', '2026-11-22T00:00:00.000000Z');
+  await webhook('subscription.canceled', 7002, 'quitter');
   assert.equal(mail.length, 0);
 });
 

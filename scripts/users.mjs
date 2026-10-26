@@ -6,9 +6,9 @@
 //   npm run users -- wipe --keep a@x.com,b@y.com    lists every account NOT in --keep
 //   npm run users -- wipe --keep a@x.com,b@y.com --yes   deletes them
 //
-// Deleting cancels the Lemon Squeezy subscription, removes users/{uid} with its history, the
+// Deleting cancels the Polar subscription, removes users/{uid} with its history, the
 // account's feedback reports, and the Firebase Auth account. It cannot be undone, so nothing
-// is deleted without --yes. Needs FIREBASE_SERVICE_ACCOUNT, and LEMONSQUEEZY_API_KEY to cancel
+// is deleted without --yes. Needs FIREBASE_SERVICE_ACCOUNT, and POLAR_ACCESS_TOKEN to cancel
 // subscriptions (read from .env). See server/core/accounts.js.
 
 import 'dotenv/config';

@@ -5,8 +5,8 @@ import { useDialog } from './Dialog.jsx';
 // The paywall: Free, Pro and Max side by side, Pro in the middle as the recommended plan.
 // A free account upgrades through checkout (onCheckout('pro' | 'max')). A subscriber switches
 // between Pro and Max with the same call, which the server turns into a prorated change of the
-// existing subscription, after a confirm. Cancelling and card changes go through Lemon
-// Squeezy's customer portal (onManage).
+// existing subscription, after a confirm. Cancelling and card changes go through Polar's
+// customer portal (onManage).
 //
 // `soon: true` marks a perk that is sold but not built yet. It renders greyed with a clock and
 // "coming soon", so it never reads as something already delivered.
