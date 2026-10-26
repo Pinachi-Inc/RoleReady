@@ -28,9 +28,9 @@ app.use(cors({
   }
 }));
 
-// Lemon Squeezy signs the exact bytes it sends, so the webhook must see the raw body. Registered
+// Polar signs the exact bytes it sends, so the webhook must see the raw body. Registered
 // before express.json, which would otherwise consume and re-shape it.
-app.post('/api/lemonsqueezy-webhook', express.raw({ type: '*/*' }), handleBillingWebhook);
+app.post('/api/polar-webhook', express.raw({ type: '*/*' }), handleBillingWebhook);
 
 // OCR text from a scanned CV can run past the old 1mb ceiling.
 app.use(express.json({ limit: '4mb' }));

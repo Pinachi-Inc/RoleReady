@@ -6,13 +6,13 @@
 import assert from 'node:assert/strict';
 
 process.env.FIREBASE_SERVICE_ACCOUNT = JSON.stringify({ project_id: 'roleberry-e2e' });
-process.env.LEMONSQUEEZY_API_KEY = 'ls_test_key';
+process.env.POLAR_ACCESS_TOKEN = 'polar_test_token';
 
 const { listAccounts, resolveAccount, deleteAccount } = await import('../../server/core/accounts.js');
 const fs = globalThis.__E2E_FS;
 const authByEmail = globalThis.__E2E_AUTH;
 const authRecords = globalThis.__E2E_AUTH_RECORDS;
-const ls = globalThis.__E2E_LS;
+const polar = globalThis.__E2E_POLAR;
 
 const out = console.log.bind(console);
 console.log = console.warn = console.error = () => {};
@@ -45,7 +45,7 @@ fs.set('feedback/f1', { uid: 'payer', message: 'hi' });
 fs.set('feedback/f1/attachments/a1', { data: 'png' });
 fs.set('feedback/f2', { uid: 'tester', message: 'other' });
 fs.set('feedbackLimits/uid_payer', { count: 1 });
-ls.subs.set('900', { id: '900', attributes: { status: 'active', variant_id: 101 } });
+polar.subs.set('900', { id: '900', status: 'active', product_id: 'prod_pro' });
 
 await check('listAccounts joins Auth with the user document, newest first', async () => {
   const accounts = await listAccounts();
@@ -67,7 +67,7 @@ await check('resolveAccount finds by email or uid, null when missing', async () 
 await check('deleteAccount cancels the subscription and removes every trace', async () => {
   const r = await deleteAccount('payer');
   assert.equal(r.subscription, 'cancelled');
-  assert.equal(ls.subs.get('900').attributes.status, 'cancelled');
+  assert.equal(polar.subs.get('900').status, 'canceled');
   assert.equal(r.feedbackReports, 1);
   assert.equal(r.auth, 'deleted');
   assert.ok(![...fs.keys()].some((k) => k.startsWith('users/payer')), 'user document and history gone');
@@ -77,7 +77,7 @@ await check('deleteAccount cancels the subscription and removes every trace', as
   assert.ok(fs.has('feedback/f2') && fs.has('users/tester') && fs.has('users/keep1'), 'other accounts untouched');
 });
 
-await check('a subscription the API key cannot see does not block deletion', async () => {
+await check('a subscription the token cannot see does not block deletion', async () => {
   fs.set('users/tester', { plan: 'paid', billingSubscriptionId: 'test-mode-1', subscriptionStatus: 'active' });
   const r = await deleteAccount('tester');
   assert.match(r.subscription, /not found/);

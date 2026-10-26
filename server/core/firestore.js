@@ -66,7 +66,7 @@ function db() {
 //
 // Plans as stored on the user document: 'free', 'paid' (sold as Pro, $12) and 'max' ($49).
 // Pro keeps the stored name 'paid' so existing subscribers need no migration. `plan` always
-// reflects the billing provider (Lemon Squeezy); complimentary access is kept apart from it
+// reflects the billing provider (Polar); complimentary access is kept apart from it
 // (see isCompedAccount), so a webhook can never downgrade a comped account and revoking a comp
 // falls back to what the billing provider
 // says.

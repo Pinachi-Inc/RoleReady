@@ -247,7 +247,7 @@ const CVOptimizer = () => {
   const [profiles, setProfiles] = useState({}); // saved profiles (free 1, paid 3), see services/profiles.js
   const [activeProfileId, setActiveProfileId] = useState(null);
   const [profileBusy, setProfileBusy] = useState(false);
-  // Read once: Lemon Squeezy's checkout sends people back to /?checkout=success.
+  // Read once: Polar's checkout sends people back to /?checkout=success.
   const checkoutReturnRef = useRef(new URLSearchParams(window.location.search).get('checkout'));
   const upgradeParamRef = useRef(new URLSearchParams(window.location.search).get('upgrade'));
   const downloadingRef = useRef(false);

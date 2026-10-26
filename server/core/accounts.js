@@ -1,16 +1,17 @@
 import admin from 'firebase-admin';
 import axios from 'axios';
+import { polarBase } from './billing.js';
 import { adminApp, adminDb, setEmailState, deleteEmailState } from './firestore.js';
 
 // Admin-only account tools behind `npm run users` (scripts/users.mjs): list every account, and
 // delete one completely. The Privacy Policy promises that a deleted account is gone within 30
 // days, so deleting covers everything stored about the person:
-//   - the Lemon Squeezy subscription, cancelled so they are not billed again
+//   - the Polar subscription, revoked so they are not billed again
 //   - users/{uid} with its history subcollection (profiles, usage, plan, every run)
 //   - their feedback reports and the feedback rate-limit counter
 //   - emailState/{uid}, the record of which account emails they were sent
 //   - the Firebase Auth account itself
-// Lemon Squeezy keeps its own payment and tax records, as the Privacy Policy says.
+// Polar keeps its own payment and tax records, as the Privacy Policy says.
 
 function requireAdmin() {
   const app = adminApp();
@@ -76,21 +77,21 @@ export async function resolveAccount(emailOrUid) {
   }
 }
 
-// Cancel a subscription in Lemon Squeezy. A subscription the current API key cannot see (a
-// test-mode one, once the key is live) or one already gone is reported, not treated as failure.
+// Revoke a subscription in Polar. A subscription the current token cannot see (a
+// sandbox one, once the token is live) or one already gone is reported, not treated as failure.
 async function cancelSubscription(id) {
-  const key = String(process.env.LEMONSQUEEZY_API_KEY || '').trim().replace(/^['"]|['"]$/g, '');
-  if (!key) return 'skipped: LEMONSQUEEZY_API_KEY not set';
+  const key = String(process.env.POLAR_ACCESS_TOKEN || '').trim().replace(/^['"]|['"]$/g, '');
+  if (!key) return 'skipped: POLAR_ACCESS_TOKEN not set';
   try {
-    await axios.delete(`https://api.lemonsqueezy.com/v1/subscriptions/${encodeURIComponent(id)}`, {
-      headers: { Accept: 'application/vnd.api+json', Authorization: `Bearer ${key}` },
+    await axios.delete(`${polarBase()}/subscriptions/${encodeURIComponent(id)}`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${key}` },
       timeout: 15_000,
     });
     return 'cancelled';
   } catch (err) {
     const status = err?.response?.status;
-    if (status === 404) return 'not found with this API key (test-mode or already removed)';
-    throw new Error(`Lemon Squeezy refused to cancel subscription ${id} (${status || err?.message})`);
+    if (status === 404) return 'not found with this token (sandbox or already removed)';
+    throw new Error(`Polar refused to cancel subscription ${id} (${status || err?.message})`);
   }
 }
 

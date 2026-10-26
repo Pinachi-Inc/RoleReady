@@ -22,7 +22,7 @@ export const trackSignUp = (isNewUser, method, user) => {
 // Monthly prices, as sold (components/PricingModal.jsx). Plans as stored: 'paid' is Pro.
 const PLAN_PRICE_USD = { paid: 12, max: 49 };
 
-// A checkout just activated a subscription. Called once, on the return from Lemon Squeezy,
+// A checkout just activated a subscription. Called once, on the return from Polar,
 // after the server confirms the plan, so an abandoned or failed checkout never counts.
 export const trackPurchase = (plan) => {
   const value = PLAN_PRICE_USD[plan];
