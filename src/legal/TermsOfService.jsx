@@ -45,7 +45,7 @@ const TermsOfService = () => (
     </p>
     <p>
       <strong>Who you pay.</strong> Orders are processed by our online reseller,
-      {' '}{LEGAL.merchantNames}, whichever is named at checkout and on your receipt. It is the
+      {' '}{LEGAL.merchantNames}. It is the
       merchant of record for all orders: when you subscribe, you buy from it. It takes the payment,
       charges and pays any sales tax or VAT, issues your receipt, handles refunds, and its own
       terms apply to the purchase. We provide {LEGAL.product} itself under these terms.
