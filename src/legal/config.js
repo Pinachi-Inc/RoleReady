@@ -17,11 +17,17 @@ export const LEGAL = {
   governingLaw: 'the Republic of Armenia',
   courts: 'the courts of Yerevan, Armenia',
   // Last time either document changed in substance.
-  effectiveDate: '22 October 2026',
+  effectiveDate: '26 October 2026',
   // How long after an account deletion request everything is gone, backups included.
   deletionDays: 30,
   // Minimum age to use Roleberry.
   minimumAge: 16,
+  // Who sells the subscription as merchant of record. Lemon Squeezy declined Roleberry in
+  // October 2026; put the new provider's name here (for example 'Polar') once one approves.
+  merchant: 'our payment provider',
 };
+
+// LEGAL.merchant with a capital first letter, for the start of a sentence or table cell.
+export const Merchant = () => LEGAL.merchant.charAt(0).toUpperCase() + LEGAL.merchant.slice(1);
 
 export const isDraft = () => Object.values(LEGAL).some((v) => typeof v === 'string' && /^\[.*\]$/.test(v));

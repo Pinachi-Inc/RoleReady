@@ -1,5 +1,5 @@
 import React from 'react';
-import { LEGAL } from './config.js';
+import { LEGAL, Merchant } from './config.js';
 
 // Written from what the code actually does. When a data flow changes (a new processor, a new
 // field stored, a different retention), change this in the same commit.
@@ -20,7 +20,7 @@ const PrivacyPolicy = () => (
       <li>Your CV content is sent to third-party AI models to produce your results. That is how the product works.</li>
       <li>We do not sell your data, show ads in the app, or use your content to train our own models.</li>
       <li>We advertise on Meta (Facebook, Instagram) and Reddit, and their pixels tell them when someone they sent us visits, signs up or subscribes. They never get your CV content. Details under Cookies below.</li>
-      <li>Payments are handled by Lemon Squeezy, our merchant of record. We never see your card details.</li>
+      <li>Payments are handled by {LEGAL.merchant}, which acts as our merchant of record. We never see your card details.</li>
       <li>You can ask us for a copy of your data, or to delete it, at any time.</li>
     </ul>
 
@@ -77,9 +77,9 @@ const PrivacyPolicy = () => (
     <ul>
       <li>How many optimizations and imports you have used, to apply your plan's limits.</li>
       <li>
-        If you subscribe: your plan, a Lemon Squeezy customer and subscription identifier, the
+        If you subscribe: your plan, a customer and subscription identifier from {LEGAL.merchant}, the
         subscription's status and renewal date. Payment details, billing address and tax details
-        are collected by Lemon Squeezy, not by us.
+        are collected by {LEGAL.merchant}, not by us.
       </li>
     </ul>
 
@@ -150,7 +150,7 @@ const PrivacyPolicy = () => (
         <tr><td>Google (Firebase)</td><td>Sign-in and database</td><td>Account details, profiles, history, usage, subscription status</td></tr>
         <tr><td>Vercel</td><td>Hosting and servers</td><td>All requests passing through the app, server logs, IP address</td></tr>
         <tr><td>OpenRouter and the AI model providers it routes to</td><td>Generating CVs, cover letters and profile imports</td><td>Profile content, job postings, imported CV text</td></tr>
-        <tr><td>Lemon Squeezy (merchant of record) and its payment processors</td><td>Selling the subscription: payment, sales tax / VAT, receipts, refunds</td><td>Email, name, payment details, billing address, subscription</td></tr>
+        <tr><td>{Merchant()} (merchant of record) and its payment processors</td><td>Selling the subscription: payment, sales tax / VAT, receipts, refunds</td><td>Email, name, payment details, billing address, subscription</td></tr>
         <tr><td>Brevo</td><td>Delivering feedback reports to our inbox, and sending account emails</td><td>Your email address; for feedback, also your message, screenshot and the browser details above</td></tr>
         <tr><td>Meta Platforms (Meta Pixel)</td><td>Measuring our Facebook and Instagram ads</td><td>Pages visited on our site, that a sign-up happened and how (Google, GitHub or email), that a subscription was bought and its price, IP address, browser details and Meta's cookies</td></tr>
         <tr><td>Reddit (Reddit Pixel)</td><td>Measuring our Reddit ads</td><td>Pages visited on our site, that a sign-up happened, that a subscription was bought and its price, IP address, browser details and Reddit's cookies</td></tr>
@@ -158,7 +158,7 @@ const PrivacyPolicy = () => (
       </tbody>
     </table>
     <p>
-      Lemon Squeezy sells the subscription to you as merchant of record, so for payment, tax and
+      {Merchant()} sells the subscription to you as merchant of record, so for payment, tax and
       receipt data it acts as an independent controller under its own privacy policy, not only on
       our behalf.
     </p>
@@ -182,7 +182,7 @@ const PrivacyPolicy = () => (
       <li><strong>Uploaded PDF files:</strong> not stored. They are discarded as soon as the import finishes.</li>
       <li><strong>Server logs:</strong> a limited period set by our hosting provider.</li>
       <li><strong>Feedback and problem reports:</strong> up to 2 years, or sooner if you ask us to delete them.</li>
-      <li><strong>Billing records:</strong> as long as tax and accounting law requires, held by Lemon Squeezy and in our records.</li>
+      <li><strong>Billing records:</strong> as long as tax and accounting law requires, held by {LEGAL.merchant} and in our records.</li>
     </ul>
 
     <h2>Your rights</h2>
