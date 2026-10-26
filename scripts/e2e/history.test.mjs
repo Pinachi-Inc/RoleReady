@@ -21,7 +21,7 @@ process.env.POLAR_ACCESS_TOKEN = 'polar_test_token';
 process.env.POLAR_SERVER = 'sandbox';
 process.env.POLAR_PRODUCT_ID_PRO = 'prod_pro';
 process.env.POLAR_PRODUCT_ID_MAX = 'prod_max';
-process.env.POLAR_WEBHOOK_SECRET = 'polar_webhook_secret';
+process.env.POLAR_WEBHOOK_SECRET = 'whsec_cm9sZWJlcnJ5LXRlc3Qtc2lnbmluZy1rZXktMzJieXQ=';
 process.env.APP_URL = 'https://roleberry.test';
 delete process.env.BILLING_ENFORCED;
 delete process.env.MAX_MONTHLY_RUNS;
@@ -283,10 +283,11 @@ function putSubscription(subId, product, statusValue = 'active', { endsAt = null
   });
 }
 
-// Standard Webhooks signature: HMAC-SHA256 base64 over `${id}.${timestamp}.${body}`, keyed with
-// the UTF-8 bytes of the secret.
+// Standard Webhooks signature, as Polar sends it: HMAC-SHA256 base64 over
+// `${id}.${timestamp}.${body}`. A `whsec_` secret's key is the base64-decoded rest of it.
 function signPolar(raw, secret, id, ts) {
-  return `v1,${crypto.createHmac('sha256', Buffer.from(secret, 'utf8')).update(`${id}.${ts}.`).update(raw).digest('base64')}`;
+  const key = secret.startsWith('whsec_') ? Buffer.from(secret.slice(6), 'base64') : Buffer.from(secret, 'utf8');
+  return `v1,${crypto.createHmac('sha256', key).update(`${id}.${ts}.`).update(raw).digest('base64')}`;
 }
 
 // A signed webhook delivery. `uid` goes in the subscription's metadata, as Polar copies the
@@ -386,6 +387,18 @@ await check('a signature header with two entries is accepted when the second is 
   await handleBillingWebhook({ headers: { 'webhook-id': id, 'webhook-timestamp': String(ts), 'webhook-signature': `${bad} ${good}` }, rawBody: raw }, res);
   assert.equal(res.statusCode, 200);
   assert.equal(planOf('buyer'), 'max');
+  fs.delete('users/buyer');
+});
+
+await check('a secret made before 8 September 2026 (UTF-8 key of the whole whsec_ string) still verifies', async () => {
+  const id = 'msg_legacy';
+  const ts = Math.floor(Date.now() / 1000);
+  const raw = Buffer.from(JSON.stringify({ type: 'subscription.created', timestamp: new Date().toISOString(), data: { id: '5001' } }));
+  const legacy = `v1,${crypto.createHmac('sha256', Buffer.from(process.env.POLAR_WEBHOOK_SECRET, 'utf8')).update(`${id}.${ts}.`).update(raw).digest('base64')}`;
+  polar.subs.get('5001').metadata = { user_id: 'buyer' };
+  const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
+  await handleBillingWebhook({ headers: { 'webhook-id': id, 'webhook-timestamp': String(ts), 'webhook-signature': legacy }, rawBody: raw }, res);
+  assert.equal(res.statusCode, 200);
   fs.delete('users/buyer');
 });
 
