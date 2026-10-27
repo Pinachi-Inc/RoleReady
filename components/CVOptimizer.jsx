@@ -1929,7 +1929,7 @@ const CVOptimizer = () => {
           </div>
 
           {(optimizedCv || analysis) && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="sticky bottom-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 pt-3 pb-16 -mb-16 grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-paper dark:bg-night border-t border-line dark:border-night-line print:static">
               <button
                 type="button"
                 onClick={downloadCv}
