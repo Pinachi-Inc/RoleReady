@@ -114,6 +114,7 @@ await check('verify: a second request within a minute is refused with 429', asyn
   const before = mail.length;
   const res = await verify('newbie');
   assert.equal(res.statusCode, 429);
+  assert.ok(res.body.retryAfter > 0 && res.body.retryAfter <= 60, `retryAfter ${res.body.retryAfter}`);
   assert.equal(mail.length, before);
 });
 

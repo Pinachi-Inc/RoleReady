@@ -37,15 +37,16 @@ async function sendAction(mode, email) {
   return sendUserEmail({ to: email, subject, text, html, tags: [template.tag] });
 }
 
-// True when this account was sent this kind of email less than a minute ago.
-async function coolingDown(uid, field) {
+// Seconds until this account may be sent this kind of email again (0 when it may now).
+async function cooldownLeft(uid, field) {
   try {
     const state = await getEmailState(uid);
     const last = Date.parse(state?.[field]);
-    return Number.isFinite(last) && Date.now() - last < COOLDOWN_MS;
+    if (!Number.isFinite(last)) return 0;
+    return Math.max(0, Math.ceil((COOLDOWN_MS - (Date.now() - last)) / 1000));
   } catch (err) {
     console.error('[auth-email] cooldown check failed uid=%s: %s', uid, err?.message || err);
-    return false;
+    return 0;
   }
 }
 
@@ -59,7 +60,8 @@ export async function handleSendVerification(req, res) {
     const record = await getAuthUser(caller.uid);
     if (!record?.email) return res.status(400).json({ code: 'no_email' });
     if (record.emailVerified) return res.json({ sent: false, code: 'already_verified' });
-    if (await coolingDown(caller.uid, 'verifySentAt')) return res.status(429).json({ code: 'too_many_requests' });
+    const wait = await cooldownLeft(caller.uid, 'verifySentAt');
+    if (wait > 0) return res.status(429).json({ code: 'too_many_requests', retryAfter: wait });
 
     const result = await sendAction('verifyEmail', record.email);
     if (!result.sent) {
@@ -85,7 +87,7 @@ export async function handleSendPasswordReset(req, res) {
   try {
     const record = await getAuthUserByEmail(email);
     if (!record || record.disabled) return res.json({ ok: true });
-    if (await coolingDown(record.uid, 'resetSentAt')) return res.json({ ok: true });
+    if ((await cooldownLeft(record.uid, 'resetSentAt')) > 0) return res.json({ ok: true });
 
     const result = await sendAction('resetPassword', record.email || email);
     if (!result.sent) {

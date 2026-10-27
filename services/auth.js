@@ -199,18 +199,51 @@ const postEmailAction = async (action, { token = null, body = {} } = {}) => {
   }
 };
 
-const tooManyRequests = () => {
-  const err = new Error('Too many requests');
-  err.code = 'auth/too-many-requests';
-  return err;
+// One verification email a minute, matching the server's cooldown. When the last one went is
+// kept in this browser so the Resend button can count down instead of failing.
+export const VERIFY_COOLDOWN_S = 60;
+const VERIFY_SENT_KEY = 'rb_verify_sent_at';
+
+const markVerificationSent = (secondsAgo = 0) => {
+  try {
+    window.localStorage.setItem(VERIFY_SENT_KEY, String(Date.now() - secondsAgo * 1000));
+  } catch {
+    // Not remembered; the button just starts without a countdown.
+  }
+};
+
+// Seconds until Resend may be pressed again, 0 when it may be pressed now.
+export const verificationCooldownLeft = () => {
+  try {
+    const last = Number(window.localStorage.getItem(VERIFY_SENT_KEY));
+    if (!last) return 0;
+    return Math.max(0, Math.ceil(VERIFY_COOLDOWN_S - (Date.now() - last) / 1000));
+  } catch {
+    return 0;
+  }
 };
 
 const sendVerificationEmail = async (user) => {
   const { status, data } = await postEmailAction('verify', { token: await user.getIdToken() });
-  if (status === 200) return;
-  if (status === 429) throw tooManyRequests();
+  if (status === 200) {
+    markVerificationSent();
+    return;
+  }
+  if (status === 429) {
+    // One went out less than a minute ago: start the countdown where the server says it is.
+    const wait = Math.min(VERIFY_COOLDOWN_S, Math.max(1, Number(data?.retryAfter) || VERIFY_COOLDOWN_S));
+    markVerificationSent(VERIFY_COOLDOWN_S - wait);
+    return;
+  }
   console.warn('[auth] branded verification email not sent (%s); using Firebase', data?.code || status);
-  await sendEmailVerification(user);
+  try {
+    await sendEmailVerification(user);
+    markVerificationSent();
+  } catch (error) {
+    // Firebase allows about one a minute too; that means an email is already on its way.
+    if (error?.code !== 'auth/too-many-requests') throw error;
+    markVerificationSent();
+  }
 };
 
 // Send a password reset email.

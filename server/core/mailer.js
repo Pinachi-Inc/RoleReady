@@ -38,16 +38,19 @@ export async function sendSupportEmail({ subject, text, html, replyTo = null, at
  * @returns {Promise<{ sent: true } | { sent: false, reason: string }>}
  */
 export async function sendUserEmail({ to, subject, text, html, headers = {}, tags = [] }) {
-  return postBrevo({
+  const body = {
     sender: { name: 'Roleberry', email: process.env.LIFECYCLE_FROM_EMAIL || LIFECYCLE_ADDRESS },
     to: [{ email: to }],
     replyTo: { email: DEFAULT_ADDRESS },
     subject,
     textContent: text,
     htmlContent: html,
-    headers,
-    tags,
-  });
+  };
+  // Brevo rejects an empty headers object or tags list ("headers is blank"), so send them only
+  // when there is something in them.
+  if (headers && Object.keys(headers).length) body.headers = headers;
+  if (tags?.length) body.tags = tags;
+  return postBrevo(body);
 }
 
 async function postBrevo(body) {
