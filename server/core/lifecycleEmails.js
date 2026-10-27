@@ -12,6 +12,7 @@ import {
   isCompedAccount,
 } from './firestore.js';
 import { welcomeEmail, nudgeEmail, outOfRunsEmail, cancelledEmail, renderEmail, escapeHtml } from './emailTemplates.js';
+import { handleSendVerification, handleSendPasswordReset, sendAuthPreviews } from './authEmails.js';
 
 // Four account emails, each sent at most once per account, only to a verified address, and never
 // after the person unsubscribes: welcome, a reminder to someone who has not made a CV, a note
@@ -183,8 +184,8 @@ function cronAuthorized(req) {
   return Boolean(secret) && req.headers?.authorization === `Bearer ${secret}`;
 }
 
-// One function for unsubscribe, the daily cron and the preview, to stay inside Vercel Hobby's
-// function limit. Dispatches on ?action=.
+// One function for unsubscribe, the daily cron, the previews and the verification and reset
+// emails, to stay inside Vercel Hobby's function limit. Dispatches on ?action=.
 export async function handleEmailEndpoint(req, res) {
   const params = new URL(req.url || '/', 'http://local').searchParams;
   const action = params.get('action');
@@ -204,8 +205,15 @@ export async function handleEmailEndpoint(req, res) {
     return page(res, 200, 'Unsubscribe', `<h1>Unsubscribe from Roleberry emails?</h1><p>You'll still get sign-in and payment emails.</p><form method="post" action="${escapeHtml(target)}"><button type="submit">Unsubscribe</button></form>`);
   }
 
-  if (action === 'nudge' || action === 'preview') {
+  // Verification and password-reset emails (server/core/authEmails.js).
+  if (action === 'verify' || action === 'reset') {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+    return action === 'verify' ? handleSendVerification(req, res) : handleSendPasswordReset(req, res);
+  }
+
+  if (action === 'nudge' || action === 'preview' || action === 'preview-auth') {
     if (!cronAuthorized(req)) return res.status(401).json({ error: 'Unauthorized' });
+    if (action === 'preview-auth') return res.json(await sendAuthPreviews());
     return res.json(action === 'nudge' ? await runNudgeSweep() : await sendPreviews());
   }
 

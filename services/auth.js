@@ -8,6 +8,9 @@ import {
   updateProfile,
   sendEmailVerification,
   sendPasswordResetEmail,
+  applyActionCode,
+  verifyPasswordResetCode,
+  confirmPasswordReset,
   fetchSignInMethodsForEmail,
   linkWithCredential,
   GithubAuthProvider,
@@ -177,17 +180,81 @@ export const signUpWithEmail = async (email, password, displayName) => {
   trackSignUp(true, 'email', result.user);
   const name = (displayName || '').trim();
   if (name) await updateProfile(result.user, { displayName: name });
-  await sendEmailVerification(result.user);
+  await sendVerificationEmail(result.user);
   return result.user;
 };
 
+// Our branded email (server/core/authEmails.js) links to /auth/action on roleberry.app. If the
+// server cannot send it (Brevo down, local dev), Firebase sends its own plain email instead, so
+// nobody is left without a link.
+const postEmailAction = async (action, { token = null, body = {} } = {}) => {
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const response = await fetch(`/api/email?action=${action}`, { method: 'POST', headers, body: JSON.stringify(body) });
+    const data = await response.json().catch(() => ({}));
+    return { status: response.status, data };
+  } catch (error) {
+    return { status: 0, data: { code: error?.message || 'network' } };
+  }
+};
+
+const tooManyRequests = () => {
+  const err = new Error('Too many requests');
+  err.code = 'auth/too-many-requests';
+  return err;
+};
+
+const sendVerificationEmail = async (user) => {
+  const { status, data } = await postEmailAction('verify', { token: await user.getIdToken() });
+  if (status === 200) return;
+  if (status === 429) throw tooManyRequests();
+  console.warn('[auth] branded verification email not sent (%s); using Firebase', data?.code || status);
+  await sendEmailVerification(user);
+};
+
 // Send a password reset email.
-export const sendPasswordReset = (email) => sendPasswordResetEmail(auth, email.trim());
+export const sendPasswordReset = async (email) => {
+  const { status, data } = await postEmailAction('reset', { body: { email: email.trim() } });
+  if (status === 200) return;
+  console.warn('[auth] branded reset email not sent (%s); using Firebase', data?.code || status);
+  await sendPasswordResetEmail(auth, email.trim());
+};
 
 // Send the verification email again to the signed-in user.
 export const resendVerification = async () => {
   if (!auth.currentUser) throw new Error('You must be signed in to do this.');
-  await sendEmailVerification(auth.currentUser);
+  await sendVerificationEmail(auth.currentUser);
+};
+
+// The /auth/action page (components/AuthActionPage.jsx), where the email links land.
+// Waits for Firebase to restore any saved sign-in, so currentUser is known.
+export const waitForAuthReady = () => auth.authStateReady();
+
+// Marks the email verified. If that person is signed in here, refreshes their token so the app
+// and the server both see the verified address. Returns whether someone is signed in.
+export const applyEmailVerification = async (code) => {
+  await applyActionCode(auth, code);
+  const current = auth.currentUser;
+  if (!current) return false;
+  await current.reload();
+  await current.getIdToken(true);
+  return true;
+};
+
+// The email a reset code belongs to. Throws if the code is expired or already used.
+export const checkPasswordResetCode = (code) => verifyPasswordResetCode(auth, code);
+
+// Sets the new password, then signs in with it so the person lands in the app.
+export const finishPasswordReset = async (code, email, password) => {
+  await confirmPasswordReset(auth, code, password);
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+    return true;
+  } catch (error) {
+    console.warn('[auth] sign-in after reset failed: %s', error?.code || error?.message);
+    return false;
+  }
 };
 
 // Re-read the signed-in user after they clicked the link in their inbox. Forces a fresh ID

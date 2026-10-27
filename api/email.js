@@ -1,5 +1,6 @@
-// Vercel API route for /api/email: unsubscribe links, the daily reminder cron and the
-// preview, selected with ?action=. One file keeps us inside Vercel Hobby's function limit.
+// Vercel API route for /api/email: unsubscribe links, the daily reminder cron, the email
+// previews and the verification and password-reset emails, selected with ?action=. One file
+// keeps us inside Vercel Hobby's function limit.
 
 import { handleEmailEndpoint } from '../server/core/lifecycleEmails.js';
 import { applyCors } from '../server/core/cors.js';

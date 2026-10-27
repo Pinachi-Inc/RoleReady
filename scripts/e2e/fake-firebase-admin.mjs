@@ -150,6 +150,15 @@ const auth = () => ({
     authRecords.delete(uid);
     for (const [email, id] of authUsers) if (id === uid) authUsers.delete(email);
   },
+  // Shaped like Firebase's real links: its own domain, mode, oobCode and apiKey.
+  async generateEmailVerificationLink(email) {
+    if (!authUsers.has(String(email).toLowerCase())) throw Object.assign(new Error('no user record'), { code: 'auth/user-not-found' });
+    return `https://e2e.firebaseapp.com/__/auth/action?mode=verifyEmail&oobCode=verify-${encodeURIComponent(email)}&apiKey=AIzaFAKE&lang=en`;
+  },
+  async generatePasswordResetLink(email) {
+    if (!authUsers.has(String(email).toLowerCase())) throw Object.assign(new Error('no user record'), { code: 'auth/user-not-found' });
+    return `https://e2e.firebaseapp.com/__/auth/action?mode=resetPassword&oobCode=reset-${encodeURIComponent(email)}&apiKey=AIzaFAKE&lang=en`;
+  },
   async updateUser(uid, patch) {
     const record = authRecords.get(uid);
     if (!record) throw Object.assign(new Error('no user record'), { code: 'auth/user-not-found' });
