@@ -9,6 +9,7 @@ import './index.css'
 import { initMetaPixel } from './metaPixel.js'
 import { initRedditPixel } from './redditPixel.js'
 import { captureFirstTouch } from './attribution.js'
+import { applySeoTags } from './seo.js'
 
 // Remember where this visitor came from before anything else touches the URL.
 captureFirstTouch()
@@ -18,6 +19,8 @@ initRedditPixel()
 // The app has no router. The legal pages are the only other URLs, and Vercel already rewrites
 // every path to index.html, so a pathname check is all they need.
 const path = window.location.pathname.replace(/\/+$/, '') || '/'
+applySeoTags(path, ['/', '/login', '/signup', ...Object.keys(LEGAL_PAGES)])
+applySeoTags(path, ['/', '/login', '/signup', ...Object.keys(LEGAL_PAGES)])
 
 // Before the first render, so errors thrown while the app starts up are caught too.
 installErrorCapture()
