@@ -1,6 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { MailCheck, Loader2 } from 'lucide-react';
-import { resendVerification, refreshEmailVerified, signOutUser, friendlyAuthError } from '../services/auth.js';
+import {
+  resendVerification,
+  refreshEmailVerified,
+  signOutUser,
+  friendlyAuthError,
+  verificationCooldownLeft,
+} from '../services/auth.js';
 import { authButtonClasses, ErrorBox, NoticeBox } from './Auth.jsx';
 
 // Shown instead of the app to a password account whose email is not verified yet.
@@ -8,6 +14,15 @@ const VerifyEmail = ({ user, onVerified, onSignedOut }) => {
   const [busy, setBusy] = useState(null); // 'resend' | 'check' | 'signout'
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // Seconds until Resend works again; one email a minute.
+  const [wait, setWait] = useState(verificationCooldownLeft);
+
+  const counting = wait > 0;
+  useEffect(() => {
+    if (!counting) return undefined;
+    const timer = window.setInterval(() => setWait(verificationCooldownLeft()), 500);
+    return () => window.clearInterval(timer);
+  }, [counting]);
 
   const run = async (kind, fn) => {
     setBusy(kind);
@@ -25,7 +40,8 @@ const VerifyEmail = ({ user, onVerified, onSignedOut }) => {
 
   const handleResend = () => run('resend', async () => {
     await resendVerification();
-    setNotice(`Sent a new link to ${user.email}.`);
+    setWait(verificationCooldownLeft());
+    setNotice(`Sent a new link to ${user.email}. It can take a minute, and it may land in Spam or Promotions.`);
   });
 
   const handleCheck = () => run('check', async () => {
@@ -47,7 +63,7 @@ const VerifyEmail = ({ user, onVerified, onSignedOut }) => {
       <h2 className="mb-2 text-2xl font-bold tracking-tight text-ink">Check your inbox</h2>
       <p className="mb-6 text-ink-muted">
         We sent a verification link to <span className="break-all font-semibold text-ink">{user.email}</span>.
-        Click it to finish setting up your account.
+        Click it to finish setting up your account. Can&apos;t see it? Check Spam and Promotions.
       </p>
       <div className="space-y-3">
         <button
@@ -68,10 +84,10 @@ const VerifyEmail = ({ user, onVerified, onSignedOut }) => {
         <button
           type="button"
           onClick={handleResend}
-          disabled={!!busy}
+          disabled={!!busy || wait > 0}
           className={authButtonClasses.secondary}
         >
-          {busy === 'resend' ? 'Sending…' : 'Resend email'}
+          {busy === 'resend' ? 'Sending…' : wait > 0 ? `Resend email in ${wait}s` : 'Resend email'}
         </button>
         <button
           type="button"

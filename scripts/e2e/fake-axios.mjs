@@ -97,6 +97,13 @@ const axios = {
     }
     if (url === 'https://api.brevo.com/v3/smtp/email') {
       if (globalThis.__E2E_MAIL_FAIL) throw Object.assign(new Error('fake Brevo: 500'), { response: { status: 500 } });
+      // Like the real API: an empty headers object or tags list is a 400.
+      for (const key of ['headers', 'tags']) {
+        const v = body?.[key];
+        if (v !== undefined && (Array.isArray(v) ? v.length === 0 : Object.keys(v || {}).length === 0)) {
+          throw Object.assign(new Error('fake Brevo: 400'), { response: { status: 400, data: { code: 'missing_parameter', message: `${key} is blank` } } });
+        }
+      }
       globalThis.__E2E_MAIL.push({ body, headers: config?.headers });
       return { data: { messageId: 'fake@brevo' } };
     }
