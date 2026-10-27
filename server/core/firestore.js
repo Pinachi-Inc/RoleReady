@@ -348,6 +348,7 @@ export async function getAuthUser(uid) {
 //   welcomeSkipped                               'old_account'
 //   cancelSentFor                                id of the last subscription we sent the cancel email for
 //   unsubscribedAt                               ISO string; once set, nothing lifecycle is sent
+//   verifySentAt, resetSentAt                    ISO strings; last verification / reset email (authEmails.js)
 // firestore.rules' catch-all already denies the client, so no rule exists for it.
 export async function getEmailState(uid) {
   const database = db();
@@ -410,6 +411,15 @@ export async function listAuthUsersPage(pageToken) {
   const app = init();
   if (!app) throw new Error('Firestore is not configured on the server');
   return admin.auth(app).listUsers(1000, pageToken || undefined);
+}
+
+// A one-time verification or password-reset link from Firebase Auth for this email.
+// kind: 'verifyEmail' | 'resetPassword'. Only its oobCode is used; we build our own link around it.
+export async function generateAuthActionLink(kind, email) {
+  const app = init();
+  if (!app) throw new Error('Firestore is not configured on the server');
+  const auth = admin.auth(app);
+  return kind === 'resetPassword' ? auth.generatePasswordResetLink(email) : auth.generateEmailVerificationLink(email);
 }
 
 // Mark an account's email as verified, once something we trust (GitHub) has vouched for it.

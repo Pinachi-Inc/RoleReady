@@ -100,6 +100,36 @@ export function cancelledEmail({ planLabel, endsAt }) {
   };
 }
 
+// Account security emails (see server/core/authEmails.js). They go out whatever the lifecycle
+// settings say and carry no unsubscribe link, only a note to ignore them if unexpected.
+export function verifyEmailTemplate(url) {
+  return {
+    subject: 'Verify your email for Roleberry',
+    tag: 'auth-verify',
+    footer: "You're getting this because this address was used to sign up for Roleberry. If that wasn't you, you can ignore this email.",
+    blocks: [
+      { p: 'Hi,' },
+      { p: 'Thanks for signing up for Roleberry. Please confirm your email address to start making tailored CVs.' },
+      { cta: 'Verify my email', url },
+      { p: SIGN_OFF },
+    ],
+  };
+}
+
+export function resetPasswordTemplate(url) {
+  return {
+    subject: 'Reset your Roleberry password',
+    tag: 'auth-reset',
+    footer: "You're getting this because someone asked to reset the password for this Roleberry account. If that wasn't you, you can ignore this email and your password stays the same.",
+    blocks: [
+      { p: 'Hi,' },
+      { p: 'We got a request to reset your Roleberry password. Click the button below to choose a new one. The link works once and expires soon.' },
+      { cta: 'Reset password', url },
+      { p: SIGN_OFF },
+    ],
+  };
+}
+
 export function escapeHtml(value) {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -110,18 +140,18 @@ export function escapeHtml(value) {
 }
 
 /**
- * @param {{ subject: string, blocks: object[] }} template
- * @param {{ unsubscribeUrl: string }} options
+ * @param {{ subject: string, blocks: object[], footer?: string }} template
+ * @param {{ unsubscribeUrl?: string }} options  needed unless the template has its own footer
  * @returns {{ subject: string, text: string, html: string }}
  */
-export function renderEmail({ subject, blocks }, { unsubscribeUrl }) {
+export function renderEmail({ subject, blocks, footer }, { unsubscribeUrl } = {}) {
   const text = [
     ...blocks.map((b) => {
       if (b.ol) return b.ol.map((item, i) => `${i + 1}. ${item}`).join('\n');
       if (b.cta) return `${b.cta}: ${b.url}`;
       return b.p;
     }),
-    `You're getting this because you have a Roleberry account. Don't want these emails? Unsubscribe: ${unsubscribeUrl}`,
+    footer || `You're getting this because you have a Roleberry account. Don't want these emails? Unsubscribe: ${unsubscribeUrl}`,
   ].join('\n\n');
 
   const body = blocks.map((b) => {
@@ -136,7 +166,7 @@ export function renderEmail({ subject, blocks }, { unsubscribeUrl }) {
 <p style="margin:0 0 24px"><a href="${APP}/"><img src="${LOGO_URL}" width="140" height="36" alt="Roleberry" style="display:block;border:0;width:140px;height:36px"></a></p>
 ${body}
 <hr style="border:0;border-top:1px solid #eee;margin:24px 0 12px">
-<p style="margin:0;font-size:12px;color:#6b5a63">You're getting this because you have a Roleberry account. Don't want these emails? <a href="${escapeHtml(unsubscribeUrl)}" style="color:#6b5a63">Unsubscribe</a></p>
+<p style="margin:0;font-size:12px;color:#6b5a63">${footer ? escapeHtml(footer) : `You're getting this because you have a Roleberry account. Don't want these emails? <a href="${escapeHtml(unsubscribeUrl)}" style="color:#6b5a63">Unsubscribe</a>`}</p>
 </div>`;
 
   return { subject, text, html };
