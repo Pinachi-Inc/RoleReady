@@ -1,5 +1,6 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
+import { Analytics } from '@vercel/analytics/react'
 import CVOptimizer from './App.jsx'
 import LegalPage, { LEGAL_PAGES } from '../components/LegalPage.jsx'
 import AuthActionPage from '../components/AuthActionPage.jsx'
@@ -38,6 +39,8 @@ createRoot(document.getElementById('root')).render(
     <DialogProvider>
       {path === AUTH_ACTION_PATH ? <AuthActionPage /> : LEGAL_PAGES[path] ? <LegalPage path={path} /> : <CVOptimizer />}
       <FeedbackWidget />
+      {/* Vercel Web Analytics: cookieless page views, so it sits outside the ad-pixel consent rules. */}
+      <Analytics />
     </DialogProvider>
   </React.StrictMode>
 )
