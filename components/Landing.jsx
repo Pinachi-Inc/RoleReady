@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Clock, ClipboardPaste, Download, UserRound } from 'lucide-react';
+import { ArrowRight, Check, Clock, ClipboardPaste, Download, UserRound } from 'lucide-react';
 import { PLANS, ExperimentalBadge } from './PricingModal.jsx';
 
 // The signed-out home: what Roleberry does, a before/after example and the prices. Sign-in lives on
@@ -134,12 +134,12 @@ const Kw = ({ children }) => (
   </mark>
 );
 
-const CvPanel = ({ label, title, bullets, accent }) => (
-  <div className="h-full bg-white p-5 sm:p-6">
-    <div className="mb-3 text-xs font-semibold uppercase tracking-wide" style={{ color: accent }}>{label}</div>
-    <div className="text-lg font-bold" style={{ color: INK }}>{title}</div>
-    <ul className="mt-3 space-y-2 text-sm leading-relaxed text-ink">
-      {bullets.map((b, i) => <li key={i}>• {b}</li>)}
+const CvPanel = ({ label, title, bullets, tailored = false }) => (
+  <div className={`flex flex-col gap-2.5 rounded-xl p-5 sm:p-6 ${tailored ? 'border-2 border-leaf bg-white shadow-sm' : 'bg-paper'}`}>
+    <div className={`text-xs font-bold uppercase tracking-wide ${tailored ? 'text-leaf' : 'text-ink-faint'}`}>{label}</div>
+    <div className={`text-lg ${tailored ? 'font-extrabold text-ink' : 'font-bold text-ink-muted'}`}>{title}</div>
+    <ul className={`list-disc space-y-2 pl-4 text-sm leading-relaxed ${tailored ? 'text-ink' : 'text-ink-muted'}`}>
+      {bullets.map((b, i) => <li key={i}>{b}</li>)}
     </ul>
   </div>
 );
@@ -164,37 +164,17 @@ const AFTER = {
   ],
 };
 
-// Drag the handle (or use the arrow keys) to wipe from the generic CV to the tailored one.
-const BeforeAfter = () => {
-  // Opens mostly on the tailored CV, with a strip of the generic one hinting at the handle.
-  const [pos, setPos] = useState(15);
-  return (
-    <div className="relative mx-auto max-w-2xl select-none overflow-hidden rounded-xl border border-line shadow-sm">
-      <CvPanel {...AFTER} accent={LEAF} />
-      <div className="absolute inset-0" style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }}>
-        <CvPanel {...BEFORE} accent="#6B7280" />
-      </div>
-      <div className="pointer-events-none absolute inset-y-0" style={{ left: `${pos}%` }}>
-        <div className="absolute inset-y-0 -ml-px w-0.5" style={{ backgroundColor: BERRY }} />
-        <div
-          className="absolute top-1/2 -ml-4 -mt-4 flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-lg"
-          style={{ backgroundColor: BERRY }}
-        >
-          ⇆
-        </div>
-      </div>
-      <input
-        type="range"
-        min="0"
-        max="100"
-        value={pos}
-        onChange={(e) => setPos(Number(e.target.value))}
-        aria-label="Compare the generic CV with the tailored CV"
-        className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
-      />
+// The generic CV next to the tailored one, fully readable at rest (no wipe slider: a wipe across
+// text cut words in half and read as a rendering glitch). Side by side from md up; stacked on phones.
+const BeforeAfter = () => (
+  <div className="mx-auto grid max-w-3xl items-stretch gap-3 md:grid-cols-[1fr_auto_1fr] md:gap-4">
+    <CvPanel {...BEFORE} />
+    <div className="flex items-center justify-center text-berry" aria-hidden="true">
+      <ArrowRight className="h-6 w-6 rotate-90 md:rotate-0" />
     </div>
-  );
-};
+    <CvPanel {...AFTER} tailored />
+  </div>
+);
 
 const Pricing = () => (
   <div className="grid gap-5 md:grid-cols-3">
@@ -290,7 +270,7 @@ const Landing = () => (
       <section className="mx-auto max-w-5xl pb-12">
         <h2 className="mb-2 text-center text-2xl font-bold" style={{ color: INK }}>Same experience, said the way the job asks</h2>
         <p className="mb-6 text-center text-sm text-ink-muted">
-          The posting asks for a <Kw>design system</Kw>, <Kw>React</Kw>, <Kw>TypeScript</Kw> and <Kw>accessibility</Kw>. Drag to compare.
+          The posting asks for a <Kw>design system</Kw>, <Kw>React</Kw>, <Kw>TypeScript</Kw> and <Kw>accessibility</Kw>.
         </p>
         <BeforeAfter />
       </section>
