@@ -148,7 +148,7 @@ const PrivacyPolicy = () => (
       </thead>
       <tbody>
         <tr><td>Google (Firebase)</td><td>Sign-in and database</td><td>Account details, profiles, history, usage, subscription status</td></tr>
-        <tr><td>Vercel</td><td>Hosting and servers</td><td>All requests passing through the app, server logs, IP address</td></tr>
+        <tr><td>Vercel</td><td>Hosting, servers and cookieless page-view analytics</td><td>All requests passing through the app, server logs, IP address, pages visited, referrer, device and browser type</td></tr>
         <tr><td>OpenRouter and the AI model providers it routes to</td><td>Generating CVs, cover letters and profile imports</td><td>Profile content, job postings, imported CV text</td></tr>
         <tr><td>Our reseller, {LEGAL.merchantNames} (merchant of record), and its payment processors</td><td>Selling the subscription: payment, sales tax / VAT, receipts, refunds</td><td>Email, name, payment details, billing address, subscription</td></tr>
         <tr><td>Brevo</td><td>Delivering feedback reports to our inbox, and sending account emails</td><td>Your email address; for feedback, also your message, screenshot and the browser details above</td></tr>
